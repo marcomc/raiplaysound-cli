@@ -220,7 +220,7 @@ PODCASTS_SORTED="0"
 STATION_FILTER=""
 FORCE_REFRESH_CATALOG="0"
 CATALOG_MAX_AGE_HOURS="${RAIPLAYSOUND_CATALOG_MAX_AGE_HOURS:-2160}"
-CATALOG_CACHE_FILE="${HOME}/.local/state/raiplaysound-downloader/podcast-catalog.tsv"
+CATALOG_CACHE_FILE="${HOME}/.local/state/raiplaysound-cli/program-catalog.tsv"
 ENABLE_LOG="0"
 LOG_PATH_ARG=""
 FORCE_REFRESH_METADATA="0"
@@ -231,8 +231,12 @@ TARGET_BASE="${HOME}/Music/RaiPlaySound"
 INPUT=""
 INPUT_FROM_CONFIG="0"
 
-CONFIG_FILE="${HOME}/.raiplaysound-downloader.conf"
-load_config_file "${CONFIG_FILE}"
+CONFIG_FILE="${HOME}/.raiplaysound-cli.conf"
+if [[ -f "${CONFIG_FILE}" ]]; then
+  load_config_file "${CONFIG_FILE}"
+elif [[ -f "${HOME}/.raiplaysound-downloader.conf" ]]; then
+  load_config_file "${HOME}/.raiplaysound-downloader.conf"
+fi
 
 while [[ "$#" -gt 0 ]]; do
   case "$1" in

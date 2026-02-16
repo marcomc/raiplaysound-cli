@@ -1,7 +1,7 @@
 # RaiPlaySound downloader user defaults
 #
 # Install for current user:
-#   cp .raiplaysound-downloader.conf.example ~/.raiplaysound-downloader.conf
+#   cp .raiplaysound-cli.conf.example ~/.raiplaysound-cli.conf
 #
 # Format is simple KEY=VALUE (bash-style env file, no sections).
 # Empty/commented keys are ignored.
@@ -78,7 +78,7 @@ CHECK_JOBS=8
 # CATALOG_MAX_AGE_HOURS=2160
 
 # Optional program catalog cache file path.
-# CATALOG_CACHE_FILE="$HOME/.local/state/raiplaysound-downloader/podcast-catalog.tsv"
+# CATALOG_CACHE_FILE="$HOME/.local/state/raiplaysound-cli/program-catalog.tsv"
 
 # Optional default: enable verbose debug logging.
 # ENABLE_LOG=0

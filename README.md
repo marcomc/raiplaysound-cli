@@ -49,7 +49,7 @@ parallel download execution.
 1. Create or enter the project directory:
 
 ```bash
-cd raiplaysound-downloader
+cd raiplaysound-cli
 ```
 
 1. Install dependencies with Homebrew:
@@ -70,7 +70,7 @@ chmod +x ./raiplaysound-cli.sh
 
 The script reads an optional user config file at:
 
-- `~/.raiplaysound-downloader.conf`
+- `~/.raiplaysound-cli.conf`
 
 Recommended format is a simple `KEY=VALUE` env-style file (Bash-friendly), not YAML/JSON/INI. This keeps parsing fast and dependency-free in pure Bash.
 
@@ -79,7 +79,7 @@ CLI arguments always override values from the dot config file.
 Install the example template from project root:
 
 ```bash
-cp ./.raiplaysound-downloader.conf.example ~/.raiplaysound-downloader.conf
+cp ./.raiplaysound-cli.conf.example ~/.raiplaysound-cli.conf
 ```
 
 Then edit your defaults, for example:

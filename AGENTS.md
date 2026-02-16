@@ -15,8 +15,8 @@ The main goal is to download program episodes from a RaiPlaySound program slug o
 
 - All documentation files must pass Markdown linting.
 - The line-length rule may be ignored.
-- For every new CLI/config option, update script parsing support for `~/.raiplaysound-downloader.conf`.
-- For every new CLI/config option, update `.raiplaysound-downloader.conf.example` in project root.
+- For every new CLI/config option, update script parsing support for `~/.raiplaysound-cli.conf`.
+- For every new CLI/config option, update `.raiplaysound-cli.conf.example` in project root.
 - For every new CLI/config option, update `README.md` option/config documentation.
 
 ## Scripting Constraints
