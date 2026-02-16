@@ -301,6 +301,14 @@ fi
 if [[ -n "${LOG_PATH_ARG}" ]]; then
   LOG_PATH_ARG="$(expand_config_path "${LOG_PATH_ARG}")"
 fi
+if [[ "${TARGET_BASE}" == *"\$HOME"* ]] || [[ "${TARGET_BASE}" == *"\${HOME}"* ]]; then
+  echo "Error: TARGET_BASE contains unresolved HOME variable: ${TARGET_BASE}" >&2
+  exit 1
+fi
+if [[ -n "${LOG_PATH_ARG}" ]] && { [[ "${LOG_PATH_ARG}" == *"\$HOME"* ]] || [[ "${LOG_PATH_ARG}" == *"\${HOME}"* ]]; }; then
+  echo "Error: LOG_PATH_ARG contains unresolved HOME variable: ${LOG_PATH_ARG}" >&2
+  exit 1
+fi
 
 if [[ "${LIST_SEASONS_ONLY}" -eq 1 ]] && [[ "${LIST_EPISODES_ONLY}" -eq 1 ]]; then
   echo "Error: use either --list-seasons or --list-episodes, not both." >&2
