@@ -86,6 +86,12 @@ Download only specific seasons:
 ./raiplaysound-podcast.sh --seasons 1,2 america7
 ```
 
+Download all seasons:
+
+```bash
+./raiplaysound-podcast.sh --seasons all america7
+```
+
 Run without prompt and automatically re-download archived episodes that are missing locally:
 
 ```bash
@@ -117,6 +123,8 @@ List episodes for one or more seasons:
 ```
 
 If `--list-episodes` is used without `--seasons`, it lists the latest detected season.
+
+If download is run without `--seasons`, it targets the current/latest season only.
 
 Reference episode example for this program:
 

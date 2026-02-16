@@ -4,13 +4,14 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 Usage:
-  raiplaysound-podcast.sh [--format FORMAT] [--jobs N] [--seasons LIST] [--redownload-missing] [--list-seasons] [--list-episodes] [--log[=PATH]] <slug|program_url>
+  raiplaysound-podcast.sh [--format FORMAT] [--jobs N] [--seasons LIST|all] [--redownload-missing] [--list-seasons] [--list-episodes] [--log[=PATH]] <slug|program_url>
 
 Examples:
   raiplaysound-podcast.sh musicalbox
   raiplaysound-podcast.sh https://www.raiplaysound.it/programmi/musicalbox
   raiplaysound-podcast.sh --format mp3 --jobs 3 musicalbox
   raiplaysound-podcast.sh --seasons 1,2 america7
+  raiplaysound-podcast.sh --seasons all america7
   raiplaysound-podcast.sh --list-seasons america7
   raiplaysound-podcast.sh --list-episodes --seasons 2 america7
   raiplaysound-podcast.sh --log america7
@@ -215,6 +216,7 @@ fi
 
 declare -A REQUESTED_SEASONS=()
 REQUESTED_SEASONS_COUNT=0
+REQUEST_ALL_SEASONS="0"
 if [[ -n "${SEASONS_ARG}" ]]; then
   CLEANED_SEASONS_ARG="$(printf '%s' "${SEASONS_ARG}" | tr -d '[:space:]')"
   IFS=',' read -r -a SEASON_PARTS <<< "${CLEANED_SEASONS_ARG}"
@@ -222,8 +224,18 @@ if [[ -n "${SEASONS_ARG}" ]]; then
     if [[ -z "${season_part}" ]]; then
       continue
     fi
+    lower_season_part="$(printf '%s' "${season_part}" | tr '[:upper:]' '[:lower:]')"
+    if [[ "${lower_season_part}" == "all" ]]; then
+      REQUEST_ALL_SEASONS="1"
+      REQUESTED_SEASONS_COUNT=0
+      REQUESTED_SEASONS=()
+      continue
+    fi
+    if [[ "${REQUEST_ALL_SEASONS}" -eq 1 ]]; then
+      continue
+    fi
     if ! [[ "${season_part}" =~ ^[0-9]+$ ]] || [[ "${season_part}" -lt 1 ]] || [[ "${season_part}" -gt 100 ]]; then
-      echo "Error: invalid season '${season_part}'. Allowed range is 1-100." >&2
+      echo "Error: invalid season '${season_part}'. Allowed values are 1-100 or 'all'." >&2
       exit 1
     fi
     if [[ -z "${REQUESTED_SEASONS[${season_part}]:-}" ]]; then
@@ -262,23 +274,48 @@ declare -a EPISODE_LABELS=()
 declare -a EPISODE_SEASON_HINTS=()
 EPISODE_LIST_FILE="${WORK_DIR}/episodes.tsv"
 SEASON_SOURCES_FILE="${WORK_DIR}/season-sources.txt"
+SEASON_PAGES_FILE="${WORK_DIR}/season-pages.txt"
 TMP_EPISODE_LIST_FILE="${WORK_DIR}/episodes-raw.tsv"
 touch "${TMP_EPISODE_LIST_FILE}"
 
-show_stage "Discovering available season pages ..."
-curl -Ls "${PROGRAM_URL}" \
-  | rg -o "/programmi/${SLUG}/episodi/stagione-[0-9]+" \
-  | awk '!seen[$0]++ { print "https://www.raiplaysound.it"$0 }' \
-  | sort -u > "${SEASON_SOURCES_FILE}" || true
+USE_EXTENDED_FEEDS="0"
+if [[ "${LIST_SEASONS_ONLY}" -eq 1 ]] || [[ "${REQUEST_ALL_SEASONS}" -eq 1 ]] || [[ "${REQUESTED_SEASONS_COUNT}" -gt 0 ]]; then
+  USE_EXTENDED_FEEDS="1"
+fi
 
-if [[ ! -s "${SEASON_SOURCES_FILE}" ]]; then
+if [[ "${USE_EXTENDED_FEEDS}" -eq 0 ]]; then
   printf '%s\n' "${PROGRAM_URL}" > "${SEASON_SOURCES_FILE}"
-  finish_stage "No explicit season pages found. Using main program feed."
+  finish_stage "Using main program feed (current season)."
 else
-  printf '%s\n' "${PROGRAM_URL}" >> "${SEASON_SOURCES_FILE}"
-  sort -u "${SEASON_SOURCES_FILE}" -o "${SEASON_SOURCES_FILE}"
-  season_source_count="$(wc -l < "${SEASON_SOURCES_FILE}" | tr -d '[:space:]')"
-  finish_stage "Found ${season_source_count} feeds (season pages + main)."
+  show_stage "Discovering available season pages ..."
+  curl -Ls "${PROGRAM_URL}" \
+    | rg -o "/programmi/${SLUG}/episodi/stagione-[0-9]+" \
+    | awk '!seen[$0]++ { print "https://www.raiplaysound.it"$0 }' \
+    | sort -u > "${SEASON_PAGES_FILE}" || true
+
+  if [[ "${REQUESTED_SEASONS_COUNT}" -gt 0 ]] && [[ "${REQUEST_ALL_SEASONS}" -eq 0 ]] && [[ "${LIST_SEASONS_ONLY}" -eq 0 ]]; then
+    while IFS= read -r season_page; do
+      [[ -z "${season_page}" ]] && continue
+      if [[ "${season_page}" =~ stagione-([0-9]+)$ ]]; then
+        season_page_num="${BASH_REMATCH[1]}"
+        if [[ -n "${REQUESTED_SEASONS[${season_page_num}]:-}" ]]; then
+          printf '%s\n' "${season_page}" >> "${SEASON_SOURCES_FILE}"
+        fi
+      fi
+    done < "${SEASON_PAGES_FILE}"
+    printf '%s\n' "${PROGRAM_URL}" >> "${SEASON_SOURCES_FILE}"
+    sort -u "${SEASON_SOURCES_FILE}" -o "${SEASON_SOURCES_FILE}"
+    season_source_count="$(wc -l < "${SEASON_SOURCES_FILE}" | tr -d '[:space:]')"
+    finish_stage "Using ${season_source_count} feeds for requested seasons."
+  else
+    if [[ -s "${SEASON_PAGES_FILE}" ]]; then
+      cat "${SEASON_PAGES_FILE}" > "${SEASON_SOURCES_FILE}"
+    fi
+    printf '%s\n' "${PROGRAM_URL}" >> "${SEASON_SOURCES_FILE}"
+    sort -u "${SEASON_SOURCES_FILE}" -o "${SEASON_SOURCES_FILE}"
+    season_source_count="$(wc -l < "${SEASON_SOURCES_FILE}" | tr -d '[:space:]')"
+    finish_stage "Found ${season_source_count} feeds (season pages + main)."
+  fi
 fi
 
 show_stage "Discovering episodes from program feeds ..."
@@ -510,6 +547,11 @@ if [[ "${LIST_EPISODES_ONLY}" -eq 1 ]]; then
   declare -A LIST_SEASONS=()
   if [[ "${HAS_SEASONS}" -eq 0 ]]; then
     LIST_SEASONS["1"]="1"
+  elif [[ "${REQUEST_ALL_SEASONS}" -eq 1 ]]; then
+    while IFS= read -r all_season; do
+      [[ -z "${all_season}" ]] && continue
+      LIST_SEASONS["${all_season}"]="1"
+    done <<< "${AVAILABLE_SEASONS_SORTED}"
   elif [[ "${REQUESTED_SEASONS_COUNT}" -gt 0 ]]; then
     for requested_season in "${!REQUESTED_SEASONS[@]}"; do
       LIST_SEASONS["${requested_season}"]="1"
@@ -554,6 +596,39 @@ if [[ "${LIST_EPISODES_ONLY}" -eq 1 ]]; then
   exit 0
 fi
 
+if [[ "${HAS_SEASONS}" -eq 1 ]] && [[ "${REQUEST_ALL_SEASONS}" -eq 0 ]] && [[ "${REQUESTED_SEASONS_COUNT}" -eq 0 ]] && [[ "${LIST_SEASONS_ONLY}" -eq 0 ]] && [[ "${LIST_EPISODES_ONLY}" -eq 0 ]]; then
+  declare -a FILTERED_IDS=()
+  declare -a FILTERED_URLS=()
+  declare -a FILTERED_LABELS=()
+  declare -a FILTERED_TITLES=()
+  declare -a FILTERED_UPLOAD_DATES=()
+  declare -a FILTERED_SEASONS=()
+  declare -a FILTERED_YEARS=()
+
+  for ((i = 0; i < TOTAL; i++)); do
+    season="${EPISODE_SEASONS[i]}"
+    if [[ "${season}" != "${LATEST_SEASON}" ]]; then
+      continue
+    fi
+    FILTERED_IDS+=("${EPISODE_IDS[i]}")
+    FILTERED_URLS+=("${EPISODE_URLS[i]}")
+    FILTERED_LABELS+=("${EPISODE_LABELS[i]}")
+    FILTERED_TITLES+=("${EPISODE_TITLES[i]}")
+    FILTERED_UPLOAD_DATES+=("${EPISODE_UPLOAD_DATES[i]}")
+    FILTERED_SEASONS+=("${EPISODE_SEASONS[i]}")
+    FILTERED_YEARS+=("${EPISODE_YEARS[i]}")
+  done
+
+  EPISODE_IDS=("${FILTERED_IDS[@]}")
+  EPISODE_URLS=("${FILTERED_URLS[@]}")
+  EPISODE_LABELS=("${FILTERED_LABELS[@]}")
+  EPISODE_TITLES=("${FILTERED_TITLES[@]}")
+  EPISODE_UPLOAD_DATES=("${FILTERED_UPLOAD_DATES[@]}")
+  EPISODE_SEASONS=("${FILTERED_SEASONS[@]}")
+  EPISODE_YEARS=("${FILTERED_YEARS[@]}")
+  TOTAL="${#EPISODE_IDS[@]}"
+fi
+
 if [[ "${HAS_SEASONS}" -eq 1 ]] && [[ "${REQUESTED_SEASONS_COUNT}" -gt 0 ]]; then
   declare -a FILTERED_IDS=()
   declare -a FILTERED_URLS=()
@@ -592,12 +667,14 @@ if [[ "${TOTAL}" -eq 0 ]]; then
   exit 1
 fi
 
-if [[ "${REQUESTED_SEASONS_COUNT}" -gt 0 ]]; then
+if [[ "${REQUEST_ALL_SEASONS}" -eq 1 ]]; then
+  DOWNLOAD_SEASONS_LABEL="all (${AVAILABLE_SEASONS_SORTED//$'\n'/,})"
+elif [[ "${REQUESTED_SEASONS_COUNT}" -gt 0 ]]; then
   DOWNLOAD_SEASONS_LABEL="$(printf '%s\n' "${!REQUESTED_SEASONS[@]}" | sort -n | paste -sd ',' -)"
 elif [[ "${HAS_SEASONS}" -eq 0 ]]; then
   DOWNLOAD_SEASONS_LABEL="none (all episodes)"
 else
-  DOWNLOAD_SEASONS_LABEL="all (${AVAILABLE_SEASONS_SORTED//$'\n'/,})"
+  DOWNLOAD_SEASONS_LABEL="current (${LATEST_SEASON})"
 fi
 
 RUN_TS="$(date '+%Y%m%d-%H%M%S')"
@@ -877,7 +954,7 @@ start_episode_download() {
       --embed-thumbnail \
       --newline \
       --progress \
-      --progress-template 'download:%(progress._percent_str)s' \
+      --progress-template 'progress:%(progress.downloaded_bytes|0)d:%(progress.total_bytes|0)d:%(progress.total_bytes_estimate|0)d:%(progress._percent_str)s' \
       "${yt_verbose_args[@]}" \
       -o "${OUTPUT_TEMPLATE}" \
       "${episode_url}" 2>&1 | while IFS= read -r line; do
@@ -895,18 +972,27 @@ start_episode_download() {
           continue
         fi
 
-        if [[ "${line}" == download:*%* ]]; then
-          raw_percent="${line#download:}"
-          raw_percent="${raw_percent%%%*}"
-          raw_percent="${raw_percent// /}"
-          raw_percent="${raw_percent//$'\r'/}"
-          int_percent="${raw_percent%%.*}"
+        if [[ "${line}" == progress:* ]]; then
+          progress_payload="${line#progress:}"
+          IFS=':' read -r downloaded_bytes total_bytes total_bytes_estimate raw_percent <<< "${progress_payload}"
 
-          if [[ "${int_percent}" =~ ^[0-9]+$ ]]; then
-            if [[ "${int_percent}" -gt 100 ]]; then
-              int_percent=100
+          percent_candidate=""
+          if [[ "${total_bytes}" =~ ^[0-9]+$ ]] && [[ "${total_bytes}" -gt 0 ]] && [[ "${downloaded_bytes}" =~ ^[0-9]+$ ]]; then
+            percent_candidate="$((downloaded_bytes * 100 / total_bytes))"
+          elif [[ "${total_bytes_estimate}" =~ ^[0-9]+$ ]] && [[ "${total_bytes_estimate}" -gt 0 ]] && [[ "${downloaded_bytes}" =~ ^[0-9]+$ ]]; then
+            percent_candidate="$((downloaded_bytes * 100 / total_bytes_estimate))"
+          else
+            raw_percent="${raw_percent%%%*}"
+            raw_percent="${raw_percent// /}"
+            raw_percent="${raw_percent//$'\r'/}"
+            percent_candidate="${raw_percent%%.*}"
+          fi
+
+          if [[ "${percent_candidate}" =~ ^[0-9]+$ ]]; then
+            if [[ "${percent_candidate}" -gt 100 ]]; then
+              percent_candidate=100
             fi
-            printf 'DOWNLOADING|%s|%s\n' "${int_percent}" "${label}" > "${status_file}"
+            printf 'DOWNLOADING|%s|%s\n' "${percent_candidate}" "${label}" > "${status_file}"
           fi
         fi
       done
