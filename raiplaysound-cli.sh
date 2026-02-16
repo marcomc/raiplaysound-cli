@@ -125,9 +125,18 @@ load_config_file() {
       JOBS) JOBS="${value}" ;;
       COMMAND) COMMAND="$(printf '%s' "${value}" | tr '[:upper:]' '[:lower:]')" ;;
       LIST_TARGET) LIST_TARGET="$(printf '%s' "${value}" | tr '[:upper:]' '[:lower:]')" ;;
-      SEASONS_ARG) SEASONS_ARG="${value}" ;;
-      EPISODES_ARG) EPISODES_ARG="${value}" ;;
-      EPISODE_URLS_ARG) EPISODE_URLS_ARG="${value}" ;;
+      SEASONS_ARG)
+        SEASONS_ARG="${value}"
+        SEASONS_ARG_SOURCE="config"
+        ;;
+      EPISODES_ARG)
+        EPISODES_ARG="${value}"
+        EPISODES_ARG_SOURCE="config"
+        ;;
+      EPISODE_URLS_ARG)
+        EPISODE_URLS_ARG="${value}"
+        EPISODE_URLS_ARG_SOURCE="config"
+        ;;
       LIST_SEASONS_ONLY)
         bool_v="$(normalize_bool "${value}")"
         [[ -n "${bool_v}" ]] && LIST_SEASONS_ONLY="${bool_v}"
@@ -208,6 +217,9 @@ AUTO_REDOWNLOAD_MISSING="0"
 SEASONS_ARG=""
 EPISODES_ARG=""
 EPISODE_URLS_ARG=""
+SEASONS_ARG_SOURCE="default"
+EPISODES_ARG_SOURCE="default"
+EPISODE_URLS_ARG_SOURCE="default"
 LIST_SEASONS_ONLY="0"
 LIST_EPISODES_ONLY="0"
 SHOW_URLS="0"
@@ -295,6 +307,7 @@ while [[ "$#" -gt 0 ]]; do
       else
         SEASONS_ARG="${SEASONS_ARG},$2"
       fi
+      SEASONS_ARG_SOURCE="cli"
       shift 2
       ;;
     --seasons)
@@ -312,6 +325,7 @@ while [[ "$#" -gt 0 ]]; do
         else
           SEASONS_ARG="${SEASONS_ARG},$2"
         fi
+        SEASONS_ARG_SOURCE="cli"
         shift 2
       fi
       ;;
@@ -330,6 +344,7 @@ while [[ "$#" -gt 0 ]]; do
       else
         EPISODES_ARG="${EPISODES_ARG},$2"
       fi
+      EPISODES_ARG_SOURCE="cli"
       shift 2
       ;;
     --episodes)
@@ -350,6 +365,7 @@ while [[ "$#" -gt 0 ]]; do
         else
           EPISODES_ARG="${EPISODES_ARG},$2"
         fi
+        EPISODES_ARG_SOURCE="cli"
         shift 2
       fi
       ;;
@@ -368,6 +384,7 @@ while [[ "$#" -gt 0 ]]; do
       else
         EPISODE_URLS_ARG="${EPISODE_URLS_ARG},$2"
       fi
+      EPISODE_URLS_ARG_SOURCE="cli"
       shift 2
       ;;
     --episode-urls)
@@ -385,6 +402,7 @@ while [[ "$#" -gt 0 ]]; do
       else
         EPISODE_URLS_ARG="${EPISODE_URLS_ARG},$2"
       fi
+      EPISODE_URLS_ARG_SOURCE="cli"
       shift 2
       ;;
     -m | --missing | --redownload-missing)
@@ -708,13 +726,23 @@ if [[ "${list_target_count}" -gt 1 ]]; then
 fi
 
 if [[ "${COMMAND}" == "list" ]] && [[ "${LIST_STATIONS_ONLY}" -eq 1 || "${LIST_PODCASTS_ONLY}" -eq 1 ]] && [[ -n "${INPUT}" ]]; then
-  echo "Error: do not pass program_slug/program_url with --stations or --programs." >&2
-  exit 1
+  if [[ "${INPUT_FROM_CONFIG}" -eq 1 ]]; then
+    INPUT=""
+    INPUT_FROM_CONFIG="0"
+  else
+    echo "Error: do not pass program_slug/program_url with --stations or --programs." >&2
+    exit 1
+  fi
 fi
 
 if [[ "${COMMAND}" == "list" ]] && [[ "${LIST_EPISODES_ONLY}" -eq 0 ]] && [[ -n "${SEASONS_ARG}" ]]; then
-  echo "Error: --season is only valid with 'download' or 'list --episodes'." >&2
-  exit 1
+  if [[ "${SEASONS_ARG_SOURCE}" == "config" ]]; then
+    SEASONS_ARG=""
+    SEASONS_ARG_SOURCE="default"
+  else
+    echo "Error: --season is only valid with 'download' or 'list --episodes'." >&2
+    exit 1
+  fi
 fi
 
 if [[ "${LIST_PODCASTS_ONLY}" -eq 0 ]] && [[ "${FORCE_REFRESH_CATALOG}" -eq 1 ]]; then
@@ -762,8 +790,18 @@ fi
 
 if [[ "${COMMAND}" == "list" ]]; then
   if [[ -n "${EPISODES_ARG}" ]] || [[ -n "${EPISODE_URLS_ARG}" ]]; then
-    echo "Error: --episode-ids/--episode-url/--episode-urls (and legacy download --episodes) are only valid in download mode." >&2
-    exit 1
+    if [[ "${EPISODES_ARG_SOURCE}" == "config" ]] && [[ "${EPISODE_URLS_ARG_SOURCE}" == "config" || "${EPISODE_URLS_ARG_SOURCE}" == "default" ]]; then
+      EPISODES_ARG=""
+      EPISODE_URLS_ARG=""
+      EPISODES_ARG_SOURCE="default"
+      EPISODE_URLS_ARG_SOURCE="default"
+    elif [[ "${EPISODE_URLS_ARG_SOURCE}" == "config" ]] && [[ "${EPISODES_ARG_SOURCE}" == "default" ]]; then
+      EPISODE_URLS_ARG=""
+      EPISODE_URLS_ARG_SOURCE="default"
+    else
+      echo "Error: --episode-ids/--episode-url/--episode-urls (and legacy download --episodes) are only valid in download mode." >&2
+      exit 1
+    fi
   fi
 fi
 

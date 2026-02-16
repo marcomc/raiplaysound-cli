@@ -28,6 +28,9 @@ All notable changes to this project are documented in this file.
 - Updated CLI usage help text to reflect the new command structure and removed the in-help `Examples:` block.
 - Updated README examples and guidance to the new `list`/`download` UX.
 - Updated dot-config template with `COMMAND`, `LIST_TARGET`, and `DOWNLOAD_MISSING` support.
+- Fixed list-mode interactions with dot-config defaults:
+  - config `INPUT` is now ignored for `list --stations` and `list --programs`
+  - config-only download filters (`SEASONS_ARG`, `EPISODES_ARG`, `EPISODE_URLS_ARG`) are now ignored in incompatible list targets
 
 ## [1.0.0] - 2026-02-16
 
