@@ -37,12 +37,19 @@ CHECK_JOBS=8
 # Optional default: list all radio stations and exit.
 # LIST_STATIONS_ONLY=0
 
+# Optional default: show detailed station listing with URLs (requires LIST_STATIONS_ONLY=1 or --list-stations).
+# STATIONS_DETAILED=0
+
 # Optional default: list all podcasts and exit.
 # LIST_PODCASTS_ONLY=0
 
 # Optional podcast listing grouping mode.
 # Values: alpha, station, both
 # PODCASTS_GROUP_BY="both"
+
+# Optional station short-name filter for podcast listing.
+# Examples: radio1, radio2, radio3, isoradio, nonameradio, none
+# STATION_FILTER=""
 
 # Optional default: force refresh of podcast catalog cache when listing podcasts.
 # FORCE_REFRESH_CATALOG=0

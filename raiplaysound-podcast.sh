@@ -4,7 +4,7 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 Usage:
-  raiplaysound-podcast.sh [--format FORMAT] [--jobs N] [--seasons LIST|all] [--redownload-missing] [--list-seasons] [--list-episodes] [--list-stations] [--list-podcasts] [--podcasts-group-by MODE] [--refresh-podcast-catalog] [--catalog-max-age-hours N] [--log[=PATH]] [--refresh-metadata] [--clear-metadata-cache] [--metadata-max-age-hours N] [<slug|program_url>]
+  raiplaysound-podcast.sh [--format FORMAT] [--jobs N] [--seasons LIST|all] [--redownload-missing] [--list-seasons] [--list-episodes] [--list-stations] [--stations-detailed] [--list-podcasts] [--podcasts-group-by MODE] [--station STATION_SHORT] [--refresh-podcast-catalog] [--catalog-max-age-hours N] [--log[=PATH]] [--refresh-metadata] [--clear-metadata-cache] [--metadata-max-age-hours N] [<slug|program_url>]
 
 Examples:
   raiplaysound-podcast.sh musicalbox
@@ -15,8 +15,10 @@ Examples:
   raiplaysound-podcast.sh --list-seasons america7
   raiplaysound-podcast.sh --list-episodes --seasons 2 america7
   raiplaysound-podcast.sh --list-stations
+  raiplaysound-podcast.sh --list-stations --stations-detailed
   raiplaysound-podcast.sh --list-podcasts
   raiplaysound-podcast.sh --list-podcasts --podcasts-group-by station
+  raiplaysound-podcast.sh --list-podcasts --station radio2
   raiplaysound-podcast.sh --refresh-podcast-catalog --list-podcasts
   raiplaysound-podcast.sh --log america7
   raiplaysound-podcast.sh --log=/tmp/raiplaysound-debug.log america7
@@ -107,6 +109,10 @@ load_config_file() {
         bool_v="$(normalize_bool "${value}")"
         [[ -n "${bool_v}" ]] && LIST_STATIONS_ONLY="${bool_v}"
         ;;
+      STATIONS_DETAILED)
+        bool_v="$(normalize_bool "${value}")"
+        [[ -n "${bool_v}" ]] && STATIONS_DETAILED="${bool_v}"
+        ;;
       LIST_PODCASTS_ONLY)
         bool_v="$(normalize_bool "${value}")"
         [[ -n "${bool_v}" ]] && LIST_PODCASTS_ONLY="${bool_v}"
@@ -155,6 +161,7 @@ SEASONS_ARG=""
 LIST_SEASONS_ONLY="0"
 LIST_EPISODES_ONLY="0"
 LIST_STATIONS_ONLY="0"
+STATIONS_DETAILED="0"
 LIST_PODCASTS_ONLY="0"
 PODCASTS_GROUP_BY="both"
 STATION_FILTER=""
@@ -243,6 +250,10 @@ while [[ "$#" -gt 0 ]]; do
       LIST_STATIONS_ONLY="1"
       shift
       ;;
+    --stations-detailed)
+      STATIONS_DETAILED="1"
+      shift
+      ;;
     --list-podcasts)
       LIST_PODCASTS_ONLY="1"
       shift
@@ -254,6 +265,15 @@ while [[ "$#" -gt 0 ]]; do
         exit 1
       fi
       PODCASTS_GROUP_BY="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')"
+      shift 2
+      ;;
+    --station)
+      if [[ "$#" -lt 2 ]]; then
+        echo "Error: --station requires a value (for example: radio2, radio1, isoradio, none)." >&2
+        usage
+        exit 1
+      fi
+      STATION_FILTER="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')"
       shift 2
       ;;
     --refresh-podcast-catalog)
@@ -360,6 +380,11 @@ if [[ "${PODCASTS_GROUP_BY}" != "alpha" ]] && [[ "${PODCASTS_GROUP_BY}" != "stat
   exit 1
 fi
 
+if [[ -n "${STATION_FILTER}" ]] && ! [[ "${STATION_FILTER}" =~ ^[a-z0-9_-]+$ ]]; then
+  echo "Error: --station must contain only lowercase letters, numbers, '-' or '_' (example: radio2, isoradio, none)." >&2
+  exit 1
+fi
+
 if [[ -n "${TARGET_BASE}" ]]; then
   TARGET_BASE="$(expand_config_path "${TARGET_BASE}")"
 fi
@@ -411,13 +436,23 @@ if [[ "${LIST_STATIONS_ONLY}" -eq 1 ]] || [[ "${LIST_PODCASTS_ONLY}" -eq 1 ]]; t
   fi
 fi
 
-if [[ "${LIST_STATIONS_ONLY}" -eq 0 ]] && [[ "${LIST_PODCASTS_ONLY}" -eq 0 ]] && [[ -z "${INPUT}" ]]; then
-  usage
+if [[ "${LIST_PODCASTS_ONLY}" -eq 0 ]] && [[ "${FORCE_REFRESH_CATALOG}" -eq 1 ]]; then
+  echo "Error: --refresh-podcast-catalog can only be used with --list-podcasts." >&2
   exit 1
 fi
 
-if [[ "${LIST_PODCASTS_ONLY}" -eq 0 ]] && [[ "${FORCE_REFRESH_CATALOG}" -eq 1 ]]; then
-  echo "Error: --refresh-podcast-catalog can only be used with --list-podcasts." >&2
+if [[ "${LIST_PODCASTS_ONLY}" -eq 0 ]] && [[ -n "${STATION_FILTER}" ]]; then
+  echo "Error: --station can only be used with --list-podcasts." >&2
+  exit 1
+fi
+
+if [[ "${LIST_STATIONS_ONLY}" -eq 0 ]] && [[ "${STATIONS_DETAILED}" -eq 1 ]]; then
+  echo "Error: --stations-detailed can only be used with --list-stations." >&2
+  exit 1
+fi
+
+if [[ "${LIST_STATIONS_ONLY}" -eq 0 ]] && [[ "${LIST_PODCASTS_ONLY}" -eq 0 ]] && [[ -z "${INPUT}" ]]; then
+  usage
   exit 1
 fi
 
@@ -506,6 +541,19 @@ cache_file_is_fresh() {
   return 1
 }
 
+podcast_cache_format_is_current() {
+  local cache_file="$1"
+  [[ -s "${cache_file}" ]] || return 1
+  if awk -F '\t' '
+    NF < 4 { bad=1 }
+    $3 == "No station" && tolower($4) != "none" { bad=1 }
+    END { exit bad }
+  ' "${cache_file}" >/dev/null; then
+    return 0
+  fi
+  return 1
+}
+
 collect_podcast_catalog_file() {
   local out_file="$1"
   local tmp_dir slug_file raw_file slug_total
@@ -551,6 +599,7 @@ collect_podcast_catalog_file() {
 
       title_raw="$(printf '%s' "${json_line}" | awk -F '"title":"' '{if (NF>1) { split($2,a,"\""); print a[1] }}')"
       station_raw="$(printf '%s' "${json_line}" | awk -F '"channel":{"name":"' '{if (NF>1) { split($2,a,"\""); print a[1] }}')"
+      station_short_raw="$(printf '%s' "${json_line}" | sed -n 's/.*"channel":{[^}]*"category_path":"\([^"]*\)".*/\1/p')"
       title="${title_raw//\\\//\/}"
       title="${title//\\\"/\"}"
       title="${title//\\n/ }"
@@ -561,10 +610,22 @@ collect_podcast_catalog_file() {
       station="${station//\\n/ }"
       station="${station//\\t/ }"
       station="${station//\\\\/\\}"
+      station_short="${station_short_raw//\\\//\/}"
+      station_short="${station_short//\\\"/\"}"
+      station_short="${station_short//\\n/ }"
+      station_short="${station_short//\\t/ }"
+      station_short="${station_short//\\\\/\\}"
 
       [[ -z "${title}" ]] && title="${slug}"
-      [[ -z "${station}" ]] && station="No station"
-      printf '%s\t%s\t%s\n' "${slug}" "${title}" "${station}" > "${row_file}"
+      if [[ -z "${station}" ]]; then
+        station="No station"
+        station_short="none"
+      fi
+      if [[ -z "${station_short}" ]]; then
+        station_short="unknown"
+      fi
+      station_short="$(printf '%s' "${station_short}" | tr '[:upper:]' '[:lower:]')"
+      printf '%s\t%s\t%s\t%s\n' "${slug}" "${title}" "${station}" "${station_short}" > "${row_file}"
     ) &
 
     catalog_pids+=("$!")
@@ -584,7 +645,7 @@ collect_podcast_catalog_file() {
     cat "${row_file}" >> "${raw_file}"
   done
 
-  awk -F '\t' '!seen[$1]++ { print $1"\t"$2"\t"$3 }' "${raw_file}" > "${out_file}"
+  awk -F '\t' '!seen[$1]++ { print $1"\t"$2"\t"$3"\t"$4 }' "${raw_file}" > "${out_file}"
   rm -rf "${tmp_dir}" 2>/dev/null || true
 }
 
@@ -604,7 +665,7 @@ print_podcasts_alpha() {
         print ""
         print "[" grp "]"
       }
-      printf "  - %s (%s) [%s]\n", $2, $1, $3
+      printf "  - %s (%s) [%s:%s]\n", $2, $1, $3, $4
     }'
 }
 
@@ -617,8 +678,9 @@ print_podcasts_station() {
     {
       if ($3 != grp) {
         grp=$3
+        grp_short=$4
         print ""
-        print "[" grp "]"
+        print "[" grp " | " grp_short "]"
       }
       printf "  - %s (%s)\n", $2, $1
     }'
@@ -632,11 +694,20 @@ if [[ "${LIST_STATIONS_ONLY}" -eq 1 ]]; then
   collect_stations_file "${STATIONS_FILE}"
   station_count="$(wc -l < "${STATIONS_FILE}" | tr -d '[:space:]')"
   finish_stage "Loaded ${station_count} stations."
-  printf 'Available RaiPlaySound radio stations:\n'
-  while IFS=$'\t' read -r station_name station_link station_json_path; do
+  if [[ "${STATIONS_DETAILED}" -eq 1 ]]; then
+    printf 'Available RaiPlaySound radio stations (detailed):\n'
+  else
+    printf 'Available RaiPlaySound radio stations (short -> name):\n'
+  fi
+  while IFS=$'\t' read -r station_short station_name station_link station_json_path; do
     [[ -z "${station_name}" ]] && continue
-    printf '  - %s (%s)\n' "${station_name}" "https://www.raiplaysound.it${station_link}"
-    printf '      feed: https://www.raiplaysound.it%s\n' "${station_json_path}"
+    if [[ "${STATIONS_DETAILED}" -eq 1 ]]; then
+      printf '  - %-16s %s\n' "${station_short}" "${station_name}"
+      printf '      page: %s\n' "https://www.raiplaysound.it${station_link}"
+      printf '      feed: %s\n' "https://www.raiplaysound.it${station_json_path}"
+    else
+      printf '  - %-16s %s\n' "${station_short}" "${station_name}"
+    fi
   done < "${STATIONS_FILE}"
   exit 0
 fi
@@ -645,9 +716,18 @@ if [[ "${LIST_PODCASTS_ONLY}" -eq 1 ]]; then
   LIST_TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/raiplaysound-list.XXXXXX")"
   trap 'rm -rf "${LIST_TMP_DIR}" 2>/dev/null || true' EXIT
   PODCASTS_FILE="${LIST_TMP_DIR}/podcasts.tsv"
+  PODCASTS_FILTERED_FILE="${LIST_TMP_DIR}/podcasts-filtered.tsv"
   mkdir -p "$(dirname "${CATALOG_CACHE_FILE}")"
+  cache_format_ok="0"
+  set +e
+  podcast_cache_format_is_current "${CATALOG_CACHE_FILE}"
+  cache_format_rc=$?
+  set -e
+  if [[ "${cache_format_rc}" -eq 0 ]]; then
+    cache_format_ok="1"
+  fi
   cache_is_fresh="0"
-  if [[ "${FORCE_REFRESH_CATALOG}" -eq 0 ]]; then
+  if [[ "${FORCE_REFRESH_CATALOG}" -eq 0 ]] && [[ "${cache_format_ok}" -eq 1 ]]; then
     set +e
     cache_file_is_fresh "${CATALOG_CACHE_FILE}" "${CATALOG_MAX_AGE_HOURS}"
     cache_check_rc=$?
@@ -667,8 +747,21 @@ if [[ "${LIST_PODCASTS_ONLY}" -eq 1 ]]; then
     cp "${PODCASTS_FILE}" "${CATALOG_CACHE_FILE}"
     finish_stage "Podcast catalog cache updated: ${CATALOG_CACHE_FILE}"
   fi
-  podcast_count="$(wc -l < "${PODCASTS_FILE}" | tr -d '[:space:]')"
-  finish_stage "Collected ${podcast_count} podcasts."
+
+  if [[ -n "${STATION_FILTER}" ]]; then
+    awk -F '\t' -v station_filter="${STATION_FILTER}" 'tolower($4) == station_filter { print }' "${PODCASTS_FILE}" > "${PODCASTS_FILTERED_FILE}"
+    PODCASTS_FILE="${PODCASTS_FILTERED_FILE}"
+    podcast_count="$(wc -l < "${PODCASTS_FILE}" | tr -d '[:space:]')"
+    finish_stage "Collected ${podcast_count} podcasts for station '${STATION_FILTER}'."
+    if [[ "${podcast_count}" -eq 0 ]]; then
+      echo "No podcasts found for station short name '${STATION_FILTER}'." >&2
+      echo "Use --list-stations to see valid values (or use 'none' for podcasts without station)." >&2
+      exit 1
+    fi
+  else
+    podcast_count="$(wc -l < "${PODCASTS_FILE}" | tr -d '[:space:]')"
+    finish_stage "Collected ${podcast_count} podcasts."
+  fi
 
   if [[ "${PODCASTS_GROUP_BY}" == "alpha" ]] || [[ "${PODCASTS_GROUP_BY}" == "both" ]]; then
     print_podcasts_alpha "${PODCASTS_FILE}"
