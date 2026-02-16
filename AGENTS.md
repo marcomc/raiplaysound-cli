@@ -5,6 +5,11 @@
 This repository provides a Bash-based downloader for RaiPlaySound programs.
 The main goal is to download program episodes from a RaiPlaySound program slug or URL into `~/Music/RaiPlaySound/<slug>/`, with idempotent repeat runs using `yt-dlp --download-archive`.
 
+## New Chat Bootstrap
+
+- At the start of every new AI agent chat for this repository, read `README.md`.
+- At the start of every new AI agent chat for this repository, read `Makefile`.
+
 ## Bash Quality Rules
 
 - All Bash scripts must pass `shellcheck --enable=all`.

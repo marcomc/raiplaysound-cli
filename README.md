@@ -66,6 +66,14 @@ The CLI requires Bash 4+. On macOS it will auto-reexec with Homebrew Bash (`/opt
 chmod +x ./raiplaysound-cli.sh
 ```
 
+1. Optional: install/update for current user with `make`:
+
+```bash
+make install
+```
+
+This installs to `~/.local/bin/raiplaysound-cli`.
+
 ## Dot Config Defaults
 
 The script reads an optional user config file at:
