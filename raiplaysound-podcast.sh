@@ -649,6 +649,108 @@ collect_podcast_catalog_file() {
   rm -rf "${tmp_dir}" 2>/dev/null || true
 }
 
+collect_station_podcast_catalog_file() {
+  local station_short="$1"
+  local out_file="$2"
+  local tmp_dir station_json_url station_json_file slug_file raw_file
+  local station_jobs="12"
+  local slug_total station_display_raw station_display
+
+  station_json_url="https://www.raiplaysound.it/${station_short}.json"
+  tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/raiplaysound-station-catalog.XXXXXX")"
+  station_json_file="${tmp_dir}/station.json"
+  slug_file="${tmp_dir}/station-slugs.txt"
+  raw_file="${tmp_dir}/station-raw.tsv"
+
+  curl -Ls --connect-timeout 5 --max-time 30 --retry 2 "${station_json_url}" > "${station_json_file}"
+
+  station_display_raw="$(tr -d '\n' < "${station_json_file}" | awk -F '"title":"' '{if (NF>1) { split($2,a,"\""); print a[1] }}')"
+  station_display="${station_display_raw//\\\//\/}"
+  station_display="${station_display//\\\"/\"}"
+  station_display="${station_display//\\n/ }"
+  station_display="${station_display//\\t/ }"
+  station_display="${station_display//\\\\/\\}"
+  if [[ -z "${station_display}" ]]; then
+    station_display="${station_short}"
+  fi
+
+  rg -o '/programmi/[A-Za-z0-9-]+' "${station_json_file}" \
+    | sed 's#^/programmi/##' \
+    | sort -u > "${slug_file}"
+
+  slug_total="$(wc -l < "${slug_file}" | tr -d '[:space:]')"
+  if [[ "${slug_total}" -eq 0 ]]; then
+    rm -rf "${tmp_dir}" 2>/dev/null || true
+    return 1
+  fi
+
+  show_stage "Fetching station podcasts for '${station_short}' (${slug_total} programs) ..."
+
+  : > "${raw_file}"
+  declare -a station_pids=()
+  declare -a station_rows=()
+  station_running=0
+  station_index=0
+
+  while IFS= read -r slug; do
+    [[ -z "${slug}" ]] && continue
+
+    while [[ "${station_running}" -ge "${station_jobs}" ]]; do
+      for ((j = 0; j < ${#station_pids[@]}; j++)); do
+        if [[ "${station_pids[j]}" != "0" ]] && ! kill -0 "${station_pids[j]}" 2>/dev/null; then
+          wait "${station_pids[j]}" || true
+          station_pids[j]="0"
+          station_running=$((station_running - 1))
+        fi
+      done
+      sleep 0.02
+    done
+
+    row_file="${tmp_dir}/station-row-${station_index}.tsv"
+    (
+      json_line="$(curl -Ls --connect-timeout 5 --max-time 20 --retry 1 "https://www.raiplaysound.it/programmi/${slug}.json" | tr -d '\n' || true)"
+      [[ -z "${json_line}" ]] && exit 0
+
+      title_raw="$(printf '%s' "${json_line}" | awk -F '"title":"' '{if (NF>1) { split($2,a,"\""); print a[1] }}')"
+      station_raw="$(printf '%s' "${json_line}" | awk -F '"channel":{"name":"' '{if (NF>1) { split($2,a,"\""); print a[1] }}')"
+      title="${title_raw//\\\//\/}"
+      title="${title//\\\"/\"}"
+      title="${title//\\n/ }"
+      title="${title//\\t/ }"
+      title="${title//\\\\/\\}"
+      station="${station_raw//\\\//\/}"
+      station="${station//\\\"/\"}"
+      station="${station//\\n/ }"
+      station="${station//\\t/ }"
+      station="${station//\\\\/\\}"
+
+      [[ -z "${title}" ]] && title="${slug}"
+      [[ -z "${station}" ]] && station="${station_display}"
+      printf '%s\t%s\t%s\t%s\n' "${slug}" "${title}" "${station}" "${station_short}" > "${row_file}"
+    ) &
+
+    station_pids+=("$!")
+    station_rows+=("${row_file}")
+    station_running=$((station_running + 1))
+    station_index=$((station_index + 1))
+  done < "${slug_file}"
+
+  for ((j = 0; j < ${#station_pids[@]}; j++)); do
+    if [[ "${station_pids[j]}" != "0" ]]; then
+      wait "${station_pids[j]}" || true
+    fi
+  done
+
+  for row_file in "${station_rows[@]}"; do
+    [[ -f "${row_file}" ]] || continue
+    cat "${row_file}" >> "${raw_file}"
+  done
+
+  awk -F '\t' '!seen[$1]++ { print $1"\t"$2"\t"$3"\t"$4 }' "${raw_file}" > "${out_file}"
+  rm -rf "${tmp_dir}" 2>/dev/null || true
+  return 0
+}
+
 print_podcasts_alpha() {
   local catalog_file="$1"
   local count
@@ -717,35 +819,49 @@ if [[ "${LIST_PODCASTS_ONLY}" -eq 1 ]]; then
   trap 'rm -rf "${LIST_TMP_DIR}" 2>/dev/null || true' EXIT
   PODCASTS_FILE="${LIST_TMP_DIR}/podcasts.tsv"
   PODCASTS_FILTERED_FILE="${LIST_TMP_DIR}/podcasts-filtered.tsv"
-  mkdir -p "$(dirname "${CATALOG_CACHE_FILE}")"
-  cache_format_ok="0"
-  set +e
-  podcast_cache_format_is_current "${CATALOG_CACHE_FILE}"
-  cache_format_rc=$?
-  set -e
-  if [[ "${cache_format_rc}" -eq 0 ]]; then
-    cache_format_ok="1"
-  fi
-  cache_is_fresh="0"
-  if [[ "${FORCE_REFRESH_CATALOG}" -eq 0 ]] && [[ "${cache_format_ok}" -eq 1 ]]; then
+  if [[ -n "${STATION_FILTER}" ]] && [[ "${STATION_FILTER}" != "none" ]]; then
+    show_stage "Collecting station-scoped podcast catalog ..."
     set +e
-    cache_file_is_fresh "${CATALOG_CACHE_FILE}" "${CATALOG_MAX_AGE_HOURS}"
-    cache_check_rc=$?
+    collect_station_podcast_catalog_file "${STATION_FILTER}" "${PODCASTS_FILE}"
+    station_collect_rc=$?
     set -e
-    if [[ "${cache_check_rc}" -eq 0 ]]; then
-      cache_is_fresh="1"
+    if [[ "${station_collect_rc}" -ne 0 ]]; then
+      echo "Error: unable to find podcasts for station short name '${STATION_FILTER}'." >&2
+      echo "Use --list-stations to see valid values." >&2
+      exit 1
     fi
-  fi
-
-  if [[ "${cache_is_fresh}" -eq 1 ]]; then
-    show_stage "Using cached podcast catalog ..."
-    cp "${CATALOG_CACHE_FILE}" "${PODCASTS_FILE}"
-    finish_stage "Podcast catalog cache hit."
+    finish_stage "Station-scoped catalog ready."
   else
-    show_stage "Collecting podcast catalog (this can take a while) ..."
-    collect_podcast_catalog_file "${PODCASTS_FILE}"
-    cp "${PODCASTS_FILE}" "${CATALOG_CACHE_FILE}"
-    finish_stage "Podcast catalog cache updated: ${CATALOG_CACHE_FILE}"
+    mkdir -p "$(dirname "${CATALOG_CACHE_FILE}")"
+    cache_format_ok="0"
+    set +e
+    podcast_cache_format_is_current "${CATALOG_CACHE_FILE}"
+    cache_format_rc=$?
+    set -e
+    if [[ "${cache_format_rc}" -eq 0 ]]; then
+      cache_format_ok="1"
+    fi
+    cache_is_fresh="0"
+    if [[ "${FORCE_REFRESH_CATALOG}" -eq 0 ]] && [[ "${cache_format_ok}" -eq 1 ]]; then
+      set +e
+      cache_file_is_fresh "${CATALOG_CACHE_FILE}" "${CATALOG_MAX_AGE_HOURS}"
+      cache_check_rc=$?
+      set -e
+      if [[ "${cache_check_rc}" -eq 0 ]]; then
+        cache_is_fresh="1"
+      fi
+    fi
+
+    if [[ "${cache_is_fresh}" -eq 1 ]]; then
+      show_stage "Using cached podcast catalog ..."
+      cp "${CATALOG_CACHE_FILE}" "${PODCASTS_FILE}"
+      finish_stage "Podcast catalog cache hit."
+    else
+      show_stage "Collecting podcast catalog (this can take a while) ..."
+      collect_podcast_catalog_file "${PODCASTS_FILE}"
+      cp "${PODCASTS_FILE}" "${CATALOG_CACHE_FILE}"
+      finish_stage "Podcast catalog cache updated: ${CATALOG_CACHE_FILE}"
+    fi
   fi
 
   if [[ -n "${STATION_FILTER}" ]]; then
