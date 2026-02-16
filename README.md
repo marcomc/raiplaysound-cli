@@ -21,6 +21,7 @@ A Bash-based downloader for RaiPlaySound programs that accepts a podcast slug or
 - Detects season numbers (from metadata or title patterns like `S2E13`) and prints selected seasons before download
 - Supports season filtering for downloads (`--seasons`)
 - Supports season and episode discovery modes (`--list-seasons`, `--list-episodes`)
+- Refreshes metadata automatically when cached data is older than 24 hours (configurable)
 
 ## Installation
 
@@ -109,6 +110,30 @@ Enable debug log in a specific file path:
 ```bash
 ./raiplaysound-podcast.sh --log=/tmp/raiplaysound-debug.log america7
 ```
+
+Force metadata refresh:
+
+```bash
+./raiplaysound-podcast.sh --refresh-metadata america7
+```
+
+Clear metadata cache manually:
+
+```bash
+./raiplaysound-podcast.sh --clear-metadata-cache america7
+```
+
+Set metadata cache max age in hours:
+
+```bash
+./raiplaysound-podcast.sh --metadata-max-age-hours 6 america7
+```
+
+When to clear metadata cache manually:
+
+- `--list-seasons` or `--list-episodes` output looks inconsistent after major site-side changes.
+- You suspect cached metadata is corrupted (for example, missing titles/dates for many known episodes).
+- You want to force a clean rebuild and avoid waiting for automatic cache expiration.
 
 List available seasons (with inferred publication year range):
 

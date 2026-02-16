@@ -4,7 +4,7 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 Usage:
-  raiplaysound-podcast.sh [--format FORMAT] [--jobs N] [--seasons LIST|all] [--redownload-missing] [--list-seasons] [--list-episodes] [--log[=PATH]] <slug|program_url>
+  raiplaysound-podcast.sh [--format FORMAT] [--jobs N] [--seasons LIST|all] [--redownload-missing] [--list-seasons] [--list-episodes] [--log[=PATH]] [--refresh-metadata] [--clear-metadata-cache] [--metadata-max-age-hours N] <slug|program_url>
 
 Examples:
   raiplaysound-podcast.sh musicalbox
@@ -16,6 +16,8 @@ Examples:
   raiplaysound-podcast.sh --list-episodes --seasons 2 america7
   raiplaysound-podcast.sh --log america7
   raiplaysound-podcast.sh --log=/tmp/raiplaysound-debug.log america7
+  raiplaysound-podcast.sh --refresh-metadata america7
+  raiplaysound-podcast.sh --clear-metadata-cache america7
   raiplaysound-podcast.sh --redownload-missing america7
 
 Supported formats:
@@ -37,6 +39,9 @@ LIST_SEASONS_ONLY="0"
 LIST_EPISODES_ONLY="0"
 ENABLE_LOG="0"
 LOG_PATH_ARG=""
+FORCE_REFRESH_METADATA="0"
+CLEAR_METADATA_CACHE="0"
+METADATA_MAX_AGE_HOURS="${RAIPLAYSOUND_METADATA_MAX_AGE_HOURS:-24}"
 INPUT=""
 
 while [[ "$#" -gt 0 ]]; do
@@ -104,6 +109,23 @@ while [[ "$#" -gt 0 ]]; do
       LIST_EPISODES_ONLY="1"
       shift
       ;;
+    --refresh-metadata)
+      FORCE_REFRESH_METADATA="1"
+      shift
+      ;;
+    --clear-metadata-cache)
+      CLEAR_METADATA_CACHE="1"
+      shift
+      ;;
+    --metadata-max-age-hours)
+      if [[ "$#" -lt 2 ]]; then
+        echo "Error: --metadata-max-age-hours requires a value." >&2
+        usage
+        exit 1
+      fi
+      METADATA_MAX_AGE_HOURS="$2"
+      shift 2
+      ;;
     --)
       shift
       break
@@ -153,6 +175,11 @@ esac
 
 if ! [[ "${JOBS}" =~ ^[0-9]+$ ]] || [[ "${JOBS}" -lt 1 ]]; then
   echo "Error: --jobs must be a positive integer." >&2
+  exit 1
+fi
+
+if ! [[ "${METADATA_MAX_AGE_HOURS}" =~ ^[0-9]+$ ]]; then
+  echo "Error: --metadata-max-age-hours must be a non-negative integer." >&2
   exit 1
 fi
 
@@ -248,9 +275,15 @@ fi
 TARGET_BASE="${HOME}/Music/RaiPlaySound"
 TARGET_DIR="${TARGET_BASE}/${SLUG}"
 ARCHIVE_FILE="${TARGET_DIR}/.download-archive.txt"
+METADATA_CACHE_FILE="${TARGET_DIR}/.metadata-cache.tsv"
 OUTPUT_TEMPLATE="${TARGET_DIR}/%(series,playlist_title,uploader)s - S%(season_number|0)02d%(episode_number|0)02d - %(upload_date>%Y-%m-%d)s - %(episode,title)s.%(ext)s"
 
 mkdir -p "${TARGET_DIR}"
+
+if [[ "${CLEAR_METADATA_CACHE}" -eq 1 ]]; then
+  rm -f "${METADATA_CACHE_FILE}"
+  finish_stage "Metadata cache cleared: ${METADATA_CACHE_FILE}"
+fi
 
 LOCK_DIR="${TARGET_DIR}/.run-lock"
 LOCK_PID_FILE="${LOCK_DIR}/pid"
@@ -387,34 +420,108 @@ declare -a EPISODE_YEARS=()
 declare -A SEASON_COUNTS=()
 declare -A SEASON_YEAR_MIN=()
 declare -A SEASON_YEAR_MAX=()
+declare -A CACHE_UPLOAD_BY_ID=()
+declare -A CACHE_TITLE_BY_ID=()
+declare -A CACHE_SEASON_BY_ID=()
 declare -A META_UPLOAD_BY_ID=()
 declare -A META_TITLE_BY_ID=()
 declare -A META_SEASON_BY_ID=()
 SHOW_YEAR_MIN=""
 SHOW_YEAR_MAX=""
 DETECTED_SEASON_EVIDENCE="0"
+CACHE_IS_FRESH="0"
+if [[ "${FORCE_REFRESH_METADATA}" -eq 1 ]]; then
+  CACHE_IS_FRESH="0"
+elif [[ -f "${METADATA_CACHE_FILE}" ]]; then
+  cache_mtime="$(stat -f '%m' "${METADATA_CACHE_FILE}" 2>/dev/null || true)"
+  if [[ -z "${cache_mtime}" ]]; then
+    cache_mtime="$(stat -c '%Y' "${METADATA_CACHE_FILE}" 2>/dev/null || true)"
+  fi
+  now_epoch="$(date '+%s')"
+  max_age_seconds=$((METADATA_MAX_AGE_HOURS * 3600))
+  if [[ "${cache_mtime}" =~ ^[0-9]+$ ]] && [[ "${now_epoch}" =~ ^[0-9]+$ ]]; then
+    cache_age_seconds=$((now_epoch - cache_mtime))
+    if [[ "${cache_age_seconds}" -ge 0 ]] && [[ "${cache_age_seconds}" -le "${max_age_seconds}" ]]; then
+      CACHE_IS_FRESH="1"
+    fi
+  fi
+fi
+
+if [[ "${CACHE_IS_FRESH}" -eq 1 ]]; then
+  while IFS=$'\t' read -r cache_id cache_upload cache_season cache_title; do
+    [[ -z "${cache_id}" ]] && continue
+    CACHE_UPLOAD_BY_ID["${cache_id}"]="${cache_upload}"
+    CACHE_SEASON_BY_ID["${cache_id}"]="${cache_season}"
+    CACHE_TITLE_BY_ID["${cache_id}"]="${cache_title}"
+  done < "${METADATA_CACHE_FILE}"
+fi
+
+show_stage "Checking metadata cache ..."
+need_metadata_fetch="0"
+for ((i = 0; i < TOTAL; i++)); do
+  episode_id="${EPISODE_IDS[i]}"
+  cache_upload="${CACHE_UPLOAD_BY_ID[${episode_id}]:-}"
+  cache_title="${CACHE_TITLE_BY_ID[${episode_id}]:-}"
+  cache_season="${CACHE_SEASON_BY_ID[${episode_id}]:-NA}"
+
+  if [[ -z "${cache_upload}" ]] || [[ -z "${cache_title}" ]] || [[ "${cache_title}" == "NA" ]]; then
+    need_metadata_fetch="1"
+    break
+  fi
+
+  META_UPLOAD_BY_ID["${episode_id}"]="${cache_upload}"
+  META_TITLE_BY_ID["${episode_id}"]="${cache_title}"
+  META_SEASON_BY_ID["${episode_id}"]="${cache_season}"
+done
+if [[ "${FORCE_REFRESH_METADATA}" -eq 1 ]]; then
+  need_metadata_fetch="1"
+  finish_stage "Forced metadata refresh requested."
+elif [[ "${need_metadata_fetch}" -eq 0 ]]; then
+  finish_stage "Metadata cache hit for ${TOTAL} episodes."
+elif [[ -f "${METADATA_CACHE_FILE}" ]] && [[ "${CACHE_IS_FRESH}" -eq 0 ]]; then
+  finish_stage "Metadata cache is stale. Refreshing."
+fi
 
 METADATA_RAW_FILE="${WORK_DIR}/metadata-raw.tsv"
 METADATA_FILE="${WORK_DIR}/metadata.tsv"
 touch "${METADATA_RAW_FILE}"
 
-feed_total="$(wc -l < "${SEASON_SOURCES_FILE}" | tr -d '[:space:]')"
-feed_index=0
-while IFS= read -r season_source; do
-  [[ -z "${season_source}" ]] && continue
-  feed_index=$((feed_index + 1))
-  show_stage "Collecting metadata feed ${feed_index}/${feed_total} ..."
-  yt-dlp --skip-download --ignore-errors --print $'%(id)s\t%(upload_date|NA)s\t%(title|NA)s\t%(season_number|NA)s' "${season_source}" \
-    | awk -F '\t' 'NF >= 4 { print $1"\t"$2"\t"$3"\t"$4 }' >> "${METADATA_RAW_FILE}"
-done < "${SEASON_SOURCES_FILE}"
+if [[ "${need_metadata_fetch}" -eq 1 ]]; then
+  feed_total="$(wc -l < "${SEASON_SOURCES_FILE}" | tr -d '[:space:]')"
+  feed_index=0
+  while IFS= read -r season_source; do
+    [[ -z "${season_source}" ]] && continue
+    feed_index=$((feed_index + 1))
+    show_stage "Collecting metadata feed ${feed_index}/${feed_total} ..."
+    yt-dlp --skip-download --ignore-errors --print $'%(id)s\t%(upload_date|NA)s\t%(title|NA)s\t%(season_number|NA)s' "${season_source}" \
+      | awk -F '\t' 'NF >= 4 { print $1"\t"$2"\t"$3"\t"$4 }' >> "${METADATA_RAW_FILE}"
+  done < "${SEASON_SOURCES_FILE}"
 
-awk -F '\t' '!seen[$1]++ { print $1"\t"$2"\t"$3"\t"$4 }' "${METADATA_RAW_FILE}" > "${METADATA_FILE}"
-while IFS=$'\t' read -r meta_id meta_upload meta_title meta_season; do
-  [[ -z "${meta_id}" ]] && continue
-  META_UPLOAD_BY_ID["${meta_id}"]="${meta_upload}"
-  META_TITLE_BY_ID["${meta_id}"]="${meta_title}"
-  META_SEASON_BY_ID["${meta_id}"]="${meta_season}"
-done < "${METADATA_FILE}"
+  awk -F '\t' '!seen[$1]++ { print $1"\t"$2"\t"$3"\t"$4 }' "${METADATA_RAW_FILE}" > "${METADATA_FILE}"
+  while IFS=$'\t' read -r meta_id meta_upload meta_title meta_season; do
+    [[ -z "${meta_id}" ]] && continue
+    META_UPLOAD_BY_ID["${meta_id}"]="${meta_upload}"
+    META_TITLE_BY_ID["${meta_id}"]="${meta_title}"
+    META_SEASON_BY_ID["${meta_id}"]="${meta_season}"
+    CACHE_UPLOAD_BY_ID["${meta_id}"]="${meta_upload}"
+    CACHE_TITLE_BY_ID["${meta_id}"]="${meta_title}"
+    CACHE_SEASON_BY_ID["${meta_id}"]="${meta_season}"
+  done < "${METADATA_FILE}"
+
+  METADATA_CACHE_TMP="${WORK_DIR}/metadata-cache.tmp"
+  {
+    printf '%s\n' "${!CACHE_UPLOAD_BY_ID[@]}" "${!CACHE_TITLE_BY_ID[@]}" | awk 'NF' | sort -u | while IFS= read -r cid; do
+      [[ -z "${cid}" ]] && continue
+      c_upload="${CACHE_UPLOAD_BY_ID[${cid}]:-NA}"
+      c_season="${CACHE_SEASON_BY_ID[${cid}]:-NA}"
+      c_title="${CACHE_TITLE_BY_ID[${cid}]:-NA}"
+      c_title="${c_title//$'\t'/ }"
+      c_title="${c_title//$'\n'/ }"
+      printf '%s\t%s\t%s\t%s\n' "${cid}" "${c_upload}" "${c_season}" "${c_title}"
+    done
+  } > "${METADATA_CACHE_TMP}"
+  mv "${METADATA_CACHE_TMP}" "${METADATA_CACHE_FILE}"
+fi
 
 for ((i = 0; i < TOTAL; i++)); do
   show_stage "Normalizing metadata ${i}/${TOTAL} ..."
