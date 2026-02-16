@@ -184,7 +184,7 @@ fi
 show_stage() {
   local message="$1"
   if [[ "${IS_TTY}" -eq 1 ]]; then
-    printf '\r%b==>%b %s' "${C_CYAN}" "${C_RESET}" "${message}"
+    printf '\r%b==>%b %s\033[K' "${C_CYAN}" "${C_RESET}" "${message}"
   else
     printf '%b==>%b %s\n' "${C_CYAN}" "${C_RESET}" "${message}"
   fi
@@ -193,7 +193,7 @@ show_stage() {
 finish_stage() {
   local message="$1"
   if [[ "${IS_TTY}" -eq 1 ]]; then
-    printf '\r%b==>%b %s\n' "${C_GREEN}" "${C_RESET}" "${message}"
+    printf '\r%b==>%b %s\033[K\n' "${C_GREEN}" "${C_RESET}" "${message}"
   else
     printf '%b==>%b %s\n' "${C_GREEN}" "${C_RESET}" "${message}"
   fi
@@ -947,18 +947,18 @@ render_progress() {
     RENDER_INITIALIZED="1"
   fi
 
-  printf '[%s] Starting download\n' "${START_TS}"
-  printf 'Slug: %s\n' "${SLUG}"
-  printf 'Program URL: %s\n' "${PROGRAM_URL}"
-  printf 'Seasons: %s\n' "${DOWNLOAD_SEASONS_LABEL}"
-  printf 'Output directory: %s\n' "${TARGET_DIR}"
-  printf 'Archive file: %s\n' "${ARCHIVE_FILE}"
-  printf 'Output format: %s\n' "${AUDIO_FORMAT}"
-  printf 'Parallel jobs: %s\n' "${JOBS}"
+  printf '[%s] Starting download\033[K\n' "${START_TS}"
+  printf 'Slug: %s\033[K\n' "${SLUG}"
+  printf 'Program URL: %s\033[K\n' "${PROGRAM_URL}"
+  printf 'Seasons: %s\033[K\n' "${DOWNLOAD_SEASONS_LABEL}"
+  printf 'Output directory: %s\033[K\n' "${TARGET_DIR}"
+  printf 'Archive file: %s\033[K\n' "${ARCHIVE_FILE}"
+  printf 'Output format: %s\033[K\n' "${AUDIO_FORMAT}"
+  printf 'Parallel jobs: %s\033[K\n' "${JOBS}"
   if [[ "${ENABLE_LOG}" -eq 1 ]]; then
-    printf 'Log file: %s\n' "${LOG_FILE}"
+    printf 'Log file: %s\033[K\n' "${LOG_FILE}"
   fi
-  printf '%b==>%b Progress: %d/%d episodes, running=%d\n\n' "${C_CYAN}" "${C_RESET}" "${completed_count}" "${TOTAL}" "${running_count}"
+  printf '%b==>%b Progress: %d/%d episodes, running=%d\033[K\n\033[K\n' "${C_CYAN}" "${C_RESET}" "${completed_count}" "${TOTAL}" "${running_count}"
 
   for ((idx = 0; idx < TOTAL; idx++)); do
     IFS='|' read -r state percent size label < "${STATUS_FILES[idx]}"
@@ -1035,12 +1035,12 @@ render_progress() {
     esac
 
     bar="$(make_bar "${percent}")"
-    printf '%2d. %b%-11s%b [%s] %3d%%  %-18s %s\n' "$((i + 1))" "${color}" "${state}" "${C_RESET}" "${bar}" "${percent}" "${size}" "${label}"
+    printf '%2d. %b%-11s%b [%s] %3d%%  %-18s %s\033[K\n' "$((i + 1))" "${color}" "${state}" "${C_RESET}" "${bar}" "${percent}" "${size}" "${label}"
   done
 
   if [[ "${RENDER_COMPACT}" -eq 1 ]]; then
     hidden_count=$((TOTAL - display_count))
-    printf '%b==>%b Showing %d/%d rows (%d hidden due to terminal height)\n' "${C_BLUE}" "${C_RESET}" "${display_count}" "${TOTAL}" "${hidden_count}"
+    printf '%b==>%b Showing %d/%d rows (%d hidden due to terminal height)\033[K\n' "${C_BLUE}" "${C_RESET}" "${display_count}" "${TOTAL}" "${hidden_count}"
   fi
 }
 
