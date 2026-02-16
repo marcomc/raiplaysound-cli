@@ -221,7 +221,7 @@ List stations with detailed URLs (station page and feed):
 ./raiplaysound-podcast.sh --list-stations --stations-detailed
 ```
 
-List all podcasts (both alphabetic and by station):
+List podcasts using default grouping behavior:
 
 ```bash
 ./raiplaysound-podcast.sh --list-podcasts
@@ -261,6 +261,47 @@ Set podcast catalog cache max age in hours:
 
 ```bash
 ./raiplaysound-podcast.sh --catalog-max-age-hours 12 --list-podcasts
+```
+
+## Option Examples
+
+```bash
+# Help
+./raiplaysound-podcast.sh --help
+
+# Download mode
+./raiplaysound-podcast.sh musicalbox
+./raiplaysound-podcast.sh --format mp3 --jobs 4 musicalbox
+./raiplaysound-podcast.sh --seasons 1,2 america7
+./raiplaysound-podcast.sh --seasons all america7
+./raiplaysound-podcast.sh --redownload-missing america7
+
+# Metadata cache controls
+./raiplaysound-podcast.sh --refresh-metadata america7
+./raiplaysound-podcast.sh --clear-metadata-cache america7
+./raiplaysound-podcast.sh --metadata-max-age-hours 12 america7
+
+# Logging
+./raiplaysound-podcast.sh --log america7
+./raiplaysound-podcast.sh --log=/tmp/raiplaysound-debug.log america7
+
+# Season/episode listing
+./raiplaysound-podcast.sh --list-seasons america7
+./raiplaysound-podcast.sh --list-episodes --seasons 2 america7
+
+# Station listing
+./raiplaysound-podcast.sh --list-stations
+./raiplaysound-podcast.sh --list-stations --stations-detailed
+
+# Podcast listing
+./raiplaysound-podcast.sh --list-podcasts
+./raiplaysound-podcast.sh --list-podcasts --station radio2
+./raiplaysound-podcast.sh --list-podcasts --station none
+./raiplaysound-podcast.sh --list-podcasts --podcasts-group-by station
+./raiplaysound-podcast.sh --list-podcasts --podcasts-group-by alpha
+./raiplaysound-podcast.sh --list-podcasts --sorted
+./raiplaysound-podcast.sh --refresh-podcast-catalog --list-podcasts
+./raiplaysound-podcast.sh --catalog-max-age-hours 2160 --list-podcasts
 ```
 
 Reference episode example for this program:

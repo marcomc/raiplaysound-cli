@@ -3,41 +3,54 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Usage:
-  raiplaysound-podcast.sh [--format FORMAT] [--jobs N] [--seasons LIST|all] [--redownload-missing] [--list-seasons] [--list-episodes] [--list-stations] [--stations-detailed] [--list-podcasts] [--podcasts-group-by MODE] [--station STATION_SHORT] [--sorted] [--refresh-podcast-catalog] [--catalog-max-age-hours N] [--log[=PATH]] [--refresh-metadata] [--clear-metadata-cache] [--metadata-max-age-hours N] [<slug|program_url>]
+Usage: raiplaysound-podcast.sh [OPTIONS] <slug|program_url>
+       raiplaysound-podcast.sh [OPTIONS] --list-seasons <slug|program_url>
+       raiplaysound-podcast.sh [OPTIONS] --list-episodes <slug|program_url>
+       raiplaysound-podcast.sh [OPTIONS] --list-stations
+       raiplaysound-podcast.sh [OPTIONS] --list-podcasts
+
+Input:
+  <slug|program_url>          RaiPlaySound program slug (e.g. musicalbox)
+                              or full URL (https://www.raiplaysound.it/programmi/<slug>)
+
+Options:
+  -h, --help                  Show this help and exit
+  -f, --format FORMAT         Audio format: mp3|m4a|aac|ogg|opus|flac|wav (default: m4a)
+  -j, --jobs N                Parallel download jobs (default: 3)
+  -s, --seasons LIST|all      Season filter for downloads/list-episodes (e.g. 1,2 or all)
+      --redownload-missing    Re-download archive-marked episodes missing locally
+      --log[=PATH]            Enable debug log (default path in target dir if omitted)
+      --refresh-metadata      Force refresh of per-show metadata cache
+      --clear-metadata-cache  Clear per-show metadata cache before run
+      --metadata-max-age-hours N
+                              Max age for per-show metadata cache (default: 24)
+
+  Listing options:
+      --list-seasons          List seasons for a show
+      --list-episodes         List episodes for a show
+      --list-stations         List station short names and display names
+      --stations-detailed     With --list-stations: include station page/feed URLs
+      --list-podcasts         List podcasts
+      --podcasts-group-by MODE
+                              Grouping mode: auto|alpha|station (default: auto)
+      --station STATION_SHORT
+                              With --list-podcasts: filter to one station (e.g. radio2, none)
+      --sorted                With --list-podcasts: no grouping, sorted alphabetically
+      --refresh-podcast-catalog
+                              Force refresh of podcast catalog cache
+      --catalog-max-age-hours N
+                              Max age for podcast catalog cache (default: 2160 = 90 days)
 
 Examples:
   raiplaysound-podcast.sh musicalbox
-  raiplaysound-podcast.sh https://www.raiplaysound.it/programmi/musicalbox
   raiplaysound-podcast.sh --format mp3 --jobs 3 musicalbox
   raiplaysound-podcast.sh --seasons 1,2 america7
-  raiplaysound-podcast.sh --seasons all america7
   raiplaysound-podcast.sh --list-seasons america7
   raiplaysound-podcast.sh --list-episodes --seasons 2 america7
   raiplaysound-podcast.sh --list-stations
   raiplaysound-podcast.sh --list-stations --stations-detailed
-  raiplaysound-podcast.sh --list-podcasts
-  raiplaysound-podcast.sh --list-podcasts --podcasts-group-by station
   raiplaysound-podcast.sh --list-podcasts --station radio2
   raiplaysound-podcast.sh --list-podcasts --sorted
-  raiplaysound-podcast.sh --refresh-podcast-catalog --list-podcasts
-  raiplaysound-podcast.sh --log america7
-  raiplaysound-podcast.sh --log=/tmp/raiplaysound-debug.log america7
-  raiplaysound-podcast.sh --refresh-metadata america7
-  raiplaysound-podcast.sh --clear-metadata-cache america7
-  raiplaysound-podcast.sh --redownload-missing america7
-
-Supported formats:
-  mp3, m4a, aac, ogg, opus, flac, wav
-
-Default format:
-  m4a
-
-Default jobs:
-  3
-
-Podcast list grouping modes:
-  auto, alpha, station
 USAGE
 }
 
