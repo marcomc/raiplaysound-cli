@@ -259,11 +259,44 @@ trap cleanup EXIT
 declare -a EPISODE_IDS=()
 declare -a EPISODE_URLS=()
 declare -a EPISODE_LABELS=()
+declare -a EPISODE_SEASON_HINTS=()
 EPISODE_LIST_FILE="${WORK_DIR}/episodes.tsv"
-show_stage "Discovering episodes from ${PROGRAM_URL} ..."
-yt-dlp --flat-playlist --print $'%(id)s\t%(webpage_url)s' "${PROGRAM_URL}" > "${EPISODE_LIST_FILE}"
+SEASON_SOURCES_FILE="${WORK_DIR}/season-sources.txt"
+TMP_EPISODE_LIST_FILE="${WORK_DIR}/episodes-raw.tsv"
+touch "${TMP_EPISODE_LIST_FILE}"
 
-while IFS=$'\t' read -r episode_id episode_url; do
+show_stage "Discovering available season pages ..."
+curl -Ls "${PROGRAM_URL}" \
+  | rg -o "/programmi/${SLUG}/episodi/stagione-[0-9]+" \
+  | awk '!seen[$0]++ { print "https://www.raiplaysound.it"$0 }' \
+  | sort -u > "${SEASON_SOURCES_FILE}" || true
+
+if [[ ! -s "${SEASON_SOURCES_FILE}" ]]; then
+  printf '%s\n' "${PROGRAM_URL}" > "${SEASON_SOURCES_FILE}"
+  finish_stage "No explicit season pages found. Using main program feed."
+else
+  printf '%s\n' "${PROGRAM_URL}" >> "${SEASON_SOURCES_FILE}"
+  sort -u "${SEASON_SOURCES_FILE}" -o "${SEASON_SOURCES_FILE}"
+  season_source_count="$(wc -l < "${SEASON_SOURCES_FILE}" | tr -d '[:space:]')"
+  finish_stage "Found ${season_source_count} feeds (season pages + main)."
+fi
+
+show_stage "Discovering episodes from program feeds ..."
+while IFS= read -r season_source; do
+  [[ -z "${season_source}" ]] && continue
+  season_hint=""
+  if [[ "${season_source}" =~ stagione-([0-9]+)$ ]]; then
+    season_hint="${BASH_REMATCH[1]}"
+  fi
+
+  yt-dlp --flat-playlist --print $'%(id)s\t%(webpage_url)s' "${season_source}" \
+    | awk -F '\t' -v sh="${season_hint}" 'NF >= 2 { print $1"\t"$2"\t"sh }' >> "${TMP_EPISODE_LIST_FILE}"
+done < "${SEASON_SOURCES_FILE}"
+finish_stage "Episode feed scan completed."
+
+awk -F '\t' '!seen[$1]++ { print $1"\t"$2"\t"$3 }' "${TMP_EPISODE_LIST_FILE}" > "${EPISODE_LIST_FILE}"
+
+while IFS=$'\t' read -r episode_id episode_url season_hint; do
   if [[ -z "${episode_id}" ]] || [[ -z "${episode_url}" ]]; then
     continue
   fi
@@ -278,6 +311,7 @@ while IFS=$'\t' read -r episode_id episode_url; do
   EPISODE_IDS+=("${episode_id}")
   EPISODE_URLS+=("${episode_url}")
   EPISODE_LABELS+=("${label}")
+  EPISODE_SEASON_HINTS+=("${season_hint}")
 done < "${EPISODE_LIST_FILE}"
 
 TOTAL="${#EPISODE_IDS[@]}"
@@ -316,17 +350,45 @@ declare -a EPISODE_YEARS=()
 declare -A SEASON_COUNTS=()
 declare -A SEASON_YEAR_MIN=()
 declare -A SEASON_YEAR_MAX=()
+declare -A META_UPLOAD_BY_ID=()
+declare -A META_TITLE_BY_ID=()
+declare -A META_SEASON_BY_ID=()
 SHOW_YEAR_MIN=""
 SHOW_YEAR_MAX=""
 DETECTED_SEASON_EVIDENCE="0"
 
+METADATA_RAW_FILE="${WORK_DIR}/metadata-raw.tsv"
+METADATA_FILE="${WORK_DIR}/metadata.tsv"
+touch "${METADATA_RAW_FILE}"
+
+feed_total="$(wc -l < "${SEASON_SOURCES_FILE}" | tr -d '[:space:]')"
+feed_index=0
+while IFS= read -r season_source; do
+  [[ -z "${season_source}" ]] && continue
+  feed_index=$((feed_index + 1))
+  show_stage "Collecting metadata feed ${feed_index}/${feed_total} ..."
+  yt-dlp --skip-download --ignore-errors --print $'%(id)s\t%(upload_date|NA)s\t%(title|NA)s\t%(season_number|NA)s' "${season_source}" \
+    | awk -F '\t' 'NF >= 4 { print $1"\t"$2"\t"$3"\t"$4 }' >> "${METADATA_RAW_FILE}"
+done < "${SEASON_SOURCES_FILE}"
+
+awk -F '\t' '!seen[$1]++ { print $1"\t"$2"\t"$3"\t"$4 }' "${METADATA_RAW_FILE}" > "${METADATA_FILE}"
+while IFS=$'\t' read -r meta_id meta_upload meta_title meta_season; do
+  [[ -z "${meta_id}" ]] && continue
+  META_UPLOAD_BY_ID["${meta_id}"]="${meta_upload}"
+  META_TITLE_BY_ID["${meta_id}"]="${meta_title}"
+  META_SEASON_BY_ID["${meta_id}"]="${meta_season}"
+done < "${METADATA_FILE}"
+
 for ((i = 0; i < TOTAL; i++)); do
-  show_stage "Collecting metadata ${i}/${TOTAL} ..."
+  show_stage "Normalizing metadata ${i}/${TOTAL} ..."
+  episode_id="${EPISODE_IDS[i]}"
   episode_url="${EPISODE_URLS[i]}"
   label="${EPISODE_LABELS[i]}"
+  season_hint="${EPISODE_SEASON_HINTS[i]}"
 
-  metadata_line="$(yt-dlp --skip-download --print $'%(upload_date|NA)s\t%(title|NA)s\t%(season_number|NA)s' "${episode_url}" 2>/dev/null | head -n 1 || true)"
-  IFS=$'\t' read -r upload_date meta_title season_number <<< "${metadata_line}"
+  upload_date="${META_UPLOAD_BY_ID[${episode_id}]:-NA}"
+  meta_title="${META_TITLE_BY_ID[${episode_id}]:-NA}"
+  season_number="${META_SEASON_BY_ID[${episode_id}]:-NA}"
 
   if [[ -z "${meta_title}" ]] || [[ "${meta_title}" == "NA" ]]; then
     meta_title="$(printf '%s' "${label}" | tr '-' ' ')"
@@ -338,6 +400,9 @@ for ((i = 0; i < TOTAL; i++)); do
   season_candidate="NA"
   if [[ -n "${season_number}" ]] && [[ "${season_number}" != "NA" ]] && [[ "${season_number}" =~ ^[0-9]+$ ]]; then
     season_candidate="${season_number}"
+    DETECTED_SEASON_EVIDENCE="1"
+  elif [[ -n "${season_hint}" ]] && [[ "${season_hint}" =~ ^[0-9]+$ ]]; then
+    season_candidate="${season_hint}"
     DETECTED_SEASON_EVIDENCE="1"
   else
     set +e
