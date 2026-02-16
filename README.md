@@ -1,10 +1,18 @@
-# RaiPlaySound Podcast Downloader
+# RaiPlaySound CLI
 
-A Bash-based downloader for RaiPlaySound programs that accepts a program slug or full program URL, downloads all episodes, and keeps future runs incremental using `yt-dlp --download-archive`.
+A Bash CLI for RaiPlaySound program discovery and episode management.
+It supports station/program catalog listing, season/episode inspection,
+incremental downloads, output format conversion, metadata caching, and
+parallel download execution.
 
-## Features
+## Capabilities
 
 - Accepts either a RaiPlaySound slug (for example, `musicalbox`) or full program URL
+- Provides catalog/listing commands for:
+  - stations (`--list-stations`)
+  - programs (`--list-programs`, optionally filtered by `--station`)
+  - seasons (`--list-seasons`)
+  - episodes (`--list-episodes`)
 - Downloads playlist/program episodes from RaiPlaySound
 - Saves audio as `.m4a`
 - Uses sortable file naming:

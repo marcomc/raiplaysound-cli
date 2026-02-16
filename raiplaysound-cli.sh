@@ -3,11 +3,11 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Usage: raiplaysound-podcast.sh [OPTIONS] <slug|program_url>
-       raiplaysound-podcast.sh [OPTIONS] --list-seasons <slug|program_url>
-       raiplaysound-podcast.sh [OPTIONS] --list-episodes <slug|program_url>
-       raiplaysound-podcast.sh [OPTIONS] --list-stations
-       raiplaysound-podcast.sh [OPTIONS] --list-podcasts
+Usage: raiplaysound-cli.sh [OPTIONS] <slug|program_url>
+       raiplaysound-cli.sh [OPTIONS] --list-seasons <slug|program_url>
+       raiplaysound-cli.sh [OPTIONS] --list-episodes <slug|program_url>
+       raiplaysound-cli.sh [OPTIONS] --list-stations
+       raiplaysound-cli.sh [OPTIONS] --list-programs
 
 Input:
   <slug|program_url>          RaiPlaySound program slug (e.g. musicalbox)
@@ -30,27 +30,28 @@ Options:
       --list-episodes         List episodes for a show
       --list-stations         List station short names and display names
       --stations-detailed     With --list-stations: include station page/feed URLs
-      --list-podcasts         List programs
+      --list-programs         List programs
+      --list-podcasts         Alias for --list-programs (deprecated)
       --podcasts-group-by MODE
                               Grouping mode: auto|alpha|station (default: auto)
       --station STATION_SHORT
-                              With --list-podcasts: filter programs by station (e.g. radio2, none)
-      --sorted                With --list-podcasts: no grouping, sorted alphabetically
+                              With --list-programs: filter programs by station (e.g. radio2, none)
+      --sorted                With --list-programs: no grouping, sorted alphabetically
       --refresh-podcast-catalog
                               Force refresh of program catalog cache
       --catalog-max-age-hours N
                               Max age for program catalog cache (default: 2160 = 90 days)
 
 Examples:
-  raiplaysound-podcast.sh musicalbox
-  raiplaysound-podcast.sh --format mp3 --jobs 3 musicalbox
-  raiplaysound-podcast.sh --seasons 1,2 america7
-  raiplaysound-podcast.sh --list-seasons america7
-  raiplaysound-podcast.sh --list-episodes --seasons 2 america7
-  raiplaysound-podcast.sh --list-stations
-  raiplaysound-podcast.sh --list-stations --stations-detailed
-  raiplaysound-podcast.sh --list-podcasts --station radio2
-  raiplaysound-podcast.sh --list-podcasts --sorted
+  raiplaysound-cli.sh musicalbox
+  raiplaysound-cli.sh --format mp3 --jobs 3 musicalbox
+  raiplaysound-cli.sh --seasons 1,2 america7
+  raiplaysound-cli.sh --list-seasons america7
+  raiplaysound-cli.sh --list-episodes --seasons 2 america7
+  raiplaysound-cli.sh --list-stations
+  raiplaysound-cli.sh --list-stations --stations-detailed
+  raiplaysound-cli.sh --list-programs --station radio2
+  raiplaysound-cli.sh --list-programs --sorted
 USAGE
 }
 
@@ -127,7 +128,7 @@ load_config_file() {
         bool_v="$(normalize_bool "${value}")"
         [[ -n "${bool_v}" ]] && STATIONS_DETAILED="${bool_v}"
         ;;
-      LIST_PODCASTS_ONLY)
+      LIST_PODCASTS_ONLY | LIST_PROGRAMS_ONLY)
         bool_v="$(normalize_bool "${value}")"
         [[ -n "${bool_v}" ]] && LIST_PODCASTS_ONLY="${bool_v}"
         ;;
@@ -271,6 +272,10 @@ while [[ "$#" -gt 0 ]]; do
       ;;
     --stations-detailed)
       STATIONS_DETAILED="1"
+      shift
+      ;;
+    --list-programs)
+      LIST_PODCASTS_ONLY="1"
       shift
       ;;
     --list-podcasts)
@@ -436,7 +441,7 @@ if [[ "${LIST_SEASONS_ONLY}" -eq 1 ]] && [[ "${LIST_EPISODES_ONLY}" -eq 1 ]]; th
 fi
 
 if [[ "${LIST_STATIONS_ONLY}" -eq 1 ]] && [[ "${LIST_PODCASTS_ONLY}" -eq 1 ]]; then
-  echo "Error: use either --list-stations or --list-podcasts, not both." >&2
+  echo "Error: use either --list-stations or --list-programs, not both." >&2
   exit 1
 fi
 
@@ -454,23 +459,23 @@ if [[ "${LIST_STATIONS_ONLY}" -eq 1 ]] || [[ "${LIST_PODCASTS_ONLY}" -eq 1 ]]; t
     exit 1
   fi
   if [[ -n "${INPUT}" ]]; then
-    echo "Error: do not pass slug/URL with --list-stations or --list-podcasts." >&2
+    echo "Error: do not pass slug/URL with --list-stations or --list-programs." >&2
     exit 1
   fi
 fi
 
 if [[ "${LIST_PODCASTS_ONLY}" -eq 0 ]] && [[ "${FORCE_REFRESH_CATALOG}" -eq 1 ]]; then
-  echo "Error: --refresh-podcast-catalog can only be used with --list-podcasts." >&2
+  echo "Error: --refresh-podcast-catalog can only be used with --list-programs." >&2
   exit 1
 fi
 
 if [[ "${LIST_PODCASTS_ONLY}" -eq 0 ]] && [[ -n "${STATION_FILTER}" ]]; then
-  echo "Error: --station can only be used with --list-podcasts." >&2
+  echo "Error: --station can only be used with --list-programs." >&2
   exit 1
 fi
 
 if [[ "${LIST_PODCASTS_ONLY}" -eq 0 ]] && [[ "${PODCASTS_SORTED}" -eq 1 ]]; then
-  echo "Error: --sorted can only be used with --list-podcasts." >&2
+  echo "Error: --sorted can only be used with --list-programs." >&2
   exit 1
 fi
 
@@ -573,7 +578,7 @@ program_cache_format_is_current() {
   local cache_file="$1"
   [[ -s "${cache_file}" ]] || return 1
   if awk -F '\t' '
-    NF < 4 { bad=1 }
+    NF < 5 { bad=1 }
     $3 == "No station" && tolower($4) != "none" { bad=1 }
     END { exit bad }
   ' "${cache_file}" >/dev/null; then
@@ -582,20 +587,35 @@ program_cache_format_is_current() {
   return 1
 }
 
+build_program_last_year_map() {
+  local out_file="$1"
+  local sitemap_index_url="https://www.raiplaysound.it/sitemap.archivio.programmi.xml"
+  curl -Ls --connect-timeout 5 --max-time 30 --retry 2 "${sitemap_index_url}" \
+    | tr -d '\n' \
+    | sed 's#</sitemap>#</sitemap>\n#g' \
+    | sed -n 's#.*<loc>https://www.raiplaysound.it/sitemap.programmi.\([^<]*\)\.xml</loc>.*<lastmod>\([0-9]\{4\}\)-.*#\1\t\2#p' \
+    | awk -F '\t' 'NF >= 2 && $2 ~ /^[0-9]{4}$/ && !seen[$1]++ { print $1"\t"$2 }' > "${out_file}"
+}
+
 collect_program_catalog_file() {
   local out_file="$1"
-  local tmp_dir slug_file raw_file slug_total
+  local tmp_dir slug_file slug_year_file raw_file slug_total
   local sitemap_index_url="https://www.raiplaysound.it/sitemap.archivio.programmi.xml"
   local catalog_jobs="16"
+  local last_year_map_file
 
   tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/raiplaysound-catalog.XXXXXX")"
   slug_file="${tmp_dir}/program-slugs.txt"
+  slug_year_file="${tmp_dir}/program-slugs-with-last-year.tsv"
   raw_file="${tmp_dir}/program-raw.tsv"
+  last_year_map_file="${tmp_dir}/program-last-year-map.tsv"
 
   curl -Ls --connect-timeout 5 --max-time 30 --retry 2 "${sitemap_index_url}" \
     | rg -o 'https://www\.raiplaysound\.it/sitemap\.programmi\.[^<]+' \
     | sed -E 's#^.*/sitemap\.programmi\.##; s#\.xml$##' \
     | sort -u > "${slug_file}"
+  build_program_last_year_map "${last_year_map_file}"
+  awk -F '\t' 'NR==FNR { y[$1]=$2; next } { print $1"\t"y[$1] }' "${last_year_map_file}" "${slug_file}" > "${slug_year_file}"
 
   slug_total="$(wc -l < "${slug_file}" | tr -d '[:space:]')"
   show_stage "Fetching program metadata for ${slug_total} programs with ${catalog_jobs} parallel workers ..."
@@ -606,7 +626,7 @@ collect_program_catalog_file() {
   catalog_running=0
   catalog_index=0
 
-  while IFS= read -r slug; do
+  while IFS=$'\t' read -r slug last_year; do
     [[ -z "${slug}" ]] && continue
 
     while [[ "${catalog_running}" -ge "${catalog_jobs}" ]]; do
@@ -628,6 +648,8 @@ collect_program_catalog_file() {
       title_raw="$(printf '%s' "${json_line}" | awk -F '"title":"' '{if (NF>1) { split($2,a,"\""); print a[1] }}')"
       station_raw="$(printf '%s' "${json_line}" | awk -F '"channel":{"name":"' '{if (NF>1) { split($2,a,"\""); print a[1] }}')"
       station_short_raw="$(printf '%s' "${json_line}" | sed -n 's/.*"channel":{[^}]*"category_path":"\([^"]*\)".*/\1/p')"
+      year_raw="$(printf '%s' "${json_line}" | awk -F '"year":"' '{if (NF>1) { split($2,a,"\""); print a[1] }}')"
+      create_date_raw="$(printf '%s' "${json_line}" | awk -F '"create_date":"' '{if (NF>1) { split($2,a,"\""); print a[1] }}')"
       title="${title_raw//\\\//\/}"
       title="${title//\\\"/\"}"
       title="${title//\\n/ }"
@@ -645,6 +667,31 @@ collect_program_catalog_file() {
       station_short="${station_short//\\\\/\\}"
 
       [[ -z "${title}" ]] && title="${slug}"
+      start_year="${year_raw}"
+      if ! [[ "${start_year}" =~ ^[0-9]{4}$ ]] && [[ "${create_date_raw}" =~ [0-9]{2}-[0-9]{2}-([0-9]{4}) ]]; then
+        start_year="${BASH_REMATCH[1]}"
+      fi
+      if ! [[ "${start_year}" =~ ^[0-9]{4}$ ]]; then
+        start_year=""
+      fi
+      if ! [[ "${last_year}" =~ ^[0-9]{4}$ ]]; then
+        last_year=""
+      fi
+      year_span="unknown"
+      if [[ -n "${start_year}" ]] && [[ -n "${last_year}" ]]; then
+        if [[ "${start_year}" -gt "${last_year}" ]]; then
+          start_year="${last_year}"
+        fi
+        if [[ "${start_year}" == "${last_year}" ]]; then
+          year_span="${start_year}"
+        else
+          year_span="${start_year}-${last_year}"
+        fi
+      elif [[ -n "${start_year}" ]]; then
+        year_span="${start_year}"
+      elif [[ -n "${last_year}" ]]; then
+        year_span="${last_year}"
+      fi
       if [[ -z "${station}" ]]; then
         station="No station"
         station_short="none"
@@ -653,14 +700,14 @@ collect_program_catalog_file() {
         station_short="unknown"
       fi
       station_short="$(printf '%s' "${station_short}" | tr '[:upper:]' '[:lower:]')"
-      printf '%s\t%s\t%s\t%s\n' "${slug}" "${title}" "${station}" "${station_short}" > "${row_file}"
+      printf '%s\t%s\t%s\t%s\t%s\n' "${slug}" "${title}" "${station}" "${station_short}" "${year_span}" > "${row_file}"
     ) &
 
     catalog_pids+=("$!")
     catalog_rows+=("${row_file}")
     catalog_running=$((catalog_running + 1))
     catalog_index=$((catalog_index + 1))
-  done < "${slug_file}"
+  done < "${slug_year_file}"
 
   for ((j = 0; j < ${#catalog_pids[@]}; j++)); do
     if [[ "${catalog_pids[j]}" != "0" ]]; then
@@ -673,22 +720,25 @@ collect_program_catalog_file() {
     cat "${row_file}" >> "${raw_file}"
   done
 
-  awk -F '\t' '!seen[$1]++ { print $1"\t"$2"\t"$3"\t"$4 }' "${raw_file}" > "${out_file}"
+  awk -F '\t' '!seen[$1]++ { print $1"\t"$2"\t"$3"\t"$4"\t"$5 }' "${raw_file}" > "${out_file}"
   rm -rf "${tmp_dir}" 2>/dev/null || true
 }
 
 collect_station_program_catalog_file() {
   local station_short="$1"
   local out_file="$2"
-  local tmp_dir station_json_url station_json_file slug_file raw_file
+  local tmp_dir station_json_url station_json_file slug_file slug_year_file raw_file
   local station_jobs="12"
   local slug_total station_display_raw station_display
+  local last_year_map_file
 
   station_json_url="https://www.raiplaysound.it/${station_short}.json"
   tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/raiplaysound-station-catalog.XXXXXX")"
   station_json_file="${tmp_dir}/station.json"
   slug_file="${tmp_dir}/station-slugs.txt"
+  slug_year_file="${tmp_dir}/station-slugs-with-last-year.tsv"
   raw_file="${tmp_dir}/station-raw.tsv"
+  last_year_map_file="${tmp_dir}/program-last-year-map.tsv"
 
   curl -Ls --connect-timeout 5 --max-time 30 --retry 2 "${station_json_url}" > "${station_json_file}"
 
@@ -705,6 +755,8 @@ collect_station_program_catalog_file() {
   rg -o '/programmi/[A-Za-z0-9-]+' "${station_json_file}" \
     | sed 's#^/programmi/##' \
     | sort -u > "${slug_file}"
+  build_program_last_year_map "${last_year_map_file}"
+  awk -F '\t' 'NR==FNR { y[$1]=$2; next } { print $1"\t"y[$1] }' "${last_year_map_file}" "${slug_file}" > "${slug_year_file}"
 
   slug_total="$(wc -l < "${slug_file}" | tr -d '[:space:]')"
   if [[ "${slug_total}" -eq 0 ]]; then
@@ -720,7 +772,7 @@ collect_station_program_catalog_file() {
   station_running=0
   station_index=0
 
-  while IFS= read -r slug; do
+  while IFS=$'\t' read -r slug last_year; do
     [[ -z "${slug}" ]] && continue
 
     while [[ "${station_running}" -ge "${station_jobs}" ]]; do
@@ -741,6 +793,8 @@ collect_station_program_catalog_file() {
 
       title_raw="$(printf '%s' "${json_line}" | awk -F '"title":"' '{if (NF>1) { split($2,a,"\""); print a[1] }}')"
       station_raw="$(printf '%s' "${json_line}" | awk -F '"channel":{"name":"' '{if (NF>1) { split($2,a,"\""); print a[1] }}')"
+      year_raw="$(printf '%s' "${json_line}" | awk -F '"year":"' '{if (NF>1) { split($2,a,"\""); print a[1] }}')"
+      create_date_raw="$(printf '%s' "${json_line}" | awk -F '"create_date":"' '{if (NF>1) { split($2,a,"\""); print a[1] }}')"
       title="${title_raw//\\\//\/}"
       title="${title//\\\"/\"}"
       title="${title//\\n/ }"
@@ -753,15 +807,40 @@ collect_station_program_catalog_file() {
       station="${station//\\\\/\\}"
 
       [[ -z "${title}" ]] && title="${slug}"
+      start_year="${year_raw}"
+      if ! [[ "${start_year}" =~ ^[0-9]{4}$ ]] && [[ "${create_date_raw}" =~ [0-9]{2}-[0-9]{2}-([0-9]{4}) ]]; then
+        start_year="${BASH_REMATCH[1]}"
+      fi
+      if ! [[ "${start_year}" =~ ^[0-9]{4}$ ]]; then
+        start_year=""
+      fi
+      if ! [[ "${last_year}" =~ ^[0-9]{4}$ ]]; then
+        last_year=""
+      fi
+      year_span="unknown"
+      if [[ -n "${start_year}" ]] && [[ -n "${last_year}" ]]; then
+        if [[ "${start_year}" -gt "${last_year}" ]]; then
+          start_year="${last_year}"
+        fi
+        if [[ "${start_year}" == "${last_year}" ]]; then
+          year_span="${start_year}"
+        else
+          year_span="${start_year}-${last_year}"
+        fi
+      elif [[ -n "${start_year}" ]]; then
+        year_span="${start_year}"
+      elif [[ -n "${last_year}" ]]; then
+        year_span="${last_year}"
+      fi
       [[ -z "${station}" ]] && station="${station_display}"
-      printf '%s\t%s\t%s\t%s\n' "${slug}" "${title}" "${station}" "${station_short}" > "${row_file}"
+      printf '%s\t%s\t%s\t%s\t%s\n' "${slug}" "${title}" "${station}" "${station_short}" "${year_span}" > "${row_file}"
     ) &
 
     station_pids+=("$!")
     station_rows+=("${row_file}")
     station_running=$((station_running + 1))
     station_index=$((station_index + 1))
-  done < "${slug_file}"
+  done < "${slug_year_file}"
 
   for ((j = 0; j < ${#station_pids[@]}; j++)); do
     if [[ "${station_pids[j]}" != "0" ]]; then
@@ -774,7 +853,7 @@ collect_station_program_catalog_file() {
     cat "${row_file}" >> "${raw_file}"
   done
 
-  awk -F '\t' '!seen[$1]++ { print $1"\t"$2"\t"$3"\t"$4 }' "${raw_file}" > "${out_file}"
+  awk -F '\t' '!seen[$1]++ { print $1"\t"$2"\t"$3"\t"$4"\t"$5 }' "${raw_file}" > "${out_file}"
   rm -rf "${tmp_dir}" 2>/dev/null || true
   return 0
 }
@@ -783,7 +862,7 @@ print_podcasts_alpha() {
   local catalog_file="$1"
   local count
   count="$(wc -l < "${catalog_file}" | tr -d '[:space:]')"
-  printf 'Podcasts grouped alphabetically (%s):\n' "${count}"
+  printf 'Programs grouped alphabetically (%s):\n' "${count}"
   LC_ALL=C sort -f -t $'\t' -k2,2 -k1,1 "${catalog_file}" | LC_ALL=C awk -F '\t' '
     {
       first=toupper(substr($2,1,1))
@@ -795,7 +874,7 @@ print_podcasts_alpha() {
         print ""
         print "[" grp "]"
       }
-      printf "  - %s (%s) [%s:%s]\n", $2, $1, $3, $4
+      printf "  - %s (%s) [%s:%s | %s]\n", $2, $1, $3, $4, $5
     }'
 }
 
@@ -803,7 +882,7 @@ print_podcasts_station() {
   local catalog_file="$1"
   local count
   count="$(wc -l < "${catalog_file}" | tr -d '[:space:]')"
-  printf 'Podcasts grouped by station (%s):\n' "${count}"
+  printf 'Programs grouped by station (%s):\n' "${count}"
   LC_ALL=C sort -f -t $'\t' -k3,3 -k2,2 "${catalog_file}" | LC_ALL=C awk -F '\t' '
     {
       if ($3 != grp) {
@@ -812,7 +891,7 @@ print_podcasts_station() {
         print ""
         print "[" grp " | " grp_short "]"
       }
-      printf "  - %s (%s)\n", $2, $1
+      printf "  - %s (%s) [%s]\n", $2, $1, $5
     }'
 }
 
@@ -820,9 +899,9 @@ print_podcasts_sorted() {
   local catalog_file="$1"
   local count
   count="$(wc -l < "${catalog_file}" | tr -d '[:space:]')"
-  printf 'Podcasts sorted alphabetically (%s):\n' "${count}"
+  printf 'Programs sorted alphabetically (%s):\n' "${count}"
   LC_ALL=C sort -f -t $'\t' -k2,2 -k1,1 "${catalog_file}" | awk -F '\t' '
-    { printf "  - %s (%s)\n", $2, $1 }'
+    { printf "  - %s (%s) [%s]\n", $2, $1, $5 }'
 }
 
 if [[ "${LIST_STATIONS_ONLY}" -eq 1 ]]; then
