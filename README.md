@@ -83,6 +83,7 @@ The script reads an optional user config file at:
 Recommended format is a simple `KEY=VALUE` env-style file (Bash-friendly), not YAML/JSON/INI. This keeps parsing fast and dependency-free in pure Bash.
 
 CLI arguments always override values from the dot config file.
+`--json` is CLI-only and should not be set in the dot config file.
 
 Install the example template from project root:
 

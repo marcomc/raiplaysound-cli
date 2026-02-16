@@ -147,7 +147,10 @@ load_config_file() {
         ;;
       JSON_OUTPUT)
         bool_v="$(normalize_bool "${value}")"
-        [[ -n "${bool_v}" ]] && JSON_OUTPUT="${bool_v}"
+        if [[ -n "${bool_v}" ]]; then
+          JSON_OUTPUT="${bool_v}"
+          JSON_OUTPUT_SOURCE="config"
+        fi
         ;;
       LIST_STATIONS_ONLY)
         bool_v="$(normalize_bool "${value}")"
@@ -212,6 +215,7 @@ LIST_SEASONS_ONLY="0"
 LIST_EPISODES_ONLY="0"
 SHOW_URLS="0"
 JSON_OUTPUT="0"
+JSON_OUTPUT_SOURCE="default"
 LIST_STATIONS_ONLY="0"
 STATIONS_DETAILED="0"
 LIST_PODCASTS_ONLY="0"
@@ -246,6 +250,7 @@ while [[ "$#" -gt 0 ]]; do
       ;;
     --json)
       JSON_OUTPUT="1"
+      JSON_OUTPUT_SOURCE="cli"
       shift
       ;;
     -f | --format)
@@ -573,9 +578,13 @@ if [[ "${LIST_EPISODES_ONLY}" -eq 0 ]] && [[ "${SHOW_URLS}" -eq 1 ]]; then
   exit 1
 fi
 
-if [[ "${JSON_OUTPUT}" -eq 1 ]] && [[ "${LIST_STATIONS_ONLY}" -eq 0 ]] && [[ "${LIST_PODCASTS_ONLY}" -eq 0 ]] && [[ "${LIST_SEASONS_ONLY}" -eq 0 ]] && [[ "${LIST_EPISODES_ONLY}" -eq 0 ]]; then
+if [[ "${JSON_OUTPUT}" -eq 1 ]] && [[ "${JSON_OUTPUT_SOURCE}" == "cli" ]] && [[ "${LIST_STATIONS_ONLY}" -eq 0 ]] && [[ "${LIST_PODCASTS_ONLY}" -eq 0 ]] && [[ "${LIST_SEASONS_ONLY}" -eq 0 ]] && [[ "${LIST_EPISODES_ONLY}" -eq 0 ]]; then
   echo "Error: --json can only be used with --list-stations, --list-programs, --list-seasons, or --list-episodes." >&2
   exit 1
+fi
+
+if [[ "${JSON_OUTPUT}" -eq 1 ]] && [[ "${JSON_OUTPUT_SOURCE}" == "config" ]] && [[ "${LIST_STATIONS_ONLY}" -eq 0 ]] && [[ "${LIST_PODCASTS_ONLY}" -eq 0 ]] && [[ "${LIST_SEASONS_ONLY}" -eq 0 ]] && [[ "${LIST_EPISODES_ONLY}" -eq 0 ]]; then
+  JSON_OUTPUT="0"
 fi
 
 if [[ "${LIST_SEASONS_ONLY}" -eq 1 ]] || [[ "${LIST_EPISODES_ONLY}" -eq 1 ]] || [[ "${LIST_STATIONS_ONLY}" -eq 1 ]] || [[ "${LIST_PODCASTS_ONLY}" -eq 1 ]]; then
@@ -1893,7 +1902,11 @@ if [[ "${LIST_EPISODES_ONLY}" -eq 1 ]]; then
     fi
   done
   EPISODES_TABLE_ALIGNED_FILE="${WORK_DIR}/episodes-table-aligned.txt"
-  column -t -s $'\t' "${EPISODES_TABLE_FILE}" > "${EPISODES_TABLE_ALIGNED_FILE}"
+  if command -v column >/dev/null 2>&1; then
+    column -t -s $'\t' "${EPISODES_TABLE_FILE}" > "${EPISODES_TABLE_ALIGNED_FILE}"
+  else
+    cp "${EPISODES_TABLE_FILE}" "${EPISODES_TABLE_ALIGNED_FILE}"
+  fi
   while IFS= read -r table_line; do
     printf '  %s\n' "${table_line}"
   done < "${EPISODES_TABLE_ALIGNED_FILE}"
