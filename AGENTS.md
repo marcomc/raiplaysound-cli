@@ -2,8 +2,8 @@
 
 ## Project Scope
 
-This repository provides a Bash-based downloader for RaiPlaySound podcasts.
-The main goal is to download podcast episodes from a RaiPlaySound program slug or URL into `~/Music/RaiPlaySound/<slug>/`, with idempotent repeat runs using `yt-dlp --download-archive`.
+This repository provides a Bash-based downloader for RaiPlaySound programs.
+The main goal is to download program episodes from a RaiPlaySound program slug or URL into `~/Music/RaiPlaySound/<slug>/`, with idempotent repeat runs using `yt-dlp --download-archive`.
 
 ## Bash Quality Rules
 

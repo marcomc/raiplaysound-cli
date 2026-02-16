@@ -30,16 +30,16 @@ Options:
       --list-episodes         List episodes for a show
       --list-stations         List station short names and display names
       --stations-detailed     With --list-stations: include station page/feed URLs
-      --list-podcasts         List podcasts
+      --list-podcasts         List programs
       --podcasts-group-by MODE
                               Grouping mode: auto|alpha|station (default: auto)
       --station STATION_SHORT
-                              With --list-podcasts: filter to one station (e.g. radio2, none)
+                              With --list-podcasts: filter programs by station (e.g. radio2, none)
       --sorted                With --list-podcasts: no grouping, sorted alphabetically
       --refresh-podcast-catalog
-                              Force refresh of podcast catalog cache
+                              Force refresh of program catalog cache
       --catalog-max-age-hours N
-                              Max age for podcast catalog cache (default: 2160 = 90 days)
+                              Max age for program catalog cache (default: 2160 = 90 days)
 
 Examples:
   raiplaysound-podcast.sh musicalbox
@@ -442,7 +442,7 @@ fi
 
 if [[ "${LIST_STATIONS_ONLY}" -eq 1 ]] || [[ "${LIST_PODCASTS_ONLY}" -eq 1 ]]; then
   if [[ "${LIST_SEASONS_ONLY}" -eq 1 ]] || [[ "${LIST_EPISODES_ONLY}" -eq 1 ]]; then
-    echo "Error: station/podcast listing cannot be combined with season/episode listing." >&2
+    echo "Error: station/program listing cannot be combined with season/episode listing." >&2
     exit 1
   fi
   if [[ -n "${SEASONS_ARG}" ]]; then
@@ -450,7 +450,7 @@ if [[ "${LIST_STATIONS_ONLY}" -eq 1 ]] || [[ "${LIST_PODCASTS_ONLY}" -eq 1 ]]; t
     exit 1
   fi
   if [[ "${AUTO_REDOWNLOAD_MISSING}" -eq 1 ]]; then
-    echo "Error: --redownload-missing is not valid with station/podcast listing." >&2
+    echo "Error: --redownload-missing is not valid with station/program listing." >&2
     exit 1
   fi
   if [[ -n "${INPUT}" ]]; then
@@ -569,7 +569,7 @@ cache_file_is_fresh() {
   return 1
 }
 
-podcast_cache_format_is_current() {
+program_cache_format_is_current() {
   local cache_file="$1"
   [[ -s "${cache_file}" ]] || return 1
   if awk -F '\t' '
@@ -582,15 +582,15 @@ podcast_cache_format_is_current() {
   return 1
 }
 
-collect_podcast_catalog_file() {
+collect_program_catalog_file() {
   local out_file="$1"
   local tmp_dir slug_file raw_file slug_total
   local sitemap_index_url="https://www.raiplaysound.it/sitemap.archivio.programmi.xml"
   local catalog_jobs="16"
 
   tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/raiplaysound-catalog.XXXXXX")"
-  slug_file="${tmp_dir}/podcast-slugs.txt"
-  raw_file="${tmp_dir}/podcast-raw.tsv"
+  slug_file="${tmp_dir}/program-slugs.txt"
+  raw_file="${tmp_dir}/program-raw.tsv"
 
   curl -Ls --connect-timeout 5 --max-time 30 --retry 2 "${sitemap_index_url}" \
     | rg -o 'https://www\.raiplaysound\.it/sitemap\.programmi\.[^<]+' \
@@ -598,7 +598,7 @@ collect_podcast_catalog_file() {
     | sort -u > "${slug_file}"
 
   slug_total="$(wc -l < "${slug_file}" | tr -d '[:space:]')"
-  show_stage "Fetching podcast metadata for ${slug_total} programs with ${catalog_jobs} parallel workers ..."
+  show_stage "Fetching program metadata for ${slug_total} programs with ${catalog_jobs} parallel workers ..."
 
   : > "${raw_file}"
   declare -a catalog_pids=()
@@ -620,7 +620,7 @@ collect_podcast_catalog_file() {
       sleep 0.02
     done
 
-    row_file="${tmp_dir}/podcast-row-${catalog_index}.tsv"
+    row_file="${tmp_dir}/program-row-${catalog_index}.tsv"
     (
       json_line="$(curl -Ls --connect-timeout 5 --max-time 20 --retry 1 "https://www.raiplaysound.it/programmi/${slug}.json" | tr -d '\n' || true)"
       [[ -z "${json_line}" ]] && exit 0
@@ -677,7 +677,7 @@ collect_podcast_catalog_file() {
   rm -rf "${tmp_dir}" 2>/dev/null || true
 }
 
-collect_station_podcast_catalog_file() {
+collect_station_program_catalog_file() {
   local station_short="$1"
   local out_file="$2"
   local tmp_dir station_json_url station_json_file slug_file raw_file
@@ -712,7 +712,7 @@ collect_station_podcast_catalog_file() {
     return 1
   fi
 
-  show_stage "Fetching station podcasts for '${station_short}' (${slug_total} programs) ..."
+  show_stage "Fetching station programs for '${station_short}' (${slug_total} programs) ..."
 
   : > "${raw_file}"
   declare -a station_pids=()
@@ -854,25 +854,25 @@ fi
 if [[ "${LIST_PODCASTS_ONLY}" -eq 1 ]]; then
   LIST_TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/raiplaysound-list.XXXXXX")"
   trap 'rm -rf "${LIST_TMP_DIR}" 2>/dev/null || true' EXIT
-  PODCASTS_FILE="${LIST_TMP_DIR}/podcasts.tsv"
-  PODCASTS_FILTERED_FILE="${LIST_TMP_DIR}/podcasts-filtered.tsv"
+  PODCASTS_FILE="${LIST_TMP_DIR}/programs.tsv"
+  PODCASTS_FILTERED_FILE="${LIST_TMP_DIR}/programs-filtered.tsv"
   if [[ -n "${STATION_FILTER}" ]] && [[ "${STATION_FILTER}" != "none" ]]; then
-    show_stage "Collecting station-scoped podcast catalog ..."
+    show_stage "Collecting station-scoped program catalog ..."
     set +e
-    collect_station_podcast_catalog_file "${STATION_FILTER}" "${PODCASTS_FILE}"
+    collect_station_program_catalog_file "${STATION_FILTER}" "${PODCASTS_FILE}"
     station_collect_rc=$?
     set -e
     if [[ "${station_collect_rc}" -ne 0 ]]; then
-      echo "Error: unable to find podcasts for station short name '${STATION_FILTER}'." >&2
+      echo "Error: unable to find programs for station short name '${STATION_FILTER}'." >&2
       echo "Use --list-stations to see valid values." >&2
       exit 1
     fi
-    finish_stage "Station-scoped catalog ready."
+    finish_stage "Station-scoped program catalog ready."
   else
     mkdir -p "$(dirname "${CATALOG_CACHE_FILE}")"
     cache_format_ok="0"
     set +e
-    podcast_cache_format_is_current "${CATALOG_CACHE_FILE}"
+    program_cache_format_is_current "${CATALOG_CACHE_FILE}"
     cache_format_rc=$?
     set -e
     if [[ "${cache_format_rc}" -eq 0 ]]; then
@@ -890,30 +890,30 @@ if [[ "${LIST_PODCASTS_ONLY}" -eq 1 ]]; then
     fi
 
     if [[ "${cache_is_fresh}" -eq 1 ]]; then
-      show_stage "Using cached podcast catalog ..."
+      show_stage "Using cached program catalog ..."
       cp "${CATALOG_CACHE_FILE}" "${PODCASTS_FILE}"
-      finish_stage "Podcast catalog cache hit."
+      finish_stage "Program catalog cache hit."
     else
-      show_stage "Collecting podcast catalog (this can take a while) ..."
-      collect_podcast_catalog_file "${PODCASTS_FILE}"
+      show_stage "Collecting program catalog (this can take a while) ..."
+      collect_program_catalog_file "${PODCASTS_FILE}"
       cp "${PODCASTS_FILE}" "${CATALOG_CACHE_FILE}"
-      finish_stage "Podcast catalog cache updated: ${CATALOG_CACHE_FILE}"
+      finish_stage "Program catalog cache updated: ${CATALOG_CACHE_FILE}"
     fi
   fi
 
   if [[ -n "${STATION_FILTER}" ]]; then
     awk -F '\t' -v station_filter="${STATION_FILTER}" 'tolower($4) == station_filter { print }' "${PODCASTS_FILE}" > "${PODCASTS_FILTERED_FILE}"
     PODCASTS_FILE="${PODCASTS_FILTERED_FILE}"
-    podcast_count="$(wc -l < "${PODCASTS_FILE}" | tr -d '[:space:]')"
-    finish_stage "Collected ${podcast_count} podcasts for station '${STATION_FILTER}'."
-    if [[ "${podcast_count}" -eq 0 ]]; then
-      echo "No podcasts found for station short name '${STATION_FILTER}'." >&2
-      echo "Use --list-stations to see valid values (or use 'none' for podcasts without station)." >&2
+    program_count="$(wc -l < "${PODCASTS_FILE}" | tr -d '[:space:]')"
+    finish_stage "Collected ${program_count} programs for station '${STATION_FILTER}'."
+    if [[ "${program_count}" -eq 0 ]]; then
+      echo "No programs found for station short name '${STATION_FILTER}'." >&2
+      echo "Use --list-stations to see valid values (or use 'none' for programs without station)." >&2
       exit 1
     fi
   else
-    podcast_count="$(wc -l < "${PODCASTS_FILE}" | tr -d '[:space:]')"
-    finish_stage "Collected ${podcast_count} podcasts."
+    program_count="$(wc -l < "${PODCASTS_FILE}" | tr -d '[:space:]')"
+    finish_stage "Collected ${program_count} programs."
   fi
 
   effective_group_mode="station"

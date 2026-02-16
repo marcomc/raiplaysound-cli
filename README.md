@@ -1,6 +1,6 @@
 # RaiPlaySound Podcast Downloader
 
-A Bash-based downloader for RaiPlaySound programs that accepts a podcast slug or full program URL, downloads all episodes, and keeps future runs incremental using `yt-dlp --download-archive`.
+A Bash-based downloader for RaiPlaySound programs that accepts a program slug or full program URL, downloads all episodes, and keeps future runs incremental using `yt-dlp --download-archive`.
 
 ## Features
 
@@ -10,10 +10,10 @@ A Bash-based downloader for RaiPlaySound programs that accepts a podcast slug or
 - Uses sortable file naming:
   - `Show - S0203 - YYYY-MM-DD - EpisodeName.m4a`
 - Stores files in `~/Music/RaiPlaySound/<slug>/`
-- Keeps a per-podcast archive file (`.download-archive.txt`) to avoid re-downloading episodes
+- Keeps a per-program archive file (`.download-archive.txt`) to avoid re-downloading episodes
 - Optional debug logging with `--log` (disabled by default)
 - Safe to run repeatedly (idempotent)
-- Supports common podcast output formats: `mp3`, `m4a`, `aac`, `ogg`, `opus`, `flac`, `wav`
+- Supports common audio output formats: `mp3`, `m4a`, `aac`, `ogg`, `opus`, `flac`, `wav`
 - Converts only when source format differs from requested output format
 - Supports parallel episode downloads (`--jobs`, default `3`)
 - Shows a live per-episode progress bar (`#####-----`) with ANSI colors in interactive terminals
@@ -23,12 +23,12 @@ A Bash-based downloader for RaiPlaySound programs that accepts a podcast slug or
 - Supports season and episode discovery modes (`--list-seasons`, `--list-episodes`)
 - Lists available RaiPlaySound radio stations (`--list-stations`)
 - Can print detailed station listing with clickable page/feed URLs (`--stations-detailed`)
-- Lists podcasts in one mode at a time with smart defaults:
+- Lists programs in one mode at a time with smart defaults:
   - grouped by station when no station filter is set
   - grouped alphabetically when `--station` is set
   - flat alphabetical list when `--sorted` is used
-- Filters podcast listing by station short name (`--station radio2` or `--station none`)
-- Caches podcast catalog for faster repeated `--list-podcasts` runs
+- Filters program listing by station short name (`--station radio2` or `--station none`)
+- Caches program catalog for faster repeated `--list-programs` runs
 - Refreshes metadata automatically when cached data is older than 24 hours (configurable)
 
 ## Installation
@@ -48,7 +48,7 @@ brew install yt-dlp ffmpeg
 1. Make the script executable:
 
 ```bash
-chmod +x ./raiplaysound-podcast.sh
+chmod +x ./raiplaysound-cli.sh
 ```
 
 ## Dot Config Defaults
@@ -82,7 +82,7 @@ CATALOG_MAX_AGE_HOURS=2160
 You can still override per run:
 
 ```bash
-./raiplaysound-podcast.sh --format m4a --jobs 2 musicalbox
+./raiplaysound-cli.sh --format m4a --jobs 2 musicalbox
 ```
 
 List modes do not require a slug/URL.
@@ -92,91 +92,91 @@ List modes do not require a slug/URL.
 Run using a slug:
 
 ```bash
-./raiplaysound-podcast.sh musicalbox
+./raiplaysound-cli.sh musicalbox
 ```
 
 If installed in your `PATH`, run from any directory:
 
 ```bash
-raiplaysound-podcast.sh musicalbox
+raiplaysound-cli.sh musicalbox
 ```
 
 If `INPUT="musicalbox"` is set in your dot config, you can run without arguments:
 
 ```bash
-./raiplaysound-podcast.sh
+./raiplaysound-cli.sh
 ```
 
 Run using a full program URL:
 
 ```bash
-./raiplaysound-podcast.sh https://www.raiplaysound.it/programmi/musicalbox
+./raiplaysound-cli.sh https://www.raiplaysound.it/programmi/musicalbox
 ```
 
 Run and choose output format:
 
 ```bash
-./raiplaysound-podcast.sh --format mp3 musicalbox
+./raiplaysound-cli.sh --format mp3 musicalbox
 ```
 
 Run with custom parallelism:
 
 ```bash
-./raiplaysound-podcast.sh --jobs 5 musicalbox
+./raiplaysound-cli.sh --jobs 5 musicalbox
 ```
 
 Run with format and parallelism:
 
 ```bash
-./raiplaysound-podcast.sh --format m4a --jobs 3 musicalbox
+./raiplaysound-cli.sh --format m4a --jobs 3 musicalbox
 ```
 
 Download only specific seasons:
 
 ```bash
-./raiplaysound-podcast.sh --seasons 1,2 america7
+./raiplaysound-cli.sh --seasons 1,2 america7
 ```
 
 Download all seasons:
 
 ```bash
-./raiplaysound-podcast.sh --seasons all america7
+./raiplaysound-cli.sh --seasons all america7
 ```
 
 Run without prompt and automatically re-download archived episodes that are missing locally:
 
 ```bash
-./raiplaysound-podcast.sh --redownload-missing america7
+./raiplaysound-cli.sh --redownload-missing america7
 ```
 
-Enable debug log in the podcast download directory:
+Enable debug log in the program download directory:
 
 ```bash
-./raiplaysound-podcast.sh --log america7
+./raiplaysound-cli.sh --log america7
 ```
 
 Enable debug log in a specific file path:
 
 ```bash
-./raiplaysound-podcast.sh --log=/tmp/raiplaysound-debug.log america7
+./raiplaysound-cli.sh --log=/tmp/raiplaysound-debug.log america7
 ```
 
 Force metadata refresh:
 
 ```bash
-./raiplaysound-podcast.sh --refresh-metadata america7
+./raiplaysound-cli.sh --refresh-metadata america7
 ```
 
 Clear metadata cache manually:
 
 ```bash
-./raiplaysound-podcast.sh --clear-metadata-cache america7
+./raiplaysound-cli.sh --clear-metadata-cache america7
 ```
 
 Set metadata cache max age in hours:
 
 ```bash
-./raiplaysound-podcast.sh --metadata-max-age-hours 6 america7
+./raiplaysound-cli.sh --metadata-max-age-hours 6 america7
 ```
 
 When to clear metadata cache manually:
@@ -188,13 +188,13 @@ When to clear metadata cache manually:
 List available seasons (with inferred publication year range):
 
 ```bash
-./raiplaysound-podcast.sh --list-seasons america7
+./raiplaysound-cli.sh --list-seasons america7
 ```
 
 List episodes for one or more seasons:
 
 ```bash
-./raiplaysound-podcast.sh --list-episodes --seasons 2 america7
+./raiplaysound-cli.sh --list-episodes --seasons 2 america7
 ```
 
 If `--list-episodes` is used without `--seasons`, it lists the latest detected season.
@@ -204,7 +204,7 @@ If download is run without `--seasons`, it targets the current/latest season onl
 List all available radio stations:
 
 ```bash
-./raiplaysound-podcast.sh --list-stations
+./raiplaysound-cli.sh --list-stations
 ```
 
 Output is compact and includes station short names (for filters), for example:
@@ -218,90 +218,92 @@ Output is compact and includes station short names (for filters), for example:
 List stations with detailed URLs (station page and feed):
 
 ```bash
-./raiplaysound-podcast.sh --list-stations --stations-detailed
+./raiplaysound-cli.sh --list-stations --stations-detailed
 ```
 
-List podcasts using default grouping behavior:
+List programs using default grouping behavior:
 
 ```bash
-./raiplaysound-podcast.sh --list-podcasts
+./raiplaysound-cli.sh --list-programs
 ```
 
-Force-refresh podcast catalog cache:
+Legacy alias still accepted: `--list-podcasts` (deprecated).
+
+Force-refresh program catalog cache:
 
 ```bash
-./raiplaysound-podcast.sh --refresh-podcast-catalog --list-podcasts
+./raiplaysound-cli.sh --refresh-podcast-catalog --list-programs
 ```
 
-List all podcasts grouped only by station:
+List all programs grouped only by station:
 
 ```bash
-./raiplaysound-podcast.sh --list-podcasts --podcasts-group-by station
+./raiplaysound-cli.sh --list-programs --podcasts-group-by station
 ```
 
 List as a flat alphabetical list (no groups):
 
 ```bash
-./raiplaysound-podcast.sh --list-podcasts --sorted
+./raiplaysound-cli.sh --list-programs --sorted
 ```
 
-List only podcasts for one station short name:
+List only programs for one station short name:
 
 ```bash
-./raiplaysound-podcast.sh --list-podcasts --station radio2
+./raiplaysound-cli.sh --list-programs --station radio2
 ```
 
-List only podcasts without an assigned station:
+List only programs without an assigned station:
 
 ```bash
-./raiplaysound-podcast.sh --list-podcasts --station none
+./raiplaysound-cli.sh --list-programs --station none
 ```
 
-Set podcast catalog cache max age in hours:
+Set program catalog cache max age in hours:
 
 ```bash
-./raiplaysound-podcast.sh --catalog-max-age-hours 12 --list-podcasts
+./raiplaysound-cli.sh --catalog-max-age-hours 12 --list-programs
 ```
 
 ## Option Examples
 
 ```bash
 # Help
-./raiplaysound-podcast.sh --help
+./raiplaysound-cli.sh --help
 
 # Download mode
-./raiplaysound-podcast.sh musicalbox
-./raiplaysound-podcast.sh --format mp3 --jobs 4 musicalbox
-./raiplaysound-podcast.sh --seasons 1,2 america7
-./raiplaysound-podcast.sh --seasons all america7
-./raiplaysound-podcast.sh --redownload-missing america7
+./raiplaysound-cli.sh musicalbox
+./raiplaysound-cli.sh --format mp3 --jobs 4 musicalbox
+./raiplaysound-cli.sh --seasons 1,2 america7
+./raiplaysound-cli.sh --seasons all america7
+./raiplaysound-cli.sh --redownload-missing america7
 
 # Metadata cache controls
-./raiplaysound-podcast.sh --refresh-metadata america7
-./raiplaysound-podcast.sh --clear-metadata-cache america7
-./raiplaysound-podcast.sh --metadata-max-age-hours 12 america7
+./raiplaysound-cli.sh --refresh-metadata america7
+./raiplaysound-cli.sh --clear-metadata-cache america7
+./raiplaysound-cli.sh --metadata-max-age-hours 12 america7
 
 # Logging
-./raiplaysound-podcast.sh --log america7
-./raiplaysound-podcast.sh --log=/tmp/raiplaysound-debug.log america7
+./raiplaysound-cli.sh --log america7
+./raiplaysound-cli.sh --log=/tmp/raiplaysound-debug.log america7
 
 # Season/episode listing
-./raiplaysound-podcast.sh --list-seasons america7
-./raiplaysound-podcast.sh --list-episodes --seasons 2 america7
+./raiplaysound-cli.sh --list-seasons america7
+./raiplaysound-cli.sh --list-episodes --seasons 2 america7
 
 # Station listing
-./raiplaysound-podcast.sh --list-stations
-./raiplaysound-podcast.sh --list-stations --stations-detailed
+./raiplaysound-cli.sh --list-stations
+./raiplaysound-cli.sh --list-stations --stations-detailed
 
-# Podcast listing
-./raiplaysound-podcast.sh --list-podcasts
-./raiplaysound-podcast.sh --list-podcasts --station radio2
-./raiplaysound-podcast.sh --list-podcasts --station none
-./raiplaysound-podcast.sh --list-podcasts --podcasts-group-by station
-./raiplaysound-podcast.sh --list-podcasts --podcasts-group-by alpha
-./raiplaysound-podcast.sh --list-podcasts --sorted
-./raiplaysound-podcast.sh --refresh-podcast-catalog --list-podcasts
-./raiplaysound-podcast.sh --catalog-max-age-hours 2160 --list-podcasts
+# Program listing
+./raiplaysound-cli.sh --list-programs
+./raiplaysound-cli.sh --list-programs --station radio2
+./raiplaysound-cli.sh --list-programs --station none
+./raiplaysound-cli.sh --list-programs --podcasts-group-by station
+./raiplaysound-cli.sh --list-programs --podcasts-group-by alpha
+./raiplaysound-cli.sh --list-programs --sorted
+./raiplaysound-cli.sh --refresh-podcast-catalog --list-programs
+./raiplaysound-cli.sh --catalog-max-age-hours 2160 --list-programs
 ```
 
 Reference episode example for this program:
@@ -313,7 +315,7 @@ Reference episode example for this program:
 Run daily at 06:30:
 
 ```cron
-30 6 * * * /usr/local/bin/raiplaysound-podcast.sh musicalbox
+30 6 * * * /usr/local/bin/raiplaysound-cli.sh musicalbox
 ```
 
 ## How `--download-archive` Works
