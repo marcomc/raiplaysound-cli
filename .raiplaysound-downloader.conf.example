@@ -44,8 +44,13 @@ CHECK_JOBS=8
 # LIST_PODCASTS_ONLY=0
 
 # Optional podcast listing grouping mode.
-# Values: alpha, station, both
-# PODCASTS_GROUP_BY="both"
+# Values: auto, alpha, station
+# auto: station grouping when no --station filter, alphabetical grouping when --station is set
+# PODCASTS_GROUP_BY="auto"
+
+# Optional flat alphabetic output (no grouping) for podcast listing.
+# Values: 1/0, true/false, yes/no, on/off
+# PODCASTS_SORTED=0
 
 # Optional station short-name filter for podcast listing.
 # Examples: radio1, radio2, radio3, isoradio, nonameradio, none

@@ -4,7 +4,7 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 Usage:
-  raiplaysound-podcast.sh [--format FORMAT] [--jobs N] [--seasons LIST|all] [--redownload-missing] [--list-seasons] [--list-episodes] [--list-stations] [--stations-detailed] [--list-podcasts] [--podcasts-group-by MODE] [--station STATION_SHORT] [--refresh-podcast-catalog] [--catalog-max-age-hours N] [--log[=PATH]] [--refresh-metadata] [--clear-metadata-cache] [--metadata-max-age-hours N] [<slug|program_url>]
+  raiplaysound-podcast.sh [--format FORMAT] [--jobs N] [--seasons LIST|all] [--redownload-missing] [--list-seasons] [--list-episodes] [--list-stations] [--stations-detailed] [--list-podcasts] [--podcasts-group-by MODE] [--station STATION_SHORT] [--sorted] [--refresh-podcast-catalog] [--catalog-max-age-hours N] [--log[=PATH]] [--refresh-metadata] [--clear-metadata-cache] [--metadata-max-age-hours N] [<slug|program_url>]
 
 Examples:
   raiplaysound-podcast.sh musicalbox
@@ -19,6 +19,7 @@ Examples:
   raiplaysound-podcast.sh --list-podcasts
   raiplaysound-podcast.sh --list-podcasts --podcasts-group-by station
   raiplaysound-podcast.sh --list-podcasts --station radio2
+  raiplaysound-podcast.sh --list-podcasts --sorted
   raiplaysound-podcast.sh --refresh-podcast-catalog --list-podcasts
   raiplaysound-podcast.sh --log america7
   raiplaysound-podcast.sh --log=/tmp/raiplaysound-debug.log america7
@@ -36,7 +37,7 @@ Default jobs:
   3
 
 Podcast list grouping modes:
-  alpha, station, both
+  auto, alpha, station
 USAGE
 }
 
@@ -118,6 +119,10 @@ load_config_file() {
         [[ -n "${bool_v}" ]] && LIST_PODCASTS_ONLY="${bool_v}"
         ;;
       PODCASTS_GROUP_BY) PODCASTS_GROUP_BY="$(printf '%s' "${value}" | tr '[:upper:]' '[:lower:]')" ;;
+      PODCASTS_SORTED)
+        bool_v="$(normalize_bool "${value}")"
+        [[ -n "${bool_v}" ]] && PODCASTS_SORTED="${bool_v}"
+        ;;
       STATION_FILTER) STATION_FILTER="$(printf '%s' "${value}" | tr '[:upper:]' '[:lower:]')" ;;
       FORCE_REFRESH_CATALOG)
         bool_v="$(normalize_bool "${value}")"
@@ -163,7 +168,8 @@ LIST_EPISODES_ONLY="0"
 LIST_STATIONS_ONLY="0"
 STATIONS_DETAILED="0"
 LIST_PODCASTS_ONLY="0"
-PODCASTS_GROUP_BY="both"
+PODCASTS_GROUP_BY="auto"
+PODCASTS_SORTED="0"
 STATION_FILTER=""
 FORCE_REFRESH_CATALOG="0"
 CATALOG_MAX_AGE_HOURS="${RAIPLAYSOUND_CATALOG_MAX_AGE_HOURS:-24}"
@@ -260,12 +266,16 @@ while [[ "$#" -gt 0 ]]; do
       ;;
     --podcasts-group-by)
       if [[ "$#" -lt 2 ]]; then
-        echo "Error: --podcasts-group-by requires a value (alpha|station|both)." >&2
+        echo "Error: --podcasts-group-by requires a value (auto|alpha|station)." >&2
         usage
         exit 1
       fi
       PODCASTS_GROUP_BY="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')"
       shift 2
+      ;;
+    --sorted)
+      PODCASTS_SORTED="1"
+      shift
       ;;
     --station)
       if [[ "$#" -lt 2 ]]; then
@@ -375,8 +385,8 @@ if ! [[ "${CHECK_JOBS}" =~ ^[0-9]+$ ]] || [[ "${CHECK_JOBS}" -lt 1 ]]; then
   exit 1
 fi
 
-if [[ "${PODCASTS_GROUP_BY}" != "alpha" ]] && [[ "${PODCASTS_GROUP_BY}" != "station" ]] && [[ "${PODCASTS_GROUP_BY}" != "both" ]]; then
-  echo "Error: --podcasts-group-by must be one of: alpha, station, both." >&2
+if [[ "${PODCASTS_GROUP_BY}" != "auto" ]] && [[ "${PODCASTS_GROUP_BY}" != "alpha" ]] && [[ "${PODCASTS_GROUP_BY}" != "station" ]]; then
+  echo "Error: --podcasts-group-by must be one of: auto, alpha, station." >&2
   exit 1
 fi
 
@@ -443,6 +453,11 @@ fi
 
 if [[ "${LIST_PODCASTS_ONLY}" -eq 0 ]] && [[ -n "${STATION_FILTER}" ]]; then
   echo "Error: --station can only be used with --list-podcasts." >&2
+  exit 1
+fi
+
+if [[ "${LIST_PODCASTS_ONLY}" -eq 0 ]] && [[ "${PODCASTS_SORTED}" -eq 1 ]]; then
+  echo "Error: --sorted can only be used with --list-podcasts." >&2
   exit 1
 fi
 
@@ -788,6 +803,15 @@ print_podcasts_station() {
     }'
 }
 
+print_podcasts_sorted() {
+  local catalog_file="$1"
+  local count
+  count="$(wc -l < "${catalog_file}" | tr -d '[:space:]')"
+  printf 'Podcasts sorted alphabetically (%s):\n' "${count}"
+  LC_ALL=C sort -f -t $'\t' -k2,2 -k1,1 "${catalog_file}" | awk -F '\t' '
+    { printf "  - %s (%s)\n", $2, $1 }'
+}
+
 if [[ "${LIST_STATIONS_ONLY}" -eq 1 ]]; then
   LIST_TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/raiplaysound-list.XXXXXX")"
   trap 'rm -rf "${LIST_TMP_DIR}" 2>/dev/null || true' EXIT
@@ -879,13 +903,24 @@ if [[ "${LIST_PODCASTS_ONLY}" -eq 1 ]]; then
     finish_stage "Collected ${podcast_count} podcasts."
   fi
 
-  if [[ "${PODCASTS_GROUP_BY}" == "alpha" ]] || [[ "${PODCASTS_GROUP_BY}" == "both" ]]; then
+  effective_group_mode="station"
+  if [[ "${PODCASTS_SORTED}" -eq 1 ]]; then
+    effective_group_mode="sorted"
+  elif [[ "${PODCASTS_GROUP_BY}" == "auto" ]]; then
+    if [[ -n "${STATION_FILTER}" ]]; then
+      effective_group_mode="alpha"
+    else
+      effective_group_mode="station"
+    fi
+  else
+    effective_group_mode="${PODCASTS_GROUP_BY}"
+  fi
+
+  if [[ "${effective_group_mode}" == "sorted" ]]; then
+    print_podcasts_sorted "${PODCASTS_FILE}"
+  elif [[ "${effective_group_mode}" == "alpha" ]]; then
     print_podcasts_alpha "${PODCASTS_FILE}"
-  fi
-  if [[ "${PODCASTS_GROUP_BY}" == "both" ]]; then
-    printf '\n'
-  fi
-  if [[ "${PODCASTS_GROUP_BY}" == "station" ]] || [[ "${PODCASTS_GROUP_BY}" == "both" ]]; then
+  else
     print_podcasts_station "${PODCASTS_FILE}"
   fi
   exit 0
