@@ -24,6 +24,12 @@ CHECK_JOBS=8
 # Optional default season selection. Examples: "1", "1,2", "all"
 # SEASONS_ARG=""
 
+# Optional default episode-ID filters for download mode (comma-separated IDs).
+# EPISODES_ARG=""
+
+# Optional default episode-URL filters for download mode (comma-separated URLs).
+# EPISODE_URLS_ARG=""
+
 # Optional default behavior: re-download archived episodes whose files are missing.
 # Values: 1/0, true/false, yes/no, on/off
 # AUTO_REDOWNLOAD_MISSING=0
@@ -33,6 +39,9 @@ CHECK_JOBS=8
 
 # Optional default: list episodes only and exit.
 # LIST_EPISODES_ONLY=0
+
+# Optional default: include episode URLs in --list-episodes output.
+# SHOW_URLS=0
 
 # Optional default: list all radio stations and exit.
 # LIST_STATIONS_ONLY=0

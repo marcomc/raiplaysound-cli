@@ -26,9 +26,13 @@ parallel download execution.
 - Supports parallel episode downloads (`--jobs`, default `3`)
 - Shows a live per-episode progress bar (`#####-----`) with ANSI colors in interactive terminals
 - Supports automatic re-download of archived-but-missing files (`--redownload-missing`) without interactive prompt
+- Supports targeted downloads:
+  - by episode ID list (`--episodes`)
+  - by episode URL (`--episode-url`, `--episode-urls`)
 - Detects season numbers (from metadata or title patterns like `S2E13`) and prints selected seasons before download
 - Supports season filtering for downloads (`--seasons`)
 - Supports season and episode discovery modes (`--list-seasons`, `--list-episodes`)
+- Prints episode IDs in `--list-episodes` output, with optional URLs via `--show-urls`
 - Lists available RaiPlaySound radio stations (`--list-stations`)
 - Can print detailed station listing with clickable page/feed URLs (`--stations-detailed`)
 - Lists programs in one mode at a time with smart defaults:
@@ -50,8 +54,10 @@ cd raiplaysound-downloader
 1. Install dependencies with Homebrew:
 
 ```bash
-brew install yt-dlp ffmpeg
+brew install bash yt-dlp ffmpeg
 ```
+
+The CLI requires Bash 4+. On macOS it will auto-reexec with Homebrew Bash (`/opt/homebrew/bin/bash` or `/usr/local/bin/bash`) when available.
 
 1. Make the script executable:
 
@@ -205,9 +211,29 @@ List episodes for one or more seasons:
 ./raiplaysound-cli.sh --list-episodes --seasons 2 america7
 ```
 
+List episodes including URLs:
+
+```bash
+./raiplaysound-cli.sh --list-episodes --show-urls --seasons 2 america7
+```
+
 If `--list-episodes` is used without `--seasons`, it lists the latest detected season.
 
 If download is run without `--seasons`, it targets the current/latest season only.
+
+Download only selected episodes by ID:
+
+```bash
+./raiplaysound-cli.sh --episodes da038798-68f0-489b-9aa9-dc8b5cc45d64 musicalbox
+./raiplaysound-cli.sh --episodes id1,id2,id3 america7
+```
+
+Download only selected episodes by URL:
+
+```bash
+./raiplaysound-cli.sh --episode-url https://www.raiplaysound.it/audio/2026/02/Musical-Box-del-15022026-da038798-68f0-489b-9aa9-dc8b5cc45d64.html musicalbox
+./raiplaysound-cli.sh --episode-urls https://www.raiplaysound.it/audio/...html,https://www.raiplaysound.it/audio/...html america7
+```
 
 List all available radio stations:
 
@@ -285,6 +311,8 @@ Set program catalog cache max age in hours:
 ./raiplaysound-cli.sh --seasons 1,2 america7
 ./raiplaysound-cli.sh --seasons all america7
 ./raiplaysound-cli.sh --redownload-missing america7
+./raiplaysound-cli.sh --episodes id1,id2 america7
+./raiplaysound-cli.sh --episode-url https://www.raiplaysound.it/audio/...html musicalbox
 
 # Metadata cache controls
 ./raiplaysound-cli.sh --refresh-metadata america7
@@ -298,6 +326,7 @@ Set program catalog cache max age in hours:
 # Season/episode listing
 ./raiplaysound-cli.sh --list-seasons america7
 ./raiplaysound-cli.sh --list-episodes --seasons 2 america7
+./raiplaysound-cli.sh --list-episodes --show-urls --seasons 2 america7
 
 # Station listing
 ./raiplaysound-cli.sh --list-stations

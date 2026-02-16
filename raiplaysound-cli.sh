@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if ((BASH_VERSINFO[0] < 4)); then
+  if [[ -x /opt/homebrew/bin/bash ]]; then
+    exec /opt/homebrew/bin/bash "$0" "$@"
+  fi
+  if [[ -x /usr/local/bin/bash ]]; then
+    exec /usr/local/bin/bash "$0" "$@"
+  fi
+  echo "Error: Bash >= 4 is required. Install with 'brew install bash' and run with that Bash." >&2
+  exit 1
+fi
+
 usage() {
   cat <<'USAGE'
 Usage: raiplaysound-cli.sh [OPTIONS] <slug|program_url>
@@ -18,6 +29,9 @@ Options:
   -f, --format FORMAT         Audio format: mp3|m4a|aac|ogg|opus|flac|wav (default: m4a)
   -j, --jobs N                Parallel download jobs (default: 3)
   -s, --seasons LIST|all      Season filter for downloads/list-episodes (e.g. 1,2 or all)
+      --episodes LIST         Download only specific episode IDs (comma-separated)
+      --episode-url URL       Download one specific episode by URL (repeatable)
+      --episode-urls LIST     Download specific episode URLs (comma-separated)
       --redownload-missing    Re-download archive-marked episodes missing locally
       --log[=PATH]            Enable debug log (default path in target dir if omitted)
       --refresh-metadata      Force refresh of per-show metadata cache
@@ -28,6 +42,7 @@ Options:
   Listing options:
       --list-seasons          List seasons for a show
       --list-episodes         List episodes for a show
+      --show-urls             With --list-episodes: include episode URLs in output
       --list-stations         List station short names and display names
       --stations-detailed     With --list-stations: include station page/feed URLs
       --list-programs         List programs
@@ -48,6 +63,9 @@ Examples:
   raiplaysound-cli.sh --seasons 1,2 america7
   raiplaysound-cli.sh --list-seasons america7
   raiplaysound-cli.sh --list-episodes --seasons 2 america7
+  raiplaysound-cli.sh --list-episodes --show-urls america7
+  raiplaysound-cli.sh --episodes da038798-68f0-489b-9aa9-dc8b5cc45d64 america7
+  raiplaysound-cli.sh --episode-url https://www.raiplaysound.it/audio/2026/02/Musical-Box-del-15022026-da038798-68f0-489b-9aa9-dc8b5cc45d64.html musicalbox
   raiplaysound-cli.sh --list-stations
   raiplaysound-cli.sh --list-stations --stations-detailed
   raiplaysound-cli.sh --list-programs --station radio2
@@ -112,6 +130,8 @@ load_config_file() {
       AUDIO_FORMAT) AUDIO_FORMAT="$(printf '%s' "${value}" | tr '[:upper:]' '[:lower:]')" ;;
       JOBS) JOBS="${value}" ;;
       SEASONS_ARG) SEASONS_ARG="${value}" ;;
+      EPISODES_ARG) EPISODES_ARG="${value}" ;;
+      EPISODE_URLS_ARG) EPISODE_URLS_ARG="${value}" ;;
       LIST_SEASONS_ONLY)
         bool_v="$(normalize_bool "${value}")"
         [[ -n "${bool_v}" ]] && LIST_SEASONS_ONLY="${bool_v}"
@@ -119,6 +139,10 @@ load_config_file() {
       LIST_EPISODES_ONLY)
         bool_v="$(normalize_bool "${value}")"
         [[ -n "${bool_v}" ]] && LIST_EPISODES_ONLY="${bool_v}"
+        ;;
+      SHOW_URLS)
+        bool_v="$(normalize_bool "${value}")"
+        [[ -n "${bool_v}" ]] && SHOW_URLS="${bool_v}"
         ;;
       LIST_STATIONS_ONLY)
         bool_v="$(normalize_bool "${value}")"
@@ -177,8 +201,11 @@ AUDIO_FORMAT="m4a"
 JOBS="3"
 AUTO_REDOWNLOAD_MISSING="0"
 SEASONS_ARG=""
+EPISODES_ARG=""
+EPISODE_URLS_ARG=""
 LIST_SEASONS_ONLY="0"
 LIST_EPISODES_ONLY="0"
+SHOW_URLS="0"
 LIST_STATIONS_ONLY="0"
 STATIONS_DETAILED="0"
 LIST_PODCASTS_ONLY="0"
@@ -238,6 +265,45 @@ while [[ "$#" -gt 0 ]]; do
       fi
       shift 2
       ;;
+    --episodes)
+      if [[ "$#" -lt 2 ]]; then
+        echo "Error: --episodes requires a value (comma-separated episode IDs)." >&2
+        usage
+        exit 1
+      fi
+      if [[ -z "${EPISODES_ARG}" ]]; then
+        EPISODES_ARG="$2"
+      else
+        EPISODES_ARG="${EPISODES_ARG},$2"
+      fi
+      shift 2
+      ;;
+    --episode-url)
+      if [[ "$#" -lt 2 ]]; then
+        echo "Error: --episode-url requires a value (episode URL)." >&2
+        usage
+        exit 1
+      fi
+      if [[ -z "${EPISODE_URLS_ARG}" ]]; then
+        EPISODE_URLS_ARG="$2"
+      else
+        EPISODE_URLS_ARG="${EPISODE_URLS_ARG},$2"
+      fi
+      shift 2
+      ;;
+    --episode-urls)
+      if [[ "$#" -lt 2 ]]; then
+        echo "Error: --episode-urls requires a value (comma-separated episode URLs)." >&2
+        usage
+        exit 1
+      fi
+      if [[ -z "${EPISODE_URLS_ARG}" ]]; then
+        EPISODE_URLS_ARG="$2"
+      else
+        EPISODE_URLS_ARG="${EPISODE_URLS_ARG},$2"
+      fi
+      shift 2
+      ;;
     --redownload-missing)
       AUTO_REDOWNLOAD_MISSING="1"
       shift
@@ -264,6 +330,10 @@ while [[ "$#" -gt 0 ]]; do
       ;;
     --list-episodes)
       LIST_EPISODES_ONLY="1"
+      shift
+      ;;
+    --show-urls)
+      SHOW_URLS="1"
       shift
       ;;
     --list-stations)
@@ -482,6 +552,18 @@ fi
 if [[ "${LIST_STATIONS_ONLY}" -eq 0 ]] && [[ "${STATIONS_DETAILED}" -eq 1 ]]; then
   echo "Error: --stations-detailed can only be used with --list-stations." >&2
   exit 1
+fi
+
+if [[ "${LIST_EPISODES_ONLY}" -eq 0 ]] && [[ "${SHOW_URLS}" -eq 1 ]]; then
+  echo "Error: --show-urls can only be used with --list-episodes." >&2
+  exit 1
+fi
+
+if [[ "${LIST_SEASONS_ONLY}" -eq 1 ]] || [[ "${LIST_EPISODES_ONLY}" -eq 1 ]] || [[ "${LIST_STATIONS_ONLY}" -eq 1 ]] || [[ "${LIST_PODCASTS_ONLY}" -eq 1 ]]; then
+  if [[ -n "${EPISODES_ARG}" ]] || [[ -n "${EPISODE_URLS_ARG}" ]]; then
+    echo "Error: --episodes/--episode-url/--episode-urls are only valid in download mode." >&2
+    exit 1
+  fi
 fi
 
 if [[ "${LIST_STATIONS_ONLY}" -eq 0 ]] && [[ "${LIST_PODCASTS_ONLY}" -eq 0 ]] && [[ -z "${INPUT}" ]]; then
@@ -1064,6 +1146,60 @@ if [[ -n "${SEASONS_ARG}" ]]; then
   done
 fi
 
+normalize_episode_url() {
+  local url="$1"
+  printf '%s' "${url%/}"
+}
+
+declare -A REQUESTED_EPISODE_IDS=()
+declare -A REQUESTED_EPISODE_URLS=()
+declare -A REQUESTED_EPISODE_URL_ID_BY_URL=()
+REQUESTED_EPISODE_IDS_COUNT=0
+REQUESTED_EPISODE_URLS_COUNT=0
+HAS_EPISODE_FILTERS="0"
+
+if [[ -n "${EPISODES_ARG}" ]]; then
+  CLEANED_EPISODES_ARG="$(printf '%s' "${EPISODES_ARG}" | tr -d '[:space:]')"
+  IFS=',' read -r -a EPISODE_ID_PARTS <<< "${CLEANED_EPISODES_ARG}"
+  for episode_id_part in "${EPISODE_ID_PARTS[@]}"; do
+    [[ -z "${episode_id_part}" ]] && continue
+    if ! [[ "${episode_id_part}" =~ ^[A-Za-z0-9_-]+$ ]]; then
+      echo "Error: invalid episode ID '${episode_id_part}'." >&2
+      exit 1
+    fi
+    if [[ -z "${REQUESTED_EPISODE_IDS[${episode_id_part}]:-}" ]]; then
+      REQUESTED_EPISODE_IDS["${episode_id_part}"]="1"
+      REQUESTED_EPISODE_IDS_COUNT=$((REQUESTED_EPISODE_IDS_COUNT + 1))
+    fi
+  done
+fi
+
+if [[ -n "${EPISODE_URLS_ARG}" ]]; then
+  IFS=',' read -r -a EPISODE_URL_PARTS <<< "${EPISODE_URLS_ARG}"
+  for episode_url_part in "${EPISODE_URL_PARTS[@]}"; do
+    episode_url_part="$(trim_ws "${episode_url_part}")"
+    [[ -z "${episode_url_part}" ]] && continue
+    if ! [[ "${episode_url_part}" =~ ^https?://www\.raiplaysound\.it/.+ ]]; then
+      echo "Error: invalid episode URL '${episode_url_part}'." >&2
+      exit 1
+    fi
+    normalized_episode_url="$(normalize_episode_url "${episode_url_part}")"
+    if [[ -z "${REQUESTED_EPISODE_URLS[${normalized_episode_url}]:-}" ]]; then
+      REQUESTED_EPISODE_URLS["${normalized_episode_url}"]="1"
+      REQUESTED_EPISODE_URLS_COUNT=$((REQUESTED_EPISODE_URLS_COUNT + 1))
+    fi
+    extracted_episode_id=""
+    if [[ "${normalized_episode_url}" =~ -([0-9a-fA-F-]{8,})\.(html|json)$ ]]; then
+      extracted_episode_id="${BASH_REMATCH[1]}"
+    fi
+    REQUESTED_EPISODE_URL_ID_BY_URL["${normalized_episode_url}"]="${extracted_episode_id}"
+  done
+fi
+
+if [[ "${REQUESTED_EPISODE_IDS_COUNT}" -gt 0 ]] || [[ "${REQUESTED_EPISODE_URLS_COUNT}" -gt 0 ]]; then
+  HAS_EPISODE_FILTERS="1"
+fi
+
 TARGET_DIR="${TARGET_BASE}/${SLUG}"
 ARCHIVE_FILE="${TARGET_DIR}/.download-archive.txt"
 METADATA_CACHE_FILE="${TARGET_DIR}/.metadata-cache.tsv"
@@ -1161,6 +1297,8 @@ while IFS=$'\t' read -r episode_id episode_url season_hint; do
   if [[ -z "${episode_id}" ]] || [[ -z "${episode_url}" ]]; then
     continue
   fi
+
+  episode_url="$(normalize_episode_url "${episode_url}")"
 
   base_name="$(basename "${episode_url}")"
   base_name="${base_name%.json}"
@@ -1485,16 +1623,26 @@ if [[ "${LIST_EPISODES_ONLY}" -eq 1 ]]; then
     if [[ "${upload_date}" =~ ^[0-9]{8}$ ]]; then
       pretty_date="${upload_date:0:4}-${upload_date:4:2}-${upload_date:6:2}"
     fi
+    episode_id="${EPISODE_IDS[i]}"
+    episode_url="${EPISODE_URLS[i]}"
     if [[ "${HAS_SEASONS}" -eq 0 ]]; then
-      printf '  - %s | %s\n' "${pretty_date}" "${EPISODE_TITLES[i]}"
+      if [[ "${SHOW_URLS}" -eq 1 ]]; then
+        printf '  - %s | %s | %s | %s\n' "${episode_id}" "${pretty_date}" "${EPISODE_TITLES[i]}" "${episode_url}"
+      else
+        printf '  - %s | %s | %s\n' "${episode_id}" "${pretty_date}" "${EPISODE_TITLES[i]}"
+      fi
     else
-      printf '  - S%s | %s | %s\n' "${season}" "${pretty_date}" "${EPISODE_TITLES[i]}"
+      if [[ "${SHOW_URLS}" -eq 1 ]]; then
+        printf '  - S%s | %s | %s | %s | %s\n' "${season}" "${episode_id}" "${pretty_date}" "${EPISODE_TITLES[i]}" "${episode_url}"
+      else
+        printf '  - S%s | %s | %s | %s\n' "${season}" "${episode_id}" "${pretty_date}" "${EPISODE_TITLES[i]}"
+      fi
     fi
   done
   exit 0
 fi
 
-if [[ "${HAS_SEASONS}" -eq 1 ]] && [[ "${REQUEST_ALL_SEASONS}" -eq 0 ]] && [[ "${REQUESTED_SEASONS_COUNT}" -eq 0 ]] && [[ "${LIST_SEASONS_ONLY}" -eq 0 ]] && [[ "${LIST_EPISODES_ONLY}" -eq 0 ]]; then
+if [[ "${HAS_SEASONS}" -eq 1 ]] && [[ "${REQUEST_ALL_SEASONS}" -eq 0 ]] && [[ "${REQUESTED_SEASONS_COUNT}" -eq 0 ]] && [[ "${LIST_SEASONS_ONLY}" -eq 0 ]] && [[ "${LIST_EPISODES_ONLY}" -eq 0 ]] && [[ "${HAS_EPISODE_FILTERS}" -eq 0 ]]; then
   declare -a FILTERED_IDS=()
   declare -a FILTERED_URLS=()
   declare -a FILTERED_LABELS=()
@@ -1560,6 +1708,77 @@ if [[ "${HAS_SEASONS}" -eq 1 ]] && [[ "${REQUESTED_SEASONS_COUNT}" -gt 0 ]]; the
   TOTAL="${#EPISODE_IDS[@]}"
 fi
 
+if [[ "${HAS_EPISODE_FILTERS}" -eq 1 ]]; then
+  declare -a FILTERED_IDS=()
+  declare -a FILTERED_URLS=()
+  declare -a FILTERED_LABELS=()
+  declare -a FILTERED_TITLES=()
+  declare -a FILTERED_UPLOAD_DATES=()
+  declare -a FILTERED_SEASONS=()
+  declare -a FILTERED_YEARS=()
+  declare -A MATCHED_EPISODE_IDS=()
+  declare -A MATCHED_EPISODE_URLS=()
+
+  for ((i = 0; i < TOTAL; i++)); do
+    episode_id="${EPISODE_IDS[i]}"
+    episode_url="${EPISODE_URLS[i]}"
+    include_episode="0"
+    if [[ "${REQUESTED_EPISODE_IDS_COUNT}" -gt 0 ]] && [[ -n "${REQUESTED_EPISODE_IDS[${episode_id}]:-}" ]]; then
+      include_episode="1"
+      MATCHED_EPISODE_IDS["${episode_id}"]="1"
+    fi
+    if [[ "${REQUESTED_EPISODE_URLS_COUNT}" -gt 0 ]]; then
+      if [[ -n "${REQUESTED_EPISODE_URLS[${episode_url}]:-}" ]]; then
+        include_episode="1"
+        MATCHED_EPISODE_URLS["${episode_url}"]="1"
+      fi
+      for requested_episode_url in "${!REQUESTED_EPISODE_URLS[@]}"; do
+        requested_url_episode_id="${REQUESTED_EPISODE_URL_ID_BY_URL[${requested_episode_url}]:-}"
+        if [[ -n "${requested_url_episode_id}" ]] && [[ "${requested_url_episode_id}" == "${episode_id}" ]]; then
+          include_episode="1"
+          MATCHED_EPISODE_URLS["${requested_episode_url}"]="1"
+        fi
+      done
+    fi
+    if [[ "${include_episode}" -eq 0 ]]; then
+      continue
+    fi
+    FILTERED_IDS+=("${EPISODE_IDS[i]}")
+    FILTERED_URLS+=("${EPISODE_URLS[i]}")
+    FILTERED_LABELS+=("${EPISODE_LABELS[i]}")
+    FILTERED_TITLES+=("${EPISODE_TITLES[i]}")
+    FILTERED_UPLOAD_DATES+=("${EPISODE_UPLOAD_DATES[i]}")
+    FILTERED_SEASONS+=("${EPISODE_SEASONS[i]}")
+    FILTERED_YEARS+=("${EPISODE_YEARS[i]}")
+  done
+
+  if [[ "${REQUESTED_EPISODE_IDS_COUNT}" -gt 0 ]]; then
+    for requested_episode_id in "${!REQUESTED_EPISODE_IDS[@]}"; do
+      if [[ -z "${MATCHED_EPISODE_IDS[${requested_episode_id}]:-}" ]]; then
+        echo "Error: episode ID '${requested_episode_id}' not found for '${SLUG}'." >&2
+        exit 1
+      fi
+    done
+  fi
+  if [[ "${REQUESTED_EPISODE_URLS_COUNT}" -gt 0 ]]; then
+    for requested_episode_url in "${!REQUESTED_EPISODE_URLS[@]}"; do
+      if [[ -z "${MATCHED_EPISODE_URLS[${requested_episode_url}]:-}" ]]; then
+        echo "Error: episode URL not found for '${SLUG}': ${requested_episode_url}" >&2
+        exit 1
+      fi
+    done
+  fi
+
+  EPISODE_IDS=("${FILTERED_IDS[@]}")
+  EPISODE_URLS=("${FILTERED_URLS[@]}")
+  EPISODE_LABELS=("${FILTERED_LABELS[@]}")
+  EPISODE_TITLES=("${FILTERED_TITLES[@]}")
+  EPISODE_UPLOAD_DATES=("${FILTERED_UPLOAD_DATES[@]}")
+  EPISODE_SEASONS=("${FILTERED_SEASONS[@]}")
+  EPISODE_YEARS=("${FILTERED_YEARS[@]}")
+  TOTAL="${#EPISODE_IDS[@]}"
+fi
+
 if [[ "${TOTAL}" -eq 0 ]]; then
   echo "No episodes selected for download." >&2
   exit 1
@@ -1573,6 +1792,11 @@ elif [[ "${HAS_SEASONS}" -eq 0 ]]; then
   DOWNLOAD_SEASONS_LABEL="none (all episodes)"
 else
   DOWNLOAD_SEASONS_LABEL="current (${LATEST_SEASON})"
+fi
+
+EPISODE_FILTER_LABEL="none"
+if [[ "${HAS_EPISODE_FILTERS}" -eq 1 ]]; then
+  EPISODE_FILTER_LABEL="ids=${REQUESTED_EPISODE_IDS_COUNT},urls=${REQUESTED_EPISODE_URLS_COUNT}"
 fi
 
 RUN_TS="$(date '+%Y%m%d-%H%M%S')"
@@ -1628,6 +1852,7 @@ if [[ ! -t 1 ]]; then
   printf 'Archive file: %s\n' "${ARCHIVE_FILE}"
   printf 'Output format: %s\n' "${AUDIO_FORMAT}"
   printf 'Parallel jobs: %s\n' "${JOBS}"
+  printf 'Episode filters: %s\n' "${EPISODE_FILTER_LABEL}"
   if [[ "${ENABLE_LOG}" -eq 1 ]]; then
     printf 'Log file: %s\n' "${LOG_FILE}"
   fi
@@ -1641,6 +1866,7 @@ log_line "Output directory: ${TARGET_DIR}"
 log_line "Archive file: ${ARCHIVE_FILE}"
 log_line "Output format: ${AUDIO_FORMAT}"
 log_line "Parallel jobs: ${JOBS}"
+log_line "Episode filters: ${EPISODE_FILTER_LABEL}"
 if [[ "${ENABLE_LOG}" -eq 1 ]]; then
   log_line "Log file: ${LOG_FILE}"
 fi
