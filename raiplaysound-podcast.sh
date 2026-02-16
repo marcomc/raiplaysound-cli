@@ -160,6 +160,44 @@ if [[ "${LIST_SEASONS_ONLY}" -eq 1 ]] && [[ "${LIST_EPISODES_ONLY}" -eq 1 ]]; th
   exit 1
 fi
 
+IS_TTY="0"
+if [[ -t 1 ]]; then
+  IS_TTY="1"
+fi
+
+C_RESET=""
+C_GREEN=""
+C_YELLOW=""
+C_RED=""
+C_BLUE=""
+C_CYAN=""
+if [[ "${IS_TTY}" -eq 1 ]]; then
+  C_RESET=$'\033[0m'
+  C_GREEN=$'\033[32m'
+  C_YELLOW=$'\033[33m'
+  C_RED=$'\033[31m'
+  C_BLUE=$'\033[34m'
+  C_CYAN=$'\033[36m'
+fi
+
+show_stage() {
+  local message="$1"
+  if [[ "${IS_TTY}" -eq 1 ]]; then
+    printf '\r%b==>%b %s' "${C_CYAN}" "${C_RESET}" "${message}"
+  else
+    printf '%b==>%b %s\n' "${C_CYAN}" "${C_RESET}" "${message}"
+  fi
+}
+
+finish_stage() {
+  local message="$1"
+  if [[ "${IS_TTY}" -eq 1 ]]; then
+    printf '\r%b==>%b %s\n' "${C_GREEN}" "${C_RESET}" "${message}"
+  else
+    printf '%b==>%b %s\n' "${C_GREEN}" "${C_RESET}" "${message}"
+  fi
+}
+
 SLUG=""
 PROGRAM_URL=""
 
@@ -222,6 +260,7 @@ declare -a EPISODE_IDS=()
 declare -a EPISODE_URLS=()
 declare -a EPISODE_LABELS=()
 EPISODE_LIST_FILE="${WORK_DIR}/episodes.tsv"
+show_stage "Discovering episodes from ${PROGRAM_URL} ..."
 yt-dlp --flat-playlist --print $'%(id)s\t%(webpage_url)s' "${PROGRAM_URL}" > "${EPISODE_LIST_FILE}"
 
 while IFS=$'\t' read -r episode_id episode_url; do
@@ -243,9 +282,13 @@ done < "${EPISODE_LIST_FILE}"
 
 TOTAL="${#EPISODE_IDS[@]}"
 if [[ "${TOTAL}" -eq 0 ]]; then
+  if [[ "${IS_TTY}" -eq 1 ]]; then
+    printf '\n'
+  fi
   echo "No episodes found for ${PROGRAM_URL}." >&2
   exit 1
 fi
+finish_stage "Discovered ${TOTAL} episodes."
 
 infer_season_from_text() {
   local text="$1"
@@ -253,8 +296,7 @@ infer_season_from_text() {
     printf '%s\n' "${BASH_REMATCH[1]}"
     return 0
   fi
-  printf '1\n'
-  return 0
+  return 1
 }
 
 extract_year_from_url() {
@@ -274,8 +316,12 @@ declare -a EPISODE_YEARS=()
 declare -A SEASON_COUNTS=()
 declare -A SEASON_YEAR_MIN=()
 declare -A SEASON_YEAR_MAX=()
+SHOW_YEAR_MIN=""
+SHOW_YEAR_MAX=""
+DETECTED_SEASON_EVIDENCE="0"
 
 for ((i = 0; i < TOTAL; i++)); do
+  show_stage "Collecting metadata ${i}/${TOTAL} ..."
   episode_url="${EPISODE_URLS[i]}"
   label="${EPISODE_LABELS[i]}"
 
@@ -292,8 +338,16 @@ for ((i = 0; i < TOTAL; i++)); do
   season_candidate="NA"
   if [[ -n "${season_number}" ]] && [[ "${season_number}" != "NA" ]] && [[ "${season_number}" =~ ^[0-9]+$ ]]; then
     season_candidate="${season_number}"
+    DETECTED_SEASON_EVIDENCE="1"
   else
-    season_candidate="$(infer_season_from_text "${meta_title}")"
+    set +e
+    season_from_title="$(infer_season_from_text "${meta_title}")"
+    season_from_title_rc=$?
+    set -e
+    if [[ "${season_from_title_rc}" -eq 0 ]]; then
+      season_candidate="${season_from_title}"
+      DETECTED_SEASON_EVIDENCE="1"
+    fi
   fi
   if ! [[ "${season_candidate}" =~ ^[0-9]+$ ]]; then
     season_candidate="1"
@@ -312,6 +366,12 @@ for ((i = 0; i < TOTAL; i++)); do
 
   SEASON_COUNTS["${season_candidate}"]=$((SEASON_COUNTS["${season_candidate}"] + 1))
   if [[ "${episode_year}" =~ ^[0-9]{4}$ ]]; then
+    if [[ -z "${SHOW_YEAR_MIN}" ]] || [[ "${episode_year}" -lt "${SHOW_YEAR_MIN}" ]]; then
+      SHOW_YEAR_MIN="${episode_year}"
+    fi
+    if [[ -z "${SHOW_YEAR_MAX}" ]] || [[ "${episode_year}" -gt "${SHOW_YEAR_MAX}" ]]; then
+      SHOW_YEAR_MAX="${episode_year}"
+    fi
     if [[ -z "${SEASON_YEAR_MIN[${season_candidate}]:-}" ]] || [[ "${episode_year}" -lt "${SEASON_YEAR_MIN[${season_candidate}]}" ]]; then
       SEASON_YEAR_MIN["${season_candidate}"]="${episode_year}"
     fi
@@ -320,14 +380,27 @@ for ((i = 0; i < TOTAL; i++)); do
     fi
   fi
 done
+finish_stage "Metadata collected for ${TOTAL} episodes."
 
 AVAILABLE_SEASONS_SORTED="$(printf '%s\n' "${!SEASON_COUNTS[@]}" | sort -n)"
 LATEST_SEASON="$(printf '%s\n' "${!SEASON_COUNTS[@]}" | sort -n | tail -n 1)"
 if [[ -z "${LATEST_SEASON}" ]]; then
   LATEST_SEASON="1"
 fi
+HAS_SEASONS="0"
+if [[ "${DETECTED_SEASON_EVIDENCE}" -eq 1 ]]; then
+  HAS_SEASONS="1"
+fi
+season_key_count="$(printf '%s\n' "${!SEASON_COUNTS[@]}" | wc -l | tr -d '[:space:]')"
+if [[ "${season_key_count}" -gt 1 ]]; then
+  HAS_SEASONS="1"
+fi
 
 if [[ "${REQUESTED_SEASONS_COUNT}" -gt 0 ]]; then
+  if [[ "${HAS_SEASONS}" -eq 0 ]]; then
+    echo "Error: '${SLUG}' does not expose seasons, so --seasons cannot be used." >&2
+    exit 1
+  fi
   for requested_season in "${!REQUESTED_SEASONS[@]}"; do
     if [[ -z "${SEASON_COUNTS[${requested_season}]:-}" ]]; then
       echo "Error: season ${requested_season} is not available for '${SLUG}'." >&2
@@ -337,27 +410,42 @@ if [[ "${REQUESTED_SEASONS_COUNT}" -gt 0 ]]; then
 fi
 
 if [[ "${LIST_SEASONS_ONLY}" -eq 1 ]]; then
-  printf 'Available seasons for %s (%s):\n' "${SLUG}" "${PROGRAM_URL}"
-  while IFS= read -r season; do
-    [[ -z "${season}" ]] && continue
-    year_min="${SEASON_YEAR_MIN[${season}]:-NA}"
-    year_max="${SEASON_YEAR_MAX[${season}]:-NA}"
-    year_span="unknown year"
-    if [[ "${year_min}" =~ ^[0-9]{4}$ ]] && [[ "${year_max}" =~ ^[0-9]{4}$ ]]; then
-      if [[ "${year_min}" == "${year_max}" ]]; then
-        year_span="${year_min}"
+  if [[ "${HAS_SEASONS}" -eq 0 ]]; then
+    show_year_span="unknown year"
+    if [[ "${SHOW_YEAR_MIN}" =~ ^[0-9]{4}$ ]] && [[ "${SHOW_YEAR_MAX}" =~ ^[0-9]{4}$ ]]; then
+      if [[ "${SHOW_YEAR_MIN}" == "${SHOW_YEAR_MAX}" ]]; then
+        show_year_span="${SHOW_YEAR_MIN}"
       else
-        year_span="${year_min}-${year_max}"
+        show_year_span="${SHOW_YEAR_MIN}-${SHOW_YEAR_MAX}"
       fi
     fi
-    printf '  - Season %s: %s episodes (published: %s)\n' "${season}" "${SEASON_COUNTS[${season}]}" "${year_span}"
-  done <<< "${AVAILABLE_SEASONS_SORTED}"
+    printf 'No seasons detected for %s (%s).\n' "${SLUG}" "${PROGRAM_URL}"
+    printf '  - Episodes: %d (published: %s)\n' "${TOTAL}" "${show_year_span}"
+  else
+    printf 'Available seasons for %s (%s):\n' "${SLUG}" "${PROGRAM_URL}"
+    while IFS= read -r season; do
+      [[ -z "${season}" ]] && continue
+      year_min="${SEASON_YEAR_MIN[${season}]:-NA}"
+      year_max="${SEASON_YEAR_MAX[${season}]:-NA}"
+      year_span="unknown year"
+      if [[ "${year_min}" =~ ^[0-9]{4}$ ]] && [[ "${year_max}" =~ ^[0-9]{4}$ ]]; then
+        if [[ "${year_min}" == "${year_max}" ]]; then
+          year_span="${year_min}"
+        else
+          year_span="${year_min}-${year_max}"
+        fi
+      fi
+      printf '  - Season %s: %s episodes (published: %s)\n' "${season}" "${SEASON_COUNTS[${season}]}" "${year_span}"
+    done <<< "${AVAILABLE_SEASONS_SORTED}"
+  fi
   exit 0
 fi
 
 if [[ "${LIST_EPISODES_ONLY}" -eq 1 ]]; then
   declare -A LIST_SEASONS=()
-  if [[ "${REQUESTED_SEASONS_COUNT}" -gt 0 ]]; then
+  if [[ "${HAS_SEASONS}" -eq 0 ]]; then
+    LIST_SEASONS["1"]="1"
+  elif [[ "${REQUESTED_SEASONS_COUNT}" -gt 0 ]]; then
     for requested_season in "${!REQUESTED_SEASONS[@]}"; do
       LIST_SEASONS["${requested_season}"]="1"
     done
@@ -366,17 +454,21 @@ if [[ "${LIST_EPISODES_ONLY}" -eq 1 ]]; then
   fi
 
   printf 'Episodes for %s (%s):\n' "${SLUG}" "${PROGRAM_URL}"
-  printf '  Seasons: '
-  first_printed="1"
-  for list_season in $(printf '%s\n' "${!LIST_SEASONS[@]}" | sort -n); do
-    if [[ "${first_printed}" -eq 1 ]]; then
-      printf '%s' "${list_season}"
-      first_printed="0"
-    else
-      printf ',%s' "${list_season}"
-    fi
-  done
-  printf '\n'
+  if [[ "${HAS_SEASONS}" -eq 0 ]]; then
+    printf '  Season model: none (single stream)\n'
+  else
+    printf '  Seasons: '
+    first_printed="1"
+    for list_season in $(printf '%s\n' "${!LIST_SEASONS[@]}" | sort -n); do
+      if [[ "${first_printed}" -eq 1 ]]; then
+        printf '%s' "${list_season}"
+        first_printed="0"
+      else
+        printf ',%s' "${list_season}"
+      fi
+    done
+    printf '\n'
+  fi
 
   for ((i = 0; i < TOTAL; i++)); do
     season="${EPISODE_SEASONS[i]}"
@@ -388,12 +480,16 @@ if [[ "${LIST_EPISODES_ONLY}" -eq 1 ]]; then
     if [[ "${upload_date}" =~ ^[0-9]{8}$ ]]; then
       pretty_date="${upload_date:0:4}-${upload_date:4:2}-${upload_date:6:2}"
     fi
-    printf '  - S%s | %s | %s\n' "${season}" "${pretty_date}" "${EPISODE_TITLES[i]}"
+    if [[ "${HAS_SEASONS}" -eq 0 ]]; then
+      printf '  - %s | %s\n' "${pretty_date}" "${EPISODE_TITLES[i]}"
+    else
+      printf '  - S%s | %s | %s\n' "${season}" "${pretty_date}" "${EPISODE_TITLES[i]}"
+    fi
   done
   exit 0
 fi
 
-if [[ "${REQUESTED_SEASONS_COUNT}" -gt 0 ]]; then
+if [[ "${HAS_SEASONS}" -eq 1 ]] && [[ "${REQUESTED_SEASONS_COUNT}" -gt 0 ]]; then
   declare -a FILTERED_IDS=()
   declare -a FILTERED_URLS=()
   declare -a FILTERED_LABELS=()
@@ -433,6 +529,8 @@ fi
 
 if [[ "${REQUESTED_SEASONS_COUNT}" -gt 0 ]]; then
   DOWNLOAD_SEASONS_LABEL="$(printf '%s\n' "${!REQUESTED_SEASONS[@]}" | sort -n | paste -sd ',' -)"
+elif [[ "${HAS_SEASONS}" -eq 0 ]]; then
+  DOWNLOAD_SEASONS_LABEL="none (all episodes)"
 else
   DOWNLOAD_SEASONS_LABEL="all (${AVAILABLE_SEASONS_SORTED//$'\n'/,})"
 fi
@@ -602,26 +700,6 @@ for ((i = 0; i < TOTAL; i++)); do
   PIDS+=("0")
   ACTIVE+=("0")
 done
-
-IS_TTY="0"
-if [[ -t 1 ]]; then
-  IS_TTY="1"
-fi
-
-C_RESET=""
-C_GREEN=""
-C_YELLOW=""
-C_RED=""
-C_BLUE=""
-C_CYAN=""
-if [[ "${IS_TTY}" -eq 1 ]]; then
-  C_RESET=$'\033[0m'
-  C_GREEN=$'\033[32m'
-  C_YELLOW=$'\033[33m'
-  C_RED=$'\033[31m'
-  C_BLUE=$'\033[34m'
-  C_CYAN=$'\033[36m'
-fi
 
 CURSOR_HIDDEN="0"
 RENDER_INITIALIZED="0"
