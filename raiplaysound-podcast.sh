@@ -849,7 +849,26 @@ RENDER_HEADER_LINES="10"
 if [[ "${ENABLE_LOG}" -eq 1 ]]; then
   RENDER_HEADER_LINES=$((RENDER_HEADER_LINES + 1))
 fi
-RENDER_TOTAL_LINES="$((RENDER_HEADER_LINES + TOTAL))"
+TERM_LINES="$(tput lines 2>/dev/null || printf '24')"
+if ! [[ "${TERM_LINES}" =~ ^[0-9]+$ ]] || [[ "${TERM_LINES}" -lt 12 ]]; then
+  TERM_LINES="24"
+fi
+DISPLAY_STATUS_LINES=$((TERM_LINES - RENDER_HEADER_LINES - 2))
+if [[ "${DISPLAY_STATUS_LINES}" -lt 3 ]]; then
+  DISPLAY_STATUS_LINES=3
+fi
+RENDER_COMPACT="0"
+if [[ "${TOTAL}" -gt "${DISPLAY_STATUS_LINES}" ]]; then
+  RENDER_COMPACT="1"
+fi
+RENDER_EXTRA_LINES=0
+if [[ "${RENDER_COMPACT}" -eq 1 ]]; then
+  RENDER_EXTRA_LINES=1
+  RENDER_BODY_LINES="${DISPLAY_STATUS_LINES}"
+else
+  RENDER_BODY_LINES="${TOTAL}"
+fi
+RENDER_TOTAL_LINES="$((RENDER_HEADER_LINES + RENDER_BODY_LINES + RENDER_EXTRA_LINES))"
 
 make_bar() {
   local percent="$1"
@@ -873,6 +892,12 @@ render_progress() {
   local running_count="$1"
   local completed_count="$2"
   local state percent label bar color
+  local hidden_count display_count
+  local -a states=()
+  local -a percents=()
+  local -a labels=()
+  local -a visible_indices=()
+  local idx i
 
   if [[ "${IS_TTY}" -ne 1 ]]; then
     return
@@ -901,28 +926,84 @@ render_progress() {
 
   for ((idx = 0; idx < TOTAL; idx++)); do
     IFS='|' read -r state percent label < "${STATUS_FILES[idx]}"
+    states[idx]="${state}"
+    percents[idx]="${percent}"
+    labels[idx]="${label}"
+  done
+
+  if [[ "${RENDER_COMPACT}" -eq 0 ]]; then
+    display_count="${TOTAL}"
+    for ((idx = 0; idx < TOTAL; idx++)); do
+      visible_indices+=("${idx}")
+    done
+  else
+    display_count="${DISPLAY_STATUS_LINES}"
+    declare -A seen=()
+
+    # Always prioritize currently running/error rows.
+    for ((idx = 0; idx < TOTAL; idx++)); do
+      state="${states[idx]}"
+      if [[ "${state}" == "DOWNLOADING" ]] || [[ "${state}" == "ERROR" ]]; then
+        if [[ -z "${seen[${idx}]:-}" ]]; then
+          visible_indices+=("${idx}")
+          seen["${idx}"]=1
+        fi
+      fi
+    done
+
+    # Then show upcoming queued rows near the scheduler pointer.
+    for ((idx = next; idx < TOTAL; idx++)); do
+      [[ "${#visible_indices[@]}" -ge "${display_count}" ]] && break
+      state="${states[idx]}"
+      if [[ "${state}" == "QUEUED" ]] && [[ -z "${seen[${idx}]:-}" ]]; then
+        visible_indices+=("${idx}")
+        seen["${idx}"]=1
+      fi
+    done
+
+    # Then show most recent completed/skipped from the end.
+    for ((idx = TOTAL - 1; idx >= 0; idx--)); do
+      [[ "${#visible_indices[@]}" -ge "${display_count}" ]] && break
+      state="${states[idx]}"
+      if [[ "${state}" == "DONE" ]] || [[ "${state}" == "SKIP" ]]; then
+        if [[ -z "${seen[${idx}]:-}" ]]; then
+          visible_indices+=("${idx}")
+          seen["${idx}"]=1
+        fi
+      fi
+    done
+
+    # Fill any remaining slots with unshown rows in natural order.
+    for ((idx = 0; idx < TOTAL; idx++)); do
+      [[ "${#visible_indices[@]}" -ge "${display_count}" ]] && break
+      if [[ -z "${seen[${idx}]:-}" ]]; then
+        visible_indices+=("${idx}")
+        seen["${idx}"]=1
+      fi
+    done
+  fi
+
+  for i in "${visible_indices[@]}"; do
+    state="${states[i]}"
+    percent="${percents[i]}"
+    label="${labels[i]}"
 
     case "${state}" in
-      DONE)
-        color="${C_GREEN}"
-        ;;
-      SKIP)
-        color="${C_CYAN}"
-        ;;
-      ERROR)
-        color="${C_RED}"
-        ;;
-      DOWNLOADING)
-        color="${C_YELLOW}"
-        ;;
-      *)
-        color="${C_BLUE}"
-        ;;
+      DONE) color="${C_GREEN}" ;;
+      SKIP) color="${C_CYAN}" ;;
+      ERROR) color="${C_RED}" ;;
+      DOWNLOADING) color="${C_YELLOW}" ;;
+      *) color="${C_BLUE}" ;;
     esac
 
     bar="$(make_bar "${percent}")"
-    printf '%2d. %b%-11s%b [%s] %3d%%  %s\n' "$((idx + 1))" "${color}" "${state}" "${C_RESET}" "${bar}" "${percent}" "${label}"
+    printf '%2d. %b%-11s%b [%s] %3d%%  %s\n' "$((i + 1))" "${color}" "${state}" "${C_RESET}" "${bar}" "${percent}" "${label}"
   done
+
+  if [[ "${RENDER_COMPACT}" -eq 1 ]]; then
+    hidden_count=$((TOTAL - display_count))
+    printf '%b==>%b Showing %d/%d rows (%d hidden due to terminal height)\n' "${C_BLUE}" "${C_RESET}" "${display_count}" "${TOTAL}" "${hidden_count}"
+  fi
 }
 
 start_episode_download() {
