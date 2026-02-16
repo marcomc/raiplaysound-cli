@@ -11,8 +11,10 @@ A Bash-based downloader for RaiPlaySound programs that accepts a podcast slug or
   - `PodcastName - YYYY-MM-DD - EpisodeTitle.m4a`
 - Stores files in `~/Music/RaiPlaySound/<slug>/`
 - Keeps a per-podcast archive file (`.download-archive.txt`) to avoid re-downloading episodes
-- Writes per-run logs to `~/.local/state/raiplaysound-downloader/<slug>-run-YYYYMMDD-HHMMSS.log`
+- Writes per-run logs to `~/.local/state/raiplaysound-downloader/logs/<slug>-run-YYYYMMDD-HHMMSS.log`
 - Safe to run repeatedly (idempotent)
+- Supports common podcast output formats: `mp3`, `m4a`, `aac`, `ogg`, `opus`, `flac`, `wav`
+- Converts only when source format differs from requested output format
 
 ## Installation
 
@@ -31,7 +33,7 @@ brew install yt-dlp ffmpeg
 1. Make the script executable:
 
 ```bash
-chmod +x ./bin/raiplaysound-podcast.sh
+chmod +x ./raiplaysound-podcast.sh
 ```
 
 ## Usage
@@ -39,7 +41,7 @@ chmod +x ./bin/raiplaysound-podcast.sh
 Run using a slug:
 
 ```bash
-./bin/raiplaysound-podcast.sh musicalbox
+./raiplaysound-podcast.sh musicalbox
 ```
 
 If installed in your `PATH`, run from any directory:
@@ -51,7 +53,13 @@ raiplaysound-podcast.sh musicalbox
 Run using a full program URL:
 
 ```bash
-./bin/raiplaysound-podcast.sh https://www.raiplaysound.it/programmi/musicalbox
+./raiplaysound-podcast.sh https://www.raiplaysound.it/programmi/musicalbox
+```
+
+Run and choose output format:
+
+```bash
+./raiplaysound-podcast.sh --format mp3 musicalbox
 ```
 
 Reference episode example for this program:
