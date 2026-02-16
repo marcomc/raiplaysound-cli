@@ -16,65 +16,54 @@ VERSION="1.0.0"
 
 usage() {
   cat <<'USAGE'
-Usage: raiplaysound-cli.sh [OPTIONS] <slug|program_url>
-       raiplaysound-cli.sh [OPTIONS] --list-seasons <slug|program_url>
-       raiplaysound-cli.sh [OPTIONS] --list-episodes <slug|program_url>
-       raiplaysound-cli.sh [OPTIONS] --list-stations
-       raiplaysound-cli.sh [OPTIONS] --list-programs
+Usage:
+  raiplaysound-cli.sh download [OPTIONS] <program_slug|program_url>
+  raiplaysound-cli.sh list [OPTIONS] --stations|--programs
+  raiplaysound-cli.sh list [OPTIONS] --seasons|--episodes <program_slug|program_url>
 
-Input:
-  <slug|program_url>          RaiPlaySound program slug (e.g. musicalbox)
-                              or full URL (https://www.raiplaysound.it/programmi/<slug>)
-
-Options:
+Global options:
   -h, --help                  Show this help and exit
       --version               Show CLI version and exit
       --json                  Output list results as JSON (for automations/agents)
+
+List targets:
+      --stations              List station slugs and display names
+      --programs              List programs
+      --seasons               List seasons for a show
+      --episodes              List episodes for a show
+
+List target options:
+      --detailed              With --stations: include station page/feed URLs
+      --group-by MODE
+                              With --programs: grouping mode auto|alpha|station (default: auto)
+      --filter STATION_SLUG
+                              With --programs: filter programs by station (e.g. radio2, none)
+      --sorted                With --programs: no grouping, sorted alphabetically
+      --refresh-catalog
+                              With --programs: force refresh of program catalog cache
+      --catalog-max-age-hours N
+                              With --programs: per-run override for catalog cache max age (default: 2160 = 90 days)
+
+  -u, --show-urls             With --episodes: include episode URLs in output
+  -s, --season LIST|all       With --episodes: season filter (e.g. 1,2 or all)
+
+Download options:
   -f, --format FORMAT         Audio format: mp3|m4a|aac|ogg|opus|flac|wav (default: m4a)
   -j, --jobs N                Parallel download jobs (default: 3)
-  -s, --seasons LIST|all      Season filter for downloads/list-episodes (e.g. 1,2 or all)
-      --episodes LIST         Download only specific episode IDs (comma-separated)
+  -s, --season LIST|all       Season filter for download (e.g. 1,2 or all)
+      --seasons LIST|all      Alias for --season
+      --episode-ids LIST      Download only specific episode IDs (comma-separated)
       --episode-url URL       Download one specific episode by URL (repeatable)
       --episode-urls LIST     Download specific episode URLs (comma-separated)
-      --redownload-missing    Re-download archive-marked episodes missing locally
+  -m, --missing               Re-download archive-marked episodes missing locally
       --log[=PATH]            Enable debug log (default path in target dir if omitted)
       --refresh-metadata      Force refresh of per-show metadata cache
       --clear-metadata-cache  Clear per-show metadata cache before run
       --metadata-max-age-hours N
                               Max age for per-show metadata cache (default: 24)
 
-  Listing options:
-      --list-seasons          List seasons for a show
-      --list-episodes         List episodes for a show
-      --show-urls             With --list-episodes: include episode URLs in output
-      --list-stations         List station short names and display names
-      --stations-detailed     With --list-stations: include station page/feed URLs
-      --list-programs         List programs
-      --list-podcasts         Alias for --list-programs (deprecated)
-      --podcasts-group-by MODE
-                              Grouping mode: auto|alpha|station (default: auto)
-      --station STATION_SHORT
-                              With --list-programs: filter programs by station (e.g. radio2, none)
-      --sorted                With --list-programs: no grouping, sorted alphabetically
-      --refresh-podcast-catalog
-                              Force refresh of program catalog cache
-      --catalog-max-age-hours N
-                              Max age for program catalog cache (default: 2160 = 90 days)
-
-Examples:
-  raiplaysound-cli.sh --version
-  raiplaysound-cli.sh musicalbox
-  raiplaysound-cli.sh --format mp3 --jobs 3 musicalbox
-  raiplaysound-cli.sh --seasons 1,2 america7
-  raiplaysound-cli.sh --list-seasons america7
-  raiplaysound-cli.sh --list-episodes --seasons 2 america7
-  raiplaysound-cli.sh --list-episodes --show-urls america7
-  raiplaysound-cli.sh --episodes da038798-68f0-489b-9aa9-dc8b5cc45d64 america7
-  raiplaysound-cli.sh --episode-url https://www.raiplaysound.it/audio/2026/02/Musical-Box-del-15022026-da038798-68f0-489b-9aa9-dc8b5cc45d64.html musicalbox
-  raiplaysound-cli.sh --list-stations
-  raiplaysound-cli.sh --list-stations --stations-detailed
-  raiplaysound-cli.sh --list-programs --station radio2
-  raiplaysound-cli.sh --list-programs --sorted
+Notes:
+      --episodes              In list mode only. Use --episode-ids in download mode (legacy download --episodes is still accepted)
 USAGE
 }
 
@@ -134,6 +123,8 @@ load_config_file() {
     case "${key}" in
       AUDIO_FORMAT) AUDIO_FORMAT="$(printf '%s' "${value}" | tr '[:upper:]' '[:lower:]')" ;;
       JOBS) JOBS="${value}" ;;
+      COMMAND) COMMAND="$(printf '%s' "${value}" | tr '[:upper:]' '[:lower:]')" ;;
+      LIST_TARGET) LIST_TARGET="$(printf '%s' "${value}" | tr '[:upper:]' '[:lower:]')" ;;
       SEASONS_ARG) SEASONS_ARG="${value}" ;;
       EPISODES_ARG) EPISODES_ARG="${value}" ;;
       EPISODE_URLS_ARG) EPISODE_URLS_ARG="${value}" ;;
@@ -168,7 +159,7 @@ load_config_file() {
         bool_v="$(normalize_bool "${value}")"
         [[ -n "${bool_v}" ]] && LIST_PODCASTS_ONLY="${bool_v}"
         ;;
-      PODCASTS_GROUP_BY) PODCASTS_GROUP_BY="$(printf '%s' "${value}" | tr '[:upper:]' '[:lower:]')" ;;
+      GROUP_BY | PODCASTS_GROUP_BY) PODCASTS_GROUP_BY="$(printf '%s' "${value}" | tr '[:upper:]' '[:lower:]')" ;;
       PODCASTS_SORTED)
         bool_v="$(normalize_bool "${value}")"
         [[ -n "${bool_v}" ]] && PODCASTS_SORTED="${bool_v}"
@@ -180,7 +171,7 @@ load_config_file() {
         ;;
       CATALOG_MAX_AGE_HOURS) CATALOG_MAX_AGE_HOURS="${value}" ;;
       CATALOG_CACHE_FILE) CATALOG_CACHE_FILE="$(expand_config_path "${value}")" ;;
-      AUTO_REDOWNLOAD_MISSING)
+      AUTO_REDOWNLOAD_MISSING | DOWNLOAD_MISSING)
         bool_v="$(normalize_bool "${value}")"
         [[ -n "${bool_v}" ]] && AUTO_REDOWNLOAD_MISSING="${bool_v}"
         ;;
@@ -211,6 +202,8 @@ load_config_file() {
 
 AUDIO_FORMAT="m4a"
 JOBS="3"
+COMMAND=""
+LIST_TARGET=""
 AUTO_REDOWNLOAD_MISSING="0"
 SEASONS_ARG=""
 EPISODES_ARG=""
@@ -256,12 +249,20 @@ while [[ "$#" -gt 0 ]]; do
       printf 'raiplaysound-cli %s\n' "${VERSION}"
       exit 0
       ;;
+    list | download)
+      COMMAND="$1"
+      shift
+      ;;
     --json)
       JSON_OUTPUT="1"
       JSON_OUTPUT_SOURCE="cli"
       shift
       ;;
     -f | --format)
+      if [[ "${COMMAND}" == "list" ]]; then
+        echo "Error: --format is only valid with 'download'." >&2
+        exit 1
+      fi
       if [[ "$#" -lt 2 ]]; then
         echo "Error: --format requires a value." >&2
         usage
@@ -271,6 +272,10 @@ while [[ "$#" -gt 0 ]]; do
       shift 2
       ;;
     -j | --jobs)
+      if [[ "${COMMAND}" == "list" ]]; then
+        echo "Error: --jobs is only valid with 'download'." >&2
+        exit 1
+      fi
       if [[ "$#" -lt 2 ]]; then
         echo "Error: --jobs requires a value." >&2
         usage
@@ -279,9 +284,9 @@ while [[ "$#" -gt 0 ]]; do
       JOBS="$2"
       shift 2
       ;;
-    -s | --seasons)
+    -s | --season)
       if [[ "$#" -lt 2 ]]; then
-        echo "Error: --seasons requires a value (e.g. 1,2)." >&2
+        echo "Error: --season requires a value (e.g. 1,2)." >&2
         usage
         exit 1
       fi
@@ -292,9 +297,31 @@ while [[ "$#" -gt 0 ]]; do
       fi
       shift 2
       ;;
-    --episodes)
+    --seasons)
+      if [[ "${COMMAND}" == "list" ]]; then
+        LIST_SEASONS_ONLY="1"
+        shift
+      else
+        if [[ "$#" -lt 2 ]]; then
+          echo "Error: --seasons requires a value (e.g. 1,2)." >&2
+          usage
+          exit 1
+        fi
+        if [[ -z "${SEASONS_ARG}" ]]; then
+          SEASONS_ARG="$2"
+        else
+          SEASONS_ARG="${SEASONS_ARG},$2"
+        fi
+        shift 2
+      fi
+      ;;
+    --episode-ids | --by-id)
+      if [[ "${COMMAND}" == "list" ]]; then
+        echo "Error: --episode-ids is only valid with 'download'." >&2
+        exit 1
+      fi
       if [[ "$#" -lt 2 ]]; then
-        echo "Error: --episodes requires a value (comma-separated episode IDs)." >&2
+        echo "Error: --episode-ids requires a value (comma-separated episode IDs)." >&2
         usage
         exit 1
       fi
@@ -305,7 +332,32 @@ while [[ "$#" -gt 0 ]]; do
       fi
       shift 2
       ;;
+    --episodes)
+      if [[ "${COMMAND}" == "list" ]]; then
+        LIST_EPISODES_ONLY="1"
+        shift
+      elif [[ "${COMMAND}" == "" ]]; then
+        echo "Error: use 'list --episodes' or 'download --episode-ids ...'." >&2
+        exit 1
+      else
+        if [[ "$#" -lt 2 ]]; then
+          echo "Error: --episodes (legacy) requires a value (comma-separated episode IDs)." >&2
+          usage
+          exit 1
+        fi
+        if [[ -z "${EPISODES_ARG}" ]]; then
+          EPISODES_ARG="$2"
+        else
+          EPISODES_ARG="${EPISODES_ARG},$2"
+        fi
+        shift 2
+      fi
+      ;;
     --episode-url)
+      if [[ "${COMMAND}" == "list" ]]; then
+        echo "Error: --episode-url is only valid with 'download'." >&2
+        exit 1
+      fi
       if [[ "$#" -lt 2 ]]; then
         echo "Error: --episode-url requires a value (episode URL)." >&2
         usage
@@ -319,6 +371,10 @@ while [[ "$#" -gt 0 ]]; do
       shift 2
       ;;
     --episode-urls)
+      if [[ "${COMMAND}" == "list" ]]; then
+        echo "Error: --episode-urls is only valid with 'download'." >&2
+        exit 1
+      fi
       if [[ "$#" -lt 2 ]]; then
         echo "Error: --episode-urls requires a value (comma-separated episode URLs)." >&2
         usage
@@ -331,11 +387,19 @@ while [[ "$#" -gt 0 ]]; do
       fi
       shift 2
       ;;
-    --redownload-missing)
+    -m | --missing | --redownload-missing)
+      if [[ "${COMMAND}" == "list" ]]; then
+        echo "Error: --missing is only valid with 'download'." >&2
+        exit 1
+      fi
       AUTO_REDOWNLOAD_MISSING="1"
       shift
       ;;
     --log)
+      if [[ "${COMMAND}" == "list" ]]; then
+        echo "Error: --log is only valid with 'download'." >&2
+        exit 1
+      fi
       ENABLE_LOG="1"
       if [[ "$#" -ge 2 ]]; then
         candidate="$2"
@@ -347,41 +411,62 @@ while [[ "$#" -gt 0 ]]; do
       shift
       ;;
     --log=*)
+      if [[ "${COMMAND}" == "list" ]]; then
+        echo "Error: --log is only valid with 'download'." >&2
+        exit 1
+      fi
       ENABLE_LOG="1"
       LOG_PATH_ARG="${1#--log=}"
       shift
       ;;
+    -u | --show-urls)
+      if [[ -z "${COMMAND}" ]]; then
+        COMMAND="list"
+      fi
+      SHOW_URLS="1"
+      shift
+      ;;
+    --stations | --list-stations)
+      if [[ -z "${COMMAND}" ]]; then
+        COMMAND="list"
+      fi
+      LIST_STATIONS_ONLY="1"
+      shift
+      ;;
+    --detailed | --stations-detailed)
+      if [[ -z "${COMMAND}" ]]; then
+        COMMAND="list"
+      fi
+      STATIONS_DETAILED="1"
+      shift
+      ;;
+    --programs | --list-programs | --list-podcasts)
+      if [[ -z "${COMMAND}" ]]; then
+        COMMAND="list"
+      fi
+      LIST_PODCASTS_ONLY="1"
+      shift
+      ;;
     --list-seasons)
+      if [[ -z "${COMMAND}" ]]; then
+        COMMAND="list"
+      fi
       LIST_SEASONS_ONLY="1"
       shift
       ;;
     --list-episodes)
+      if [[ -z "${COMMAND}" ]]; then
+        COMMAND="list"
+      fi
       LIST_EPISODES_ONLY="1"
       shift
       ;;
-    --show-urls)
-      SHOW_URLS="1"
-      shift
-      ;;
-    --list-stations)
-      LIST_STATIONS_ONLY="1"
-      shift
-      ;;
-    --stations-detailed)
-      STATIONS_DETAILED="1"
-      shift
-      ;;
-    --list-programs)
-      LIST_PODCASTS_ONLY="1"
-      shift
-      ;;
-    --list-podcasts)
-      LIST_PODCASTS_ONLY="1"
-      shift
-      ;;
-    --podcasts-group-by)
+    --group-by | --podcasts-group-by)
+      if [[ -z "${COMMAND}" ]]; then
+        COMMAND="list"
+      fi
       if [[ "$#" -lt 2 ]]; then
-        echo "Error: --podcasts-group-by requires a value (auto|alpha|station)." >&2
+        echo "Error: --group-by requires a value (auto|alpha|station)." >&2
         usage
         exit 1
       fi
@@ -389,19 +474,28 @@ while [[ "$#" -gt 0 ]]; do
       shift 2
       ;;
     --sorted)
+      if [[ -z "${COMMAND}" ]]; then
+        COMMAND="list"
+      fi
       PODCASTS_SORTED="1"
       shift
       ;;
-    --station)
+    --filter | --station-filter | --station)
+      if [[ -z "${COMMAND}" ]]; then
+        COMMAND="list"
+      fi
       if [[ "$#" -lt 2 ]]; then
-        echo "Error: --station requires a value (for example: radio2, radio1, isoradio, none)." >&2
+        echo "Error: --filter requires a value (for example: radio2, radio1, isoradio, none)." >&2
         usage
         exit 1
       fi
       STATION_FILTER="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')"
       shift 2
       ;;
-    --refresh-podcast-catalog)
+    --refresh-catalog | --refresh-podcast-catalog)
+      if [[ -z "${COMMAND}" ]]; then
+        COMMAND="list"
+      fi
       FORCE_REFRESH_CATALOG="1"
       shift
       ;;
@@ -415,10 +509,18 @@ while [[ "$#" -gt 0 ]]; do
       shift 2
       ;;
     --refresh-metadata)
+      if [[ "${COMMAND}" == "list" ]]; then
+        echo "Error: --refresh-metadata is only valid with 'download'." >&2
+        exit 1
+      fi
       FORCE_REFRESH_METADATA="1"
       shift
       ;;
     --clear-metadata-cache)
+      if [[ "${COMMAND}" == "list" ]]; then
+        echo "Error: --clear-metadata-cache is only valid with 'download'." >&2
+        exit 1
+      fi
       CLEAR_METADATA_CACHE="1"
       shift
       ;;
@@ -441,6 +543,32 @@ while [[ "$#" -gt 0 ]]; do
       exit 1
       ;;
     *)
+      if [[ "${COMMAND}" == "list" ]]; then
+        case "$1" in
+          stations)
+            LIST_STATIONS_ONLY="1"
+            shift
+            continue
+            ;;
+          programs)
+            LIST_PODCASTS_ONLY="1"
+            shift
+            continue
+            ;;
+          seasons)
+            LIST_SEASONS_ONLY="1"
+            shift
+            continue
+            ;;
+          episodes)
+            LIST_EPISODES_ONLY="1"
+            shift
+            continue
+            ;;
+          *)
+            ;;
+        esac
+      fi
       if [[ -n "${INPUT}" ]]; then
         if [[ "${INPUT_FROM_CONFIG}" -eq 1 ]]; then
           INPUT="$1"
@@ -448,7 +576,7 @@ while [[ "$#" -gt 0 ]]; do
           shift
           continue
         fi
-        echo "Error: only one slug or program URL is allowed." >&2
+        echo "Error: only one program_slug or program_url is allowed." >&2
         usage
         exit 1
       fi
@@ -458,11 +586,6 @@ while [[ "$#" -gt 0 ]]; do
       ;;
   esac
 done
-
-if [[ -z "${INPUT}" && "$#" -eq 1 ]]; then
-  INPUT="$1"
-  shift
-fi
 
 if [[ "$#" -gt 0 ]]; then
   echo "Error: too many arguments." >&2
@@ -501,12 +624,12 @@ if ! [[ "${CHECK_JOBS}" =~ ^[0-9]+$ ]] || [[ "${CHECK_JOBS}" -lt 1 ]]; then
 fi
 
 if [[ "${PODCASTS_GROUP_BY}" != "auto" ]] && [[ "${PODCASTS_GROUP_BY}" != "alpha" ]] && [[ "${PODCASTS_GROUP_BY}" != "station" ]]; then
-  echo "Error: --podcasts-group-by must be one of: auto, alpha, station." >&2
+  echo "Error: --group-by must be one of: auto, alpha, station." >&2
   exit 1
 fi
 
 if [[ -n "${STATION_FILTER}" ]] && ! [[ "${STATION_FILTER}" =~ ^[a-z0-9_-]+$ ]]; then
-  echo "Error: --station must contain only lowercase letters, numbers, '-' or '_' (example: radio2, isoradio, none)." >&2
+  echo "Error: --filter must contain only lowercase letters, numbers, '-' or '_' (example: radio2, isoradio, none)." >&2
   exit 1
 fi
 
@@ -532,77 +655,135 @@ if [[ "${CATALOG_CACHE_FILE}" == *"\$HOME"* ]] || [[ "${CATALOG_CACHE_FILE}" == 
   exit 1
 fi
 
-if [[ "${LIST_SEASONS_ONLY}" -eq 1 ]] && [[ "${LIST_EPISODES_ONLY}" -eq 1 ]]; then
-  echo "Error: use either --list-seasons or --list-episodes, not both." >&2
+if [[ -n "${LIST_TARGET}" ]]; then
+  case "${LIST_TARGET}" in
+    stations) LIST_STATIONS_ONLY="1" ;;
+    programs) LIST_PODCASTS_ONLY="1" ;;
+    seasons) LIST_SEASONS_ONLY="1" ;;
+    episodes) LIST_EPISODES_ONLY="1" ;;
+    *)
+      echo "Error: LIST_TARGET must be one of: stations, programs, seasons, episodes." >&2
+      exit 1
+      ;;
+  esac
+fi
+
+if [[ -z "${COMMAND}" ]]; then
+  if [[ "${LIST_STATIONS_ONLY}" -eq 1 ]] || [[ "${LIST_PODCASTS_ONLY}" -eq 1 ]] || [[ "${LIST_SEASONS_ONLY}" -eq 1 ]] || [[ "${LIST_EPISODES_ONLY}" -eq 1 ]] || [[ "${STATIONS_DETAILED}" -eq 1 ]] || [[ -n "${STATION_FILTER}" ]] || [[ "${PODCASTS_SORTED}" -eq 1 ]] || [[ "${FORCE_REFRESH_CATALOG}" -eq 1 ]] || [[ "${SHOW_URLS}" -eq 1 ]]; then
+    COMMAND="list"
+  else
+    COMMAND="download"
+  fi
+fi
+
+if [[ "${COMMAND}" != "list" ]] && [[ "${COMMAND}" != "download" ]]; then
+  echo "Error: command must be 'list' or 'download'." >&2
+  usage
   exit 1
 fi
 
-if [[ "${LIST_STATIONS_ONLY}" -eq 1 ]] && [[ "${LIST_PODCASTS_ONLY}" -eq 1 ]]; then
-  echo "Error: use either --list-stations or --list-programs, not both." >&2
+list_target_count=0
+if [[ "${LIST_STATIONS_ONLY}" -eq 1 ]]; then
+  list_target_count=$((list_target_count + 1))
+fi
+if [[ "${LIST_PODCASTS_ONLY}" -eq 1 ]]; then
+  list_target_count=$((list_target_count + 1))
+fi
+if [[ "${LIST_SEASONS_ONLY}" -eq 1 ]]; then
+  list_target_count=$((list_target_count + 1))
+fi
+if [[ "${LIST_EPISODES_ONLY}" -eq 1 ]]; then
+  list_target_count=$((list_target_count + 1))
+fi
+
+if [[ "${COMMAND}" == "list" ]] && [[ "${list_target_count}" -eq 0 ]]; then
+  echo "Error: list mode requires one target: --stations, --programs, --seasons, or --episodes." >&2
+  usage
   exit 1
 fi
 
-if [[ "${LIST_STATIONS_ONLY}" -eq 1 ]] || [[ "${LIST_PODCASTS_ONLY}" -eq 1 ]]; then
-  if [[ "${LIST_SEASONS_ONLY}" -eq 1 ]] || [[ "${LIST_EPISODES_ONLY}" -eq 1 ]]; then
-    echo "Error: station/program listing cannot be combined with season/episode listing." >&2
-    exit 1
-  fi
-  if [[ -n "${SEASONS_ARG}" ]]; then
-    echo "Error: --seasons is only valid with download mode or --list-episodes." >&2
-    exit 1
-  fi
-  if [[ "${AUTO_REDOWNLOAD_MISSING}" -eq 1 ]]; then
-    echo "Error: --redownload-missing is not valid with station/program listing." >&2
-    exit 1
-  fi
-  if [[ -n "${INPUT}" ]]; then
-    echo "Error: do not pass slug/URL with --list-stations or --list-programs." >&2
-    exit 1
-  fi
+if [[ "${list_target_count}" -gt 1 ]]; then
+  echo "Error: use only one list target at a time." >&2
+  exit 1
+fi
+
+if [[ "${COMMAND}" == "list" ]] && [[ "${LIST_STATIONS_ONLY}" -eq 1 || "${LIST_PODCASTS_ONLY}" -eq 1 ]] && [[ -n "${INPUT}" ]]; then
+  echo "Error: do not pass program_slug/program_url with --stations or --programs." >&2
+  exit 1
+fi
+
+if [[ "${COMMAND}" == "list" ]] && [[ "${LIST_EPISODES_ONLY}" -eq 0 ]] && [[ -n "${SEASONS_ARG}" ]]; then
+  echo "Error: --season is only valid with 'download' or 'list --episodes'." >&2
+  exit 1
 fi
 
 if [[ "${LIST_PODCASTS_ONLY}" -eq 0 ]] && [[ "${FORCE_REFRESH_CATALOG}" -eq 1 ]]; then
-  echo "Error: --refresh-podcast-catalog can only be used with --list-programs." >&2
+  echo "Error: --refresh-catalog can only be used with --programs." >&2
   exit 1
 fi
 
 if [[ "${LIST_PODCASTS_ONLY}" -eq 0 ]] && [[ -n "${STATION_FILTER}" ]]; then
-  echo "Error: --station can only be used with --list-programs." >&2
+  echo "Error: --filter can only be used with --programs." >&2
   exit 1
 fi
 
 if [[ "${LIST_PODCASTS_ONLY}" -eq 0 ]] && [[ "${PODCASTS_SORTED}" -eq 1 ]]; then
-  echo "Error: --sorted can only be used with --list-programs." >&2
+  echo "Error: --sorted can only be used with --programs." >&2
   exit 1
 fi
 
+if [[ "${LIST_PODCASTS_ONLY}" -eq 0 ]] && [[ "${LIST_STATIONS_ONLY}" -eq 0 ]] && [[ "${PODCASTS_GROUP_BY}" != "auto" ]]; then
+  echo "Error: --group-by can only be used with --programs." >&2
+  exit 1
+fi
+
+if [[ "${LIST_STATIONS_ONLY}" -eq 1 ]]; then
+  PODCASTS_GROUP_BY="auto"
+fi
+
 if [[ "${LIST_STATIONS_ONLY}" -eq 0 ]] && [[ "${STATIONS_DETAILED}" -eq 1 ]]; then
-  echo "Error: --stations-detailed can only be used with --list-stations." >&2
+  echo "Error: --detailed can only be used with --stations." >&2
   exit 1
 fi
 
 if [[ "${LIST_EPISODES_ONLY}" -eq 0 ]] && [[ "${SHOW_URLS}" -eq 1 ]]; then
-  echo "Error: --show-urls can only be used with --list-episodes." >&2
+  echo "Error: --show-urls can only be used with --episodes in list mode." >&2
   exit 1
 fi
 
-if [[ "${JSON_OUTPUT}" -eq 1 ]] && [[ "${JSON_OUTPUT_SOURCE}" == "cli" ]] && [[ "${LIST_STATIONS_ONLY}" -eq 0 ]] && [[ "${LIST_PODCASTS_ONLY}" -eq 0 ]] && [[ "${LIST_SEASONS_ONLY}" -eq 0 ]] && [[ "${LIST_EPISODES_ONLY}" -eq 0 ]]; then
-  echo "Error: --json can only be used with --list-stations, --list-programs, --list-seasons, or --list-episodes." >&2
+if [[ "${JSON_OUTPUT}" -eq 1 ]] && [[ "${JSON_OUTPUT_SOURCE}" == "cli" ]] && [[ "${COMMAND}" != "list" ]]; then
+  echo "Error: --json can only be used with 'list' mode." >&2
   exit 1
 fi
 
-if [[ "${JSON_OUTPUT}" -eq 1 ]] && [[ "${JSON_OUTPUT_SOURCE}" == "config" ]] && [[ "${LIST_STATIONS_ONLY}" -eq 0 ]] && [[ "${LIST_PODCASTS_ONLY}" -eq 0 ]] && [[ "${LIST_SEASONS_ONLY}" -eq 0 ]] && [[ "${LIST_EPISODES_ONLY}" -eq 0 ]]; then
+if [[ "${JSON_OUTPUT}" -eq 1 ]] && [[ "${JSON_OUTPUT_SOURCE}" == "config" ]] && [[ "${COMMAND}" != "list" ]]; then
   JSON_OUTPUT="0"
 fi
 
-if [[ "${LIST_SEASONS_ONLY}" -eq 1 ]] || [[ "${LIST_EPISODES_ONLY}" -eq 1 ]] || [[ "${LIST_STATIONS_ONLY}" -eq 1 ]] || [[ "${LIST_PODCASTS_ONLY}" -eq 1 ]]; then
+if [[ "${COMMAND}" == "list" ]]; then
   if [[ -n "${EPISODES_ARG}" ]] || [[ -n "${EPISODE_URLS_ARG}" ]]; then
-    echo "Error: --episodes/--episode-url/--episode-urls are only valid in download mode." >&2
+    echo "Error: --episode-ids/--episode-url/--episode-urls (and legacy download --episodes) are only valid in download mode." >&2
     exit 1
   fi
 fi
 
-if [[ "${LIST_STATIONS_ONLY}" -eq 0 ]] && [[ "${LIST_PODCASTS_ONLY}" -eq 0 ]] && [[ -z "${INPUT}" ]]; then
+if [[ "${COMMAND}" == "list" ]] && [[ "${LIST_SEASONS_ONLY}" -eq 1 || "${LIST_EPISODES_ONLY}" -eq 1 ]] && [[ -z "${INPUT}" ]]; then
+  echo "Error: list target requires <program_slug|program_url>." >&2
+  usage
+  exit 1
+fi
+
+if [[ "${COMMAND}" == "download" ]] && [[ "${LIST_SEASONS_ONLY}" -eq 1 || "${LIST_EPISODES_ONLY}" -eq 1 || "${LIST_STATIONS_ONLY}" -eq 1 || "${LIST_PODCASTS_ONLY}" -eq 1 || "${STATIONS_DETAILED}" -eq 1 || "${FORCE_REFRESH_CATALOG}" -eq 1 || "${PODCASTS_SORTED}" -eq 1 || -n "${STATION_FILTER}" ]]; then
+  echo "Error: list-only options require the 'list' command." >&2
+  exit 1
+fi
+
+if [[ "${COMMAND}" == "download" ]] && [[ "${SHOW_URLS}" -eq 1 ]]; then
+  echo "Error: --show-urls is only valid with 'list --episodes'." >&2
+  exit 1
+fi
+
+if [[ "${COMMAND}" == "download" ]] && [[ -z "${INPUT}" ]]; then
   usage
   exit 1
 fi
@@ -1123,7 +1304,7 @@ if [[ "${LIST_STATIONS_ONLY}" -eq 1 ]]; then
   if [[ "${STATIONS_DETAILED}" -eq 1 ]]; then
     printf 'Available RaiPlaySound radio stations (detailed):\n'
   else
-    printf 'Available RaiPlaySound radio stations (short -> name):\n'
+    printf 'Available RaiPlaySound radio stations (station slug -> name):\n'
   fi
   while IFS=$'\t' read -r station_short station_name station_link station_json_path; do
     [[ -z "${station_name}" ]] && continue
@@ -1150,8 +1331,8 @@ if [[ "${LIST_PODCASTS_ONLY}" -eq 1 ]]; then
     station_collect_rc=$?
     set -e
     if [[ "${station_collect_rc}" -ne 0 ]]; then
-      echo "Error: unable to find programs for station short name '${STATION_FILTER}'." >&2
-      echo "Use --list-stations to see valid values." >&2
+      echo "Error: unable to find programs for station slug '${STATION_FILTER}'." >&2
+      echo "Use 'list --stations' to see valid values." >&2
       exit 1
     fi
     finish_stage "Station-scoped program catalog ready."
@@ -1194,8 +1375,8 @@ if [[ "${LIST_PODCASTS_ONLY}" -eq 1 ]]; then
     program_count="$(wc -l < "${PODCASTS_FILE}" | tr -d '[:space:]')"
     finish_stage "Collected ${program_count} programs for station '${STATION_FILTER}'."
     if [[ "${program_count}" -eq 0 ]]; then
-      echo "No programs found for station short name '${STATION_FILTER}'." >&2
-      echo "Use --list-stations to see valid values (or use 'none' for programs without station)." >&2
+      echo "No programs found for station slug '${STATION_FILTER}'." >&2
+      echo "Use 'list --stations' to see valid values (or use 'none' for programs without station)." >&2
       exit 1
     fi
   else
@@ -1248,7 +1429,7 @@ elif printf '%s' "${INPUT}" | grep -Eq '^[A-Za-z0-9-]+$'; then
   SLUG="$(printf '%s' "${INPUT}" | tr '[:upper:]' '[:lower:]')"
   PROGRAM_URL="https://www.raiplaysound.it/programmi/${SLUG}"
 else
-  echo "Error: input must be a RaiPlaySound slug (e.g. musicalbox) or a full program URL." >&2
+  echo "Error: input must be a RaiPlaySound program_slug (e.g. musicalbox) or a full program_url." >&2
   usage
   exit 1
 fi
@@ -1674,7 +1855,7 @@ fi
 
 if [[ "${REQUESTED_SEASONS_COUNT}" -gt 0 ]]; then
   if [[ "${HAS_SEASONS}" -eq 0 ]]; then
-    echo "Error: '${SLUG}' does not expose seasons, so --seasons cannot be used." >&2
+    echo "Error: '${SLUG}' does not expose seasons, so --season cannot be used." >&2
     exit 1
   fi
   for requested_season in "${!REQUESTED_SEASONS[@]}"; do
@@ -2106,12 +2287,12 @@ acquire_lock() {
       lock_pid="$(cat "${LOCK_PID_FILE}" 2>/dev/null || true)"
     fi
     if [[ -n "${lock_pid}" ]] && kill -0 "${lock_pid}" 2>/dev/null; then
-      echo "Error: another download process is already running for slug '${SLUG}' (PID ${lock_pid})." >&2
+      echo "Error: another download process is already running for program_slug '${SLUG}' (PID ${lock_pid})." >&2
       exit 1
     fi
     rm -rf "${LOCK_DIR}"
     if ! mkdir "${LOCK_DIR}" 2>/dev/null; then
-      echo "Error: unable to acquire lock for slug '${SLUG}'." >&2
+      echo "Error: unable to acquire lock for program_slug '${SLUG}'." >&2
       exit 1
     fi
   fi

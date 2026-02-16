@@ -15,6 +15,14 @@ AUDIO_FORMAT="m4a"
 # Default parallel downloads.
 JOBS=3
 
+# Optional default command.
+# Values: download, list
+# COMMAND="download"
+
+# Optional default list target when COMMAND="list".
+# Values: stations, programs, seasons, episodes
+# LIST_TARGET=""
+
 # Default metadata-cache max age (hours).
 METADATA_MAX_AGE_HOURS=24
 
@@ -22,9 +30,13 @@ METADATA_MAX_AGE_HOURS=24
 CHECK_JOBS=8
 
 # Optional default season selection. Examples: "1", "1,2", "all"
+# Used by:
+# - download mode
+# - list mode when LIST_TARGET="episodes"
 # SEASONS_ARG=""
 
 # Optional default episode-ID filters for download mode (comma-separated IDs).
+# Maps to: download --episode-ids
 # EPISODES_ARG=""
 
 # Optional default episode-URL filters for download mode (comma-separated URLs).
@@ -33,37 +45,35 @@ CHECK_JOBS=8
 # Optional default behavior: re-download archived episodes whose files are missing.
 # Values: 1/0, true/false, yes/no, on/off
 # AUTO_REDOWNLOAD_MISSING=0
+# Optional alias with same behavior:
+# DOWNLOAD_MISSING=0
 
-# Optional default: list seasons only and exit.
+# Legacy list defaults (still supported):
 # LIST_SEASONS_ONLY=0
-
-# Optional default: list episodes only and exit.
 # LIST_EPISODES_ONLY=0
+# LIST_STATIONS_ONLY=0
+# LIST_PROGRAMS_ONLY=0
+# LIST_PODCASTS_ONLY=0
 
-# Optional default: include episode URLs in --list-episodes output.
+# Optional default: include episode URLs in list episodes output.
 # SHOW_URLS=0
 
-# Optional default: list all radio stations and exit.
-# LIST_STATIONS_ONLY=0
-
-# Optional default: show detailed station listing with URLs (requires LIST_STATIONS_ONLY=1 or --list-stations).
+# Optional default: show detailed station listing with URLs.
+# Requires LIST_TARGET="stations" or LIST_STATIONS_ONLY=1.
 # STATIONS_DETAILED=0
-
-# Optional default: list all programs and exit.
-# LIST_PROGRAMS_ONLY=0
-# Backward-compatible alias:
-# LIST_PODCASTS_ONLY=0
 
 # Optional program listing grouping mode.
 # Values: auto, alpha, station
-# auto: station grouping when no --station filter, alphabetical grouping when --station is set
+# auto: station grouping when no --filter, alphabetical grouping when --filter is set
+# GROUP_BY="auto"
+# Legacy alias still accepted:
 # PODCASTS_GROUP_BY="auto"
 
 # Optional flat alphabetic output (no grouping) for program listing.
 # Values: 1/0, true/false, yes/no, on/off
 # PODCASTS_SORTED=0
 
-# Optional station short-name filter for program listing.
+# Optional station slug filter for program listing.
 # Examples: radio1, radio2, radio3, isoradio, nonameradio, none
 # STATION_FILTER=""
 
@@ -72,6 +82,7 @@ CHECK_JOBS=8
 
 # Optional program catalog cache max age (hours).
 # Default is 2160 hours (90 days).
+# This is the persistent default; CLI --catalog-max-age-hours overrides per run.
 # CATALOG_MAX_AGE_HOURS=2160
 
 # Optional program catalog cache file path.
@@ -82,7 +93,7 @@ CHECK_JOBS=8
 
 # Optional default log destination.
 # - empty: log in program output dir
-# - directory path: creates <slug>-run-YYYYMMDD-HHMMSS.log in that dir
+# - directory path: creates <program_slug>-run-YYYYMMDD-HHMMSS.log in that dir
 # - file path: writes directly to that file
 # LOG_PATH_ARG=""
 
@@ -92,5 +103,5 @@ CHECK_JOBS=8
 # Optional default: clear metadata cache before run.
 # CLEAR_METADATA_CACHE=0
 
-# Optional default input when you do not pass slug/URL on CLI.
+# Optional default input when you do not pass program_slug/program_url on CLI.
 # INPUT="musicalbox"
