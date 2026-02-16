@@ -837,7 +837,7 @@ declare -a PIDS=()
 declare -a ACTIVE=()
 for ((i = 0; i < TOTAL; i++)); do
   STATUS_FILE="${WORK_DIR}/status_${i}.txt"
-  printf 'QUEUED|0|%s\n' "${EPISODE_LABELS[i]}" > "${STATUS_FILE}"
+  printf 'QUEUED|0|--|%s\n' "${EPISODE_LABELS[i]}" > "${STATUS_FILE}"
   STATUS_FILES+=("${STATUS_FILE}")
   PIDS+=("0")
   ACTIVE+=("0")
@@ -888,13 +888,49 @@ make_bar() {
   printf '%s%s' "${left}" "${right}"
 }
 
+format_bytes() {
+  local bytes="$1"
+  local whole frac div unit
+
+  if ! [[ "${bytes}" =~ ^[0-9]+$ ]]; then
+    printf '?'
+    return
+  fi
+
+  if ((bytes < 1024)); then
+    printf '%dB' "${bytes}"
+    return
+  elif ((bytes < 1048576)); then
+    div=1024
+    unit="KiB"
+  elif ((bytes < 1073741824)); then
+    div=1048576
+    unit="MiB"
+  elif ((bytes < 1099511627776)); then
+    div=1073741824
+    unit="GiB"
+  else
+    div=1099511627776
+    unit="TiB"
+  fi
+
+  whole=$((bytes / div))
+  frac=$(((bytes % div) * 10 / div))
+  if ((whole >= 100)); then
+    printf '%d%s' "${whole}" "${unit}"
+  else
+    printf '%d.%d%s' "${whole}" "${frac}" "${unit}"
+  fi
+}
+
 render_progress() {
   local running_count="$1"
   local completed_count="$2"
-  local state percent label bar color
+  local state percent size label bar color
   local hidden_count display_count
   local -a states=()
   local -a percents=()
+  local -a sizes=()
   local -a labels=()
   local -a visible_indices=()
   local idx i
@@ -925,9 +961,10 @@ render_progress() {
   printf '%b==>%b Progress: %d/%d episodes, running=%d\n\n' "${C_CYAN}" "${C_RESET}" "${completed_count}" "${TOTAL}" "${running_count}"
 
   for ((idx = 0; idx < TOTAL; idx++)); do
-    IFS='|' read -r state percent label < "${STATUS_FILES[idx]}"
+    IFS='|' read -r state percent size label < "${STATUS_FILES[idx]}"
     states[idx]="${state}"
     percents[idx]="${percent}"
+    sizes[idx]="${size}"
     labels[idx]="${label}"
   done
 
@@ -986,6 +1023,7 @@ render_progress() {
   for i in "${visible_indices[@]}"; do
     state="${states[i]}"
     percent="${percents[i]}"
+    size="${sizes[i]}"
     label="${labels[i]}"
 
     case "${state}" in
@@ -997,7 +1035,7 @@ render_progress() {
     esac
 
     bar="$(make_bar "${percent}")"
-    printf '%2d. %b%-11s%b [%s] %3d%%  %s\n' "$((i + 1))" "${color}" "${state}" "${C_RESET}" "${bar}" "${percent}" "${label}"
+    printf '%2d. %b%-11s%b [%s] %3d%%  %-18s %s\n' "$((i + 1))" "${color}" "${state}" "${C_RESET}" "${bar}" "${percent}" "${size}" "${label}"
   done
 
   if [[ "${RENDER_COMPACT}" -eq 1 ]]; then
@@ -1015,7 +1053,7 @@ start_episode_download() {
 
   (
     log_line "Starting episode: ${label} (${episode_id})"
-    printf 'DOWNLOADING|0|%s\n' "${label}" > "${status_file}"
+    printf 'DOWNLOADING|0|0B/?|%s\n' "${label}" > "${status_file}"
 
     yt_verbose_args=()
     if [[ "${ENABLE_LOG}" -eq 1 ]]; then
@@ -1044,42 +1082,52 @@ start_episode_download() {
         fi
 
         if [[ "${line}" == *"has already been recorded in the archive"* ]]; then
-          printf 'SKIP|100|%s\n' "${label}" > "${status_file}"
+          printf 'SKIP|100|downloaded|%s\n' "${label}" > "${status_file}"
           continue
         fi
 
         if [[ "${line}" == ERROR:* ]]; then
-          printf 'ERROR|100|%s\n' "${label}" > "${status_file}"
+          printf 'ERROR|100|error|%s\n' "${label}" > "${status_file}"
           continue
         fi
 
         if [[ "${line}" == progress:* ]]; then
           progress_payload="${line#progress:}"
           IFS=':' read -r downloaded_bytes total_bytes total_bytes_estimate raw_percent <<< "${progress_payload}"
+          size_display="?"
 
           percent_candidate=""
           if [[ "${total_bytes}" =~ ^[0-9]+$ ]] && [[ "${total_bytes}" -gt 0 ]] && [[ "${downloaded_bytes}" =~ ^[0-9]+$ ]]; then
             percent_candidate="$((downloaded_bytes * 100 / total_bytes))"
+            downloaded_human="$(format_bytes "${downloaded_bytes}")"
+            total_human="$(format_bytes "${total_bytes}")"
+            size_display="${downloaded_human}/${total_human}"
           elif [[ "${total_bytes_estimate}" =~ ^[0-9]+$ ]] && [[ "${total_bytes_estimate}" -gt 0 ]] && [[ "${downloaded_bytes}" =~ ^[0-9]+$ ]]; then
             percent_candidate="$((downloaded_bytes * 100 / total_bytes_estimate))"
+            downloaded_human="$(format_bytes "${downloaded_bytes}")"
+            estimate_human="$(format_bytes "${total_bytes_estimate}")"
+            size_display="${downloaded_human}/~${estimate_human}"
           else
             raw_percent="${raw_percent%%%*}"
             raw_percent="${raw_percent// /}"
             raw_percent="${raw_percent//$'\r'/}"
             percent_candidate="${raw_percent%%.*}"
+            if [[ "${downloaded_bytes}" =~ ^[0-9]+$ ]]; then
+              size_display="$(format_bytes "${downloaded_bytes}")/?"
+            fi
           fi
 
           if [[ "${percent_candidate}" =~ ^[0-9]+$ ]]; then
             if [[ "${percent_candidate}" -gt 100 ]]; then
               percent_candidate=100
             fi
-            printf 'DOWNLOADING|%s|%s\n' "${percent_candidate}" "${label}" > "${status_file}"
+            printf 'DOWNLOADING|%s|%s|%s\n' "${percent_candidate}" "${size_display}" "${label}" > "${status_file}"
           fi
         fi
       done
 
     rc=${PIPESTATUS[0]}
-    IFS='|' read -r current_state _ _ < "${status_file}"
+    IFS='|' read -r current_state _ current_size _ < "${status_file}"
 
     if [[ "${current_state}" == "SKIP" ]]; then
       log_line "Episode skipped by archive: ${label} (${episode_id})"
@@ -1087,12 +1135,15 @@ start_episode_download() {
     fi
 
     if [[ "${rc}" -eq 0 ]] && [[ "${current_state}" != "ERROR" ]]; then
-      printf 'DONE|100|%s\n' "${label}" > "${status_file}"
+      if [[ -z "${current_size}" ]] || [[ "${current_size}" == "--" ]] || [[ "${current_size}" == "?" ]]; then
+        current_size="done"
+      fi
+      printf 'DONE|100|%s|%s\n' "${current_size}" "${label}" > "${status_file}"
       log_line "Episode done: ${label} (${episode_id})"
       exit 0
     fi
 
-    printf 'ERROR|100|%s\n' "${label}" > "${status_file}"
+    printf 'ERROR|100|error|%s\n' "${label}" > "${status_file}"
     log_line "Episode error: ${label} (${episode_id}) rc=${rc}"
     exit 1
   ) &
@@ -1133,7 +1184,7 @@ done_count=0
 skip_count=0
 error_count=0
 for ((i = 0; i < TOTAL; i++)); do
-  IFS='|' read -r final_state _ _ < "${STATUS_FILES[i]}"
+  IFS='|' read -r final_state _ _ _ < "${STATUS_FILES[i]}"
   case "${final_state}" in
     DONE)
       done_count=$((done_count + 1))
