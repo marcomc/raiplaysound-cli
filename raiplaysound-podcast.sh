@@ -112,6 +112,7 @@ load_config_file() {
         [[ -n "${bool_v}" ]] && LIST_PODCASTS_ONLY="${bool_v}"
         ;;
       PODCASTS_GROUP_BY) PODCASTS_GROUP_BY="$(printf '%s' "${value}" | tr '[:upper:]' '[:lower:]')" ;;
+      STATION_FILTER) STATION_FILTER="$(printf '%s' "${value}" | tr '[:upper:]' '[:lower:]')" ;;
       FORCE_REFRESH_CATALOG)
         bool_v="$(normalize_bool "${value}")"
         [[ -n "${bool_v}" ]] && FORCE_REFRESH_CATALOG="${bool_v}"
@@ -156,6 +157,7 @@ LIST_EPISODES_ONLY="0"
 LIST_STATIONS_ONLY="0"
 LIST_PODCASTS_ONLY="0"
 PODCASTS_GROUP_BY="both"
+STATION_FILTER=""
 FORCE_REFRESH_CATALOG="0"
 CATALOG_MAX_AGE_HOURS="${RAIPLAYSOUND_CATALOG_MAX_AGE_HOURS:-24}"
 CATALOG_CACHE_FILE="${HOME}/.local/state/raiplaysound-downloader/podcast-catalog.tsv"
@@ -414,6 +416,11 @@ if [[ "${LIST_STATIONS_ONLY}" -eq 0 ]] && [[ "${LIST_PODCASTS_ONLY}" -eq 0 ]] &&
   exit 1
 fi
 
+if [[ "${LIST_PODCASTS_ONLY}" -eq 0 ]] && [[ "${FORCE_REFRESH_CATALOG}" -eq 1 ]]; then
+  echo "Error: --refresh-podcast-catalog can only be used with --list-podcasts." >&2
+  exit 1
+fi
+
 IS_TTY="0"
 if [[ -t 1 ]]; then
   IS_TTY="1"
@@ -459,7 +466,44 @@ collect_stations_file() {
     | sed 's/"type":"RaiPlaySound Diretta Item"/\
 "type":"RaiPlaySound Diretta Item"/g' \
     | sed -n 's/.*"title":"\([^"]*\)".*"weblink":"\([^"]*\)".*"path_id":"\([^"]*\)".*/\1\t\2\t\3/p' \
-    | awk -F '\t' 'NF >= 3 && !seen[$1]++ { print $1"\t"$2"\t"$3 }' > "${out_file}"
+    | awk -F '\t' '
+        NF >= 3 {
+          short=$2
+          gsub("^/","",short)
+          gsub("/.*$","",short)
+          if (short == "") {
+            short="unknown"
+          }
+          if (!seen[short]++) {
+            print short"\t"$1"\t"$2"\t"$3
+          }
+        }
+      ' > "${out_file}"
+}
+
+cache_file_is_fresh() {
+  local cache_file="$1"
+  local max_age_hours="$2"
+  local cache_mtime now_epoch max_age_seconds cache_age_seconds
+
+  [[ -s "${cache_file}" ]] || return 1
+
+  cache_mtime="$(stat -f '%m' "${cache_file}" 2>/dev/null || true)"
+  if [[ -z "${cache_mtime}" ]]; then
+    cache_mtime="$(stat -c '%Y' "${cache_file}" 2>/dev/null || true)"
+  fi
+
+  now_epoch="$(date '+%s')"
+  max_age_seconds=$((max_age_hours * 3600))
+  if ! [[ "${cache_mtime}" =~ ^[0-9]+$ ]] || ! [[ "${now_epoch}" =~ ^[0-9]+$ ]]; then
+    return 1
+  fi
+
+  cache_age_seconds=$((now_epoch - cache_mtime))
+  if [[ "${cache_age_seconds}" -ge 0 ]] && [[ "${cache_age_seconds}" -le "${max_age_seconds}" ]]; then
+    return 0
+  fi
+  return 1
 }
 
 collect_podcast_catalog_file() {
@@ -601,8 +645,28 @@ if [[ "${LIST_PODCASTS_ONLY}" -eq 1 ]]; then
   LIST_TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/raiplaysound-list.XXXXXX")"
   trap 'rm -rf "${LIST_TMP_DIR}" 2>/dev/null || true' EXIT
   PODCASTS_FILE="${LIST_TMP_DIR}/podcasts.tsv"
-  show_stage "Collecting podcast catalog (this can take a while) ..."
-  collect_podcast_catalog_file "${PODCASTS_FILE}"
+  mkdir -p "$(dirname "${CATALOG_CACHE_FILE}")"
+  cache_is_fresh="0"
+  if [[ "${FORCE_REFRESH_CATALOG}" -eq 0 ]]; then
+    set +e
+    cache_file_is_fresh "${CATALOG_CACHE_FILE}" "${CATALOG_MAX_AGE_HOURS}"
+    cache_check_rc=$?
+    set -e
+    if [[ "${cache_check_rc}" -eq 0 ]]; then
+      cache_is_fresh="1"
+    fi
+  fi
+
+  if [[ "${cache_is_fresh}" -eq 1 ]]; then
+    show_stage "Using cached podcast catalog ..."
+    cp "${CATALOG_CACHE_FILE}" "${PODCASTS_FILE}"
+    finish_stage "Podcast catalog cache hit."
+  else
+    show_stage "Collecting podcast catalog (this can take a while) ..."
+    collect_podcast_catalog_file "${PODCASTS_FILE}"
+    cp "${PODCASTS_FILE}" "${CATALOG_CACHE_FILE}"
+    finish_stage "Podcast catalog cache updated: ${CATALOG_CACHE_FILE}"
+  fi
   podcast_count="$(wc -l < "${PODCASTS_FILE}" | tr -d '[:space:]')"
   finish_stage "Collected ${podcast_count} podcasts."
 

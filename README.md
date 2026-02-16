@@ -23,6 +23,7 @@ A Bash-based downloader for RaiPlaySound programs that accepts a podcast slug or
 - Supports season and episode discovery modes (`--list-seasons`, `--list-episodes`)
 - Lists available RaiPlaySound radio stations (`--list-stations`)
 - Lists all podcasts, grouped alphabetically and/or by station (`--list-podcasts`, `--podcasts-group-by`)
+- Caches podcast catalog for faster repeated `--list-podcasts` runs
 - Refreshes metadata automatically when cached data is older than 24 hours (configurable)
 
 ## Installation
@@ -68,6 +69,7 @@ TARGET_BASE="$HOME/Music/RaiPlaySound"
 AUDIO_FORMAT="mp3"
 JOBS=5
 PODCASTS_GROUP_BY="both"
+CATALOG_MAX_AGE_HOURS=24
 ```
 
 You can still override per run:
@@ -204,10 +206,22 @@ List all podcasts (both alphabetic and by station):
 ./raiplaysound-podcast.sh --list-podcasts
 ```
 
+Force-refresh podcast catalog cache:
+
+```bash
+./raiplaysound-podcast.sh --refresh-podcast-catalog --list-podcasts
+```
+
 List all podcasts grouped only by station:
 
 ```bash
 ./raiplaysound-podcast.sh --list-podcasts --podcasts-group-by station
+```
+
+Set podcast catalog cache max age in hours:
+
+```bash
+./raiplaysound-podcast.sh --catalog-max-age-hours 12 --list-podcasts
 ```
 
 Reference episode example for this program:

@@ -44,6 +44,15 @@ CHECK_JOBS=8
 # Values: alpha, station, both
 # PODCASTS_GROUP_BY="both"
 
+# Optional default: force refresh of podcast catalog cache when listing podcasts.
+# FORCE_REFRESH_CATALOG=0
+
+# Optional podcast catalog cache max age (hours).
+# CATALOG_MAX_AGE_HOURS=24
+
+# Optional podcast catalog cache file path.
+# CATALOG_CACHE_FILE="$HOME/.local/state/raiplaysound-downloader/podcast-catalog.tsv"
+
 # Optional default: enable verbose debug logging.
 # ENABLE_LOG=0
 
