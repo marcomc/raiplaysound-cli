@@ -4,7 +4,7 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 Usage:
-  raiplaysound-podcast.sh [--format FORMAT] [--jobs N] [--seasons LIST|all] [--redownload-missing] [--list-seasons] [--list-episodes] [--log[=PATH]] [--refresh-metadata] [--clear-metadata-cache] [--metadata-max-age-hours N] <slug|program_url>
+  raiplaysound-podcast.sh [--format FORMAT] [--jobs N] [--seasons LIST|all] [--redownload-missing] [--list-seasons] [--list-episodes] [--log[=PATH]] [--refresh-metadata] [--clear-metadata-cache] [--metadata-max-age-hours N] [<slug|program_url>]
 
 Examples:
   raiplaysound-podcast.sh musicalbox
@@ -31,6 +31,100 @@ Default jobs:
 USAGE
 }
 
+trim_ws() {
+  local s="$1"
+  s="${s#"${s%%[![:space:]]*}"}"
+  s="${s%"${s##*[![:space:]]}"}"
+  printf '%s' "${s}"
+}
+
+normalize_bool() {
+  local v
+  v="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  case "${v}" in
+    1 | true | yes | on) printf '1' ;;
+    0 | false | no | off) printf '0' ;;
+    *) printf '' ;;
+  esac
+}
+
+expand_config_path() {
+  local p="$1"
+
+  if [[ "${p}" == [~] ]]; then
+    p="${HOME}"
+  elif [[ "${p}" == [~]/* ]]; then
+    p="${HOME}/${p#\~/}"
+  fi
+
+  p="${p//\$\{HOME\}/${HOME}}"
+  p="${p//\$HOME/${HOME}}"
+  printf '%s' "${p}"
+}
+
+load_config_file() {
+  local config_file="$1"
+  local line key raw_value value bool_v
+
+  [[ -f "${config_file}" ]] || return 0
+
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    line="$(trim_ws "${line}")"
+    [[ -z "${line}" ]] && continue
+    [[ "${line}" == \#* ]] && continue
+    [[ "${line}" != *=* ]] && continue
+
+    key="$(trim_ws "${line%%=*}")"
+    raw_value="${line#*=}"
+    value="$(trim_ws "${raw_value}")"
+
+    if [[ "${value}" == \"*\" ]] && [[ "${value}" == *\" ]]; then
+      value="${value:1:${#value}-2}"
+    elif [[ "${value}" == \'*\' ]]; then
+      value="${value:1:${#value}-2}"
+    fi
+
+    case "${key}" in
+      AUDIO_FORMAT) AUDIO_FORMAT="$(printf '%s' "${value}" | tr '[:upper:]' '[:lower:]')" ;;
+      JOBS) JOBS="${value}" ;;
+      SEASONS_ARG) SEASONS_ARG="${value}" ;;
+      LIST_SEASONS_ONLY)
+        bool_v="$(normalize_bool "${value}")"
+        [[ -n "${bool_v}" ]] && LIST_SEASONS_ONLY="${bool_v}"
+        ;;
+      LIST_EPISODES_ONLY)
+        bool_v="$(normalize_bool "${value}")"
+        [[ -n "${bool_v}" ]] && LIST_EPISODES_ONLY="${bool_v}"
+        ;;
+      AUTO_REDOWNLOAD_MISSING)
+        bool_v="$(normalize_bool "${value}")"
+        [[ -n "${bool_v}" ]] && AUTO_REDOWNLOAD_MISSING="${bool_v}"
+        ;;
+      ENABLE_LOG)
+        bool_v="$(normalize_bool "${value}")"
+        [[ -n "${bool_v}" ]] && ENABLE_LOG="${bool_v}"
+        ;;
+      LOG_PATH_ARG) LOG_PATH_ARG="$(expand_config_path "${value}")" ;;
+      FORCE_REFRESH_METADATA)
+        bool_v="$(normalize_bool "${value}")"
+        [[ -n "${bool_v}" ]] && FORCE_REFRESH_METADATA="${bool_v}"
+        ;;
+      CLEAR_METADATA_CACHE)
+        bool_v="$(normalize_bool "${value}")"
+        [[ -n "${bool_v}" ]] && CLEAR_METADATA_CACHE="${bool_v}"
+        ;;
+      METADATA_MAX_AGE_HOURS) METADATA_MAX_AGE_HOURS="${value}" ;;
+      CHECK_JOBS) CHECK_JOBS="${value}" ;;
+      TARGET_BASE) TARGET_BASE="$(expand_config_path "${value}")" ;;
+      INPUT)
+        INPUT="${value}"
+        INPUT_FROM_CONFIG="1"
+        ;;
+      *) ;;
+    esac
+  done < "${config_file}"
+}
+
 AUDIO_FORMAT="m4a"
 JOBS="3"
 AUTO_REDOWNLOAD_MISSING="0"
@@ -42,7 +136,13 @@ LOG_PATH_ARG=""
 FORCE_REFRESH_METADATA="0"
 CLEAR_METADATA_CACHE="0"
 METADATA_MAX_AGE_HOURS="${RAIPLAYSOUND_METADATA_MAX_AGE_HOURS:-24}"
+CHECK_JOBS="${RAIPLAYSOUND_CHECK_JOBS:-8}"
+TARGET_BASE="${HOME}/Music/RaiPlaySound"
 INPUT=""
+INPUT_FROM_CONFIG="0"
+
+CONFIG_FILE="${HOME}/.raiplaysound-downloader.conf"
+load_config_file "${CONFIG_FILE}"
 
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
@@ -137,11 +237,18 @@ while [[ "$#" -gt 0 ]]; do
       ;;
     *)
       if [[ -n "${INPUT}" ]]; then
+        if [[ "${INPUT_FROM_CONFIG}" -eq 1 ]]; then
+          INPUT="$1"
+          INPUT_FROM_CONFIG="0"
+          shift
+          continue
+        fi
         echo "Error: only one slug or program URL is allowed." >&2
         usage
         exit 1
       fi
       INPUT="$1"
+      INPUT_FROM_CONFIG="0"
       shift
       ;;
   esac
@@ -181,6 +288,18 @@ fi
 if ! [[ "${METADATA_MAX_AGE_HOURS}" =~ ^[0-9]+$ ]]; then
   echo "Error: --metadata-max-age-hours must be a non-negative integer." >&2
   exit 1
+fi
+
+if ! [[ "${CHECK_JOBS}" =~ ^[0-9]+$ ]] || [[ "${CHECK_JOBS}" -lt 1 ]]; then
+  echo "Error: CHECK_JOBS must be a positive integer." >&2
+  exit 1
+fi
+
+if [[ -n "${TARGET_BASE}" ]]; then
+  TARGET_BASE="$(expand_config_path "${TARGET_BASE}")"
+fi
+if [[ -n "${LOG_PATH_ARG}" ]]; then
+  LOG_PATH_ARG="$(expand_config_path "${LOG_PATH_ARG}")"
 fi
 
 if [[ "${LIST_SEASONS_ONLY}" -eq 1 ]] && [[ "${LIST_EPISODES_ONLY}" -eq 1 ]]; then
@@ -272,7 +391,6 @@ if [[ -n "${SEASONS_ARG}" ]]; then
   done
 fi
 
-TARGET_BASE="${HOME}/Music/RaiPlaySound"
 TARGET_DIR="${TARGET_BASE}/${SLUG}"
 ARCHIVE_FILE="${TARGET_DIR}/.download-archive.txt"
 METADATA_CACHE_FILE="${TARGET_DIR}/.metadata-cache.tsv"
@@ -887,11 +1005,6 @@ has_local_media_for_episode() {
 declare -a MISSING_ARCHIVE_IDS=()
 declare -a MISSING_ARCHIVE_LABELS=()
 if [[ "${#ARCHIVED_IDS[@]}" -gt 0 ]]; then
-  CHECK_JOBS="${RAIPLAYSOUND_CHECK_JOBS:-8}"
-  if ! [[ "${CHECK_JOBS}" =~ ^[0-9]+$ ]] || [[ "${CHECK_JOBS}" -lt 1 ]]; then
-    CHECK_JOBS="8"
-  fi
-
   declare -a CHECK_PIDS=()
   declare -a CHECK_RESULT_FILES=()
   declare -a CHECK_IDS=()

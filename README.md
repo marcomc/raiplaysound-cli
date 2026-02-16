@@ -43,6 +43,36 @@ brew install yt-dlp ffmpeg
 chmod +x ./raiplaysound-podcast.sh
 ```
 
+## Dot Config Defaults
+
+The script reads an optional user config file at:
+
+- `~/.raiplaysound-downloader.conf`
+
+Recommended format is a simple `KEY=VALUE` env-style file (Bash-friendly), not YAML/JSON/INI. This keeps parsing fast and dependency-free in pure Bash.
+
+CLI arguments always override values from the dot config file.
+
+Install the example template from project root:
+
+```bash
+cp ./.raiplaysound-downloader.conf.example ~/.raiplaysound-downloader.conf
+```
+
+Then edit your defaults, for example:
+
+```bash
+TARGET_BASE="$HOME/Music/RaiPlaySound"
+AUDIO_FORMAT="mp3"
+JOBS=5
+```
+
+You can still override per run:
+
+```bash
+./raiplaysound-podcast.sh --format m4a --jobs 2 musicalbox
+```
+
 ## Usage
 
 Run using a slug:
@@ -55,6 +85,12 @@ If installed in your `PATH`, run from any directory:
 
 ```bash
 raiplaysound-podcast.sh musicalbox
+```
+
+If `INPUT="musicalbox"` is set in your dot config, you can run without arguments:
+
+```bash
+./raiplaysound-podcast.sh
 ```
 
 Run using a full program URL:

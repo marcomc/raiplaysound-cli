@@ -1,0 +1,53 @@
+# RaiPlaySound downloader user defaults
+#
+# Install for current user:
+#   cp .raiplaysound-downloader.conf.example ~/.raiplaysound-downloader.conf
+#
+# Format is simple KEY=VALUE (bash-style env file, no sections).
+# Empty/commented keys are ignored.
+
+# Base folder for all podcast downloads.
+TARGET_BASE="$HOME/Music/RaiPlaySound"
+
+# Default audio output format.
+AUDIO_FORMAT="m4a"
+
+# Default parallel downloads.
+JOBS=3
+
+# Default metadata-cache max age (hours).
+METADATA_MAX_AGE_HOURS=24
+
+# Default parallel workers used to check archived entries vs local files.
+CHECK_JOBS=8
+
+# Optional default season selection. Examples: "1", "1,2", "all"
+# SEASONS_ARG=""
+
+# Optional default behavior: re-download archived episodes whose files are missing.
+# Values: 1/0, true/false, yes/no, on/off
+# AUTO_REDOWNLOAD_MISSING=0
+
+# Optional default: list seasons only and exit.
+# LIST_SEASONS_ONLY=0
+
+# Optional default: list episodes only and exit.
+# LIST_EPISODES_ONLY=0
+
+# Optional default: enable verbose debug logging.
+# ENABLE_LOG=0
+
+# Optional default log destination.
+# - empty: log in podcast output dir
+# - directory path: creates <slug>-run-YYYYMMDD-HHMMSS.log in that dir
+# - file path: writes directly to that file
+# LOG_PATH_ARG=""
+
+# Optional default: force metadata refresh every run.
+# FORCE_REFRESH_METADATA=0
+
+# Optional default: clear metadata cache before run.
+# CLEAR_METADATA_CACHE=0
+
+# Optional default input when you do not pass slug/URL on CLI.
+# INPUT="musicalbox"
