@@ -34,6 +34,16 @@ CHECK_JOBS=8
 # Optional default: list episodes only and exit.
 # LIST_EPISODES_ONLY=0
 
+# Optional default: list all radio stations and exit.
+# LIST_STATIONS_ONLY=0
+
+# Optional default: list all podcasts and exit.
+# LIST_PODCASTS_ONLY=0
+
+# Optional podcast listing grouping mode.
+# Values: alpha, station, both
+# PODCASTS_GROUP_BY="both"
+
 # Optional default: enable verbose debug logging.
 # ENABLE_LOG=0
 

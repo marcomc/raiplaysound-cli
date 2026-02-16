@@ -4,7 +4,7 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 Usage:
-  raiplaysound-podcast.sh [--format FORMAT] [--jobs N] [--seasons LIST|all] [--redownload-missing] [--list-seasons] [--list-episodes] [--log[=PATH]] [--refresh-metadata] [--clear-metadata-cache] [--metadata-max-age-hours N] [<slug|program_url>]
+  raiplaysound-podcast.sh [--format FORMAT] [--jobs N] [--seasons LIST|all] [--redownload-missing] [--list-seasons] [--list-episodes] [--list-stations] [--list-podcasts] [--podcasts-group-by MODE] [--refresh-podcast-catalog] [--catalog-max-age-hours N] [--log[=PATH]] [--refresh-metadata] [--clear-metadata-cache] [--metadata-max-age-hours N] [<slug|program_url>]
 
 Examples:
   raiplaysound-podcast.sh musicalbox
@@ -14,6 +14,10 @@ Examples:
   raiplaysound-podcast.sh --seasons all america7
   raiplaysound-podcast.sh --list-seasons america7
   raiplaysound-podcast.sh --list-episodes --seasons 2 america7
+  raiplaysound-podcast.sh --list-stations
+  raiplaysound-podcast.sh --list-podcasts
+  raiplaysound-podcast.sh --list-podcasts --podcasts-group-by station
+  raiplaysound-podcast.sh --refresh-podcast-catalog --list-podcasts
   raiplaysound-podcast.sh --log america7
   raiplaysound-podcast.sh --log=/tmp/raiplaysound-debug.log america7
   raiplaysound-podcast.sh --refresh-metadata america7
@@ -28,6 +32,9 @@ Default format:
 
 Default jobs:
   3
+
+Podcast list grouping modes:
+  alpha, station, both
 USAGE
 }
 
@@ -96,6 +103,21 @@ load_config_file() {
         bool_v="$(normalize_bool "${value}")"
         [[ -n "${bool_v}" ]] && LIST_EPISODES_ONLY="${bool_v}"
         ;;
+      LIST_STATIONS_ONLY)
+        bool_v="$(normalize_bool "${value}")"
+        [[ -n "${bool_v}" ]] && LIST_STATIONS_ONLY="${bool_v}"
+        ;;
+      LIST_PODCASTS_ONLY)
+        bool_v="$(normalize_bool "${value}")"
+        [[ -n "${bool_v}" ]] && LIST_PODCASTS_ONLY="${bool_v}"
+        ;;
+      PODCASTS_GROUP_BY) PODCASTS_GROUP_BY="$(printf '%s' "${value}" | tr '[:upper:]' '[:lower:]')" ;;
+      FORCE_REFRESH_CATALOG)
+        bool_v="$(normalize_bool "${value}")"
+        [[ -n "${bool_v}" ]] && FORCE_REFRESH_CATALOG="${bool_v}"
+        ;;
+      CATALOG_MAX_AGE_HOURS) CATALOG_MAX_AGE_HOURS="${value}" ;;
+      CATALOG_CACHE_FILE) CATALOG_CACHE_FILE="$(expand_config_path "${value}")" ;;
       AUTO_REDOWNLOAD_MISSING)
         bool_v="$(normalize_bool "${value}")"
         [[ -n "${bool_v}" ]] && AUTO_REDOWNLOAD_MISSING="${bool_v}"
@@ -131,6 +153,12 @@ AUTO_REDOWNLOAD_MISSING="0"
 SEASONS_ARG=""
 LIST_SEASONS_ONLY="0"
 LIST_EPISODES_ONLY="0"
+LIST_STATIONS_ONLY="0"
+LIST_PODCASTS_ONLY="0"
+PODCASTS_GROUP_BY="both"
+FORCE_REFRESH_CATALOG="0"
+CATALOG_MAX_AGE_HOURS="${RAIPLAYSOUND_CATALOG_MAX_AGE_HOURS:-24}"
+CATALOG_CACHE_FILE="${HOME}/.local/state/raiplaysound-downloader/podcast-catalog.tsv"
 ENABLE_LOG="0"
 LOG_PATH_ARG=""
 FORCE_REFRESH_METADATA="0"
@@ -209,6 +237,36 @@ while [[ "$#" -gt 0 ]]; do
       LIST_EPISODES_ONLY="1"
       shift
       ;;
+    --list-stations)
+      LIST_STATIONS_ONLY="1"
+      shift
+      ;;
+    --list-podcasts)
+      LIST_PODCASTS_ONLY="1"
+      shift
+      ;;
+    --podcasts-group-by)
+      if [[ "$#" -lt 2 ]]; then
+        echo "Error: --podcasts-group-by requires a value (alpha|station|both)." >&2
+        usage
+        exit 1
+      fi
+      PODCASTS_GROUP_BY="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')"
+      shift 2
+      ;;
+    --refresh-podcast-catalog)
+      FORCE_REFRESH_CATALOG="1"
+      shift
+      ;;
+    --catalog-max-age-hours)
+      if [[ "$#" -lt 2 ]]; then
+        echo "Error: --catalog-max-age-hours requires a value." >&2
+        usage
+        exit 1
+      fi
+      CATALOG_MAX_AGE_HOURS="$2"
+      shift 2
+      ;;
     --refresh-metadata)
       FORCE_REFRESH_METADATA="1"
       shift
@@ -265,11 +323,6 @@ if [[ "$#" -gt 0 ]]; then
   exit 1
 fi
 
-if [[ -z "${INPUT}" ]]; then
-  usage
-  exit 1
-fi
-
 case "${AUDIO_FORMAT}" in
   mp3 | m4a | aac | ogg | opus | flac | wav)
     ;;
@@ -290,8 +343,18 @@ if ! [[ "${METADATA_MAX_AGE_HOURS}" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
+if ! [[ "${CATALOG_MAX_AGE_HOURS}" =~ ^[0-9]+$ ]]; then
+  echo "Error: --catalog-max-age-hours must be a non-negative integer." >&2
+  exit 1
+fi
+
 if ! [[ "${CHECK_JOBS}" =~ ^[0-9]+$ ]] || [[ "${CHECK_JOBS}" -lt 1 ]]; then
   echo "Error: CHECK_JOBS must be a positive integer." >&2
+  exit 1
+fi
+
+if [[ "${PODCASTS_GROUP_BY}" != "alpha" ]] && [[ "${PODCASTS_GROUP_BY}" != "station" ]] && [[ "${PODCASTS_GROUP_BY}" != "both" ]]; then
+  echo "Error: --podcasts-group-by must be one of: alpha, station, both." >&2
   exit 1
 fi
 
@@ -301,6 +364,9 @@ fi
 if [[ -n "${LOG_PATH_ARG}" ]]; then
   LOG_PATH_ARG="$(expand_config_path "${LOG_PATH_ARG}")"
 fi
+if [[ -n "${CATALOG_CACHE_FILE}" ]]; then
+  CATALOG_CACHE_FILE="$(expand_config_path "${CATALOG_CACHE_FILE}")"
+fi
 if [[ "${TARGET_BASE}" == *"\$HOME"* ]] || [[ "${TARGET_BASE}" == *"\${HOME}"* ]]; then
   echo "Error: TARGET_BASE contains unresolved HOME variable: ${TARGET_BASE}" >&2
   exit 1
@@ -309,9 +375,42 @@ if [[ -n "${LOG_PATH_ARG}" ]] && { [[ "${LOG_PATH_ARG}" == *"\$HOME"* ]] || [[ "
   echo "Error: LOG_PATH_ARG contains unresolved HOME variable: ${LOG_PATH_ARG}" >&2
   exit 1
 fi
+if [[ "${CATALOG_CACHE_FILE}" == *"\$HOME"* ]] || [[ "${CATALOG_CACHE_FILE}" == *"\${HOME}"* ]]; then
+  echo "Error: CATALOG_CACHE_FILE contains unresolved HOME variable: ${CATALOG_CACHE_FILE}" >&2
+  exit 1
+fi
 
 if [[ "${LIST_SEASONS_ONLY}" -eq 1 ]] && [[ "${LIST_EPISODES_ONLY}" -eq 1 ]]; then
   echo "Error: use either --list-seasons or --list-episodes, not both." >&2
+  exit 1
+fi
+
+if [[ "${LIST_STATIONS_ONLY}" -eq 1 ]] && [[ "${LIST_PODCASTS_ONLY}" -eq 1 ]]; then
+  echo "Error: use either --list-stations or --list-podcasts, not both." >&2
+  exit 1
+fi
+
+if [[ "${LIST_STATIONS_ONLY}" -eq 1 ]] || [[ "${LIST_PODCASTS_ONLY}" -eq 1 ]]; then
+  if [[ "${LIST_SEASONS_ONLY}" -eq 1 ]] || [[ "${LIST_EPISODES_ONLY}" -eq 1 ]]; then
+    echo "Error: station/podcast listing cannot be combined with season/episode listing." >&2
+    exit 1
+  fi
+  if [[ -n "${SEASONS_ARG}" ]]; then
+    echo "Error: --seasons is only valid with download mode or --list-episodes." >&2
+    exit 1
+  fi
+  if [[ "${AUTO_REDOWNLOAD_MISSING}" -eq 1 ]]; then
+    echo "Error: --redownload-missing is not valid with station/podcast listing." >&2
+    exit 1
+  fi
+  if [[ -n "${INPUT}" ]]; then
+    echo "Error: do not pass slug/URL with --list-stations or --list-podcasts." >&2
+    exit 1
+  fi
+fi
+
+if [[ "${LIST_STATIONS_ONLY}" -eq 0 ]] && [[ "${LIST_PODCASTS_ONLY}" -eq 0 ]] && [[ -z "${INPUT}" ]]; then
+  usage
   exit 1
 fi
 
@@ -352,6 +451,172 @@ finish_stage() {
     printf '%b==>%b %s\n' "${C_GREEN}" "${C_RESET}" "${message}"
   fi
 }
+
+collect_stations_file() {
+  local out_file="$1"
+  curl -Ls --connect-timeout 5 --max-time 30 --retry 2 "https://www.raiplaysound.it/dirette.json" \
+    | tr -d '\n' \
+    | sed 's/"type":"RaiPlaySound Diretta Item"/\
+"type":"RaiPlaySound Diretta Item"/g' \
+    | sed -n 's/.*"title":"\([^"]*\)".*"weblink":"\([^"]*\)".*"path_id":"\([^"]*\)".*/\1\t\2\t\3/p' \
+    | awk -F '\t' 'NF >= 3 && !seen[$1]++ { print $1"\t"$2"\t"$3 }' > "${out_file}"
+}
+
+collect_podcast_catalog_file() {
+  local out_file="$1"
+  local tmp_dir slug_file raw_file slug_total
+  local sitemap_index_url="https://www.raiplaysound.it/sitemap.archivio.programmi.xml"
+  local catalog_jobs="16"
+
+  tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/raiplaysound-catalog.XXXXXX")"
+  slug_file="${tmp_dir}/podcast-slugs.txt"
+  raw_file="${tmp_dir}/podcast-raw.tsv"
+
+  curl -Ls --connect-timeout 5 --max-time 30 --retry 2 "${sitemap_index_url}" \
+    | rg -o 'https://www\.raiplaysound\.it/sitemap\.programmi\.[^<]+' \
+    | sed -E 's#^.*/sitemap\.programmi\.##; s#\.xml$##' \
+    | sort -u > "${slug_file}"
+
+  slug_total="$(wc -l < "${slug_file}" | tr -d '[:space:]')"
+  show_stage "Fetching podcast metadata for ${slug_total} programs with ${catalog_jobs} parallel workers ..."
+
+  : > "${raw_file}"
+  declare -a catalog_pids=()
+  declare -a catalog_rows=()
+  catalog_running=0
+  catalog_index=0
+
+  while IFS= read -r slug; do
+    [[ -z "${slug}" ]] && continue
+
+    while [[ "${catalog_running}" -ge "${catalog_jobs}" ]]; do
+      for ((j = 0; j < ${#catalog_pids[@]}; j++)); do
+        if [[ "${catalog_pids[j]}" != "0" ]] && ! kill -0 "${catalog_pids[j]}" 2>/dev/null; then
+          wait "${catalog_pids[j]}" || true
+          catalog_pids[j]="0"
+          catalog_running=$((catalog_running - 1))
+        fi
+      done
+      sleep 0.02
+    done
+
+    row_file="${tmp_dir}/podcast-row-${catalog_index}.tsv"
+    (
+      json_line="$(curl -Ls --connect-timeout 5 --max-time 20 --retry 1 "https://www.raiplaysound.it/programmi/${slug}.json" | tr -d '\n' || true)"
+      [[ -z "${json_line}" ]] && exit 0
+
+      title_raw="$(printf '%s' "${json_line}" | awk -F '"title":"' '{if (NF>1) { split($2,a,"\""); print a[1] }}')"
+      station_raw="$(printf '%s' "${json_line}" | awk -F '"channel":{"name":"' '{if (NF>1) { split($2,a,"\""); print a[1] }}')"
+      title="${title_raw//\\\//\/}"
+      title="${title//\\\"/\"}"
+      title="${title//\\n/ }"
+      title="${title//\\t/ }"
+      title="${title//\\\\/\\}"
+      station="${station_raw//\\\//\/}"
+      station="${station//\\\"/\"}"
+      station="${station//\\n/ }"
+      station="${station//\\t/ }"
+      station="${station//\\\\/\\}"
+
+      [[ -z "${title}" ]] && title="${slug}"
+      [[ -z "${station}" ]] && station="No station"
+      printf '%s\t%s\t%s\n' "${slug}" "${title}" "${station}" > "${row_file}"
+    ) &
+
+    catalog_pids+=("$!")
+    catalog_rows+=("${row_file}")
+    catalog_running=$((catalog_running + 1))
+    catalog_index=$((catalog_index + 1))
+  done < "${slug_file}"
+
+  for ((j = 0; j < ${#catalog_pids[@]}; j++)); do
+    if [[ "${catalog_pids[j]}" != "0" ]]; then
+      wait "${catalog_pids[j]}" || true
+    fi
+  done
+
+  for row_file in "${catalog_rows[@]}"; do
+    [[ -f "${row_file}" ]] || continue
+    cat "${row_file}" >> "${raw_file}"
+  done
+
+  awk -F '\t' '!seen[$1]++ { print $1"\t"$2"\t"$3 }' "${raw_file}" > "${out_file}"
+  rm -rf "${tmp_dir}" 2>/dev/null || true
+}
+
+print_podcasts_alpha() {
+  local catalog_file="$1"
+  local count
+  count="$(wc -l < "${catalog_file}" | tr -d '[:space:]')"
+  printf 'Podcasts grouped alphabetically (%s):\n' "${count}"
+  LC_ALL=C sort -f -t $'\t' -k2,2 -k1,1 "${catalog_file}" | LC_ALL=C awk -F '\t' '
+    {
+      first=toupper(substr($2,1,1))
+      if (first !~ /[A-Z]/) {
+        first="#"
+      }
+      if (first != grp) {
+        grp=first
+        print ""
+        print "[" grp "]"
+      }
+      printf "  - %s (%s) [%s]\n", $2, $1, $3
+    }'
+}
+
+print_podcasts_station() {
+  local catalog_file="$1"
+  local count
+  count="$(wc -l < "${catalog_file}" | tr -d '[:space:]')"
+  printf 'Podcasts grouped by station (%s):\n' "${count}"
+  LC_ALL=C sort -f -t $'\t' -k3,3 -k2,2 "${catalog_file}" | LC_ALL=C awk -F '\t' '
+    {
+      if ($3 != grp) {
+        grp=$3
+        print ""
+        print "[" grp "]"
+      }
+      printf "  - %s (%s)\n", $2, $1
+    }'
+}
+
+if [[ "${LIST_STATIONS_ONLY}" -eq 1 ]]; then
+  LIST_TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/raiplaysound-list.XXXXXX")"
+  trap 'rm -rf "${LIST_TMP_DIR}" 2>/dev/null || true' EXIT
+  STATIONS_FILE="${LIST_TMP_DIR}/stations.tsv"
+  show_stage "Loading radio stations ..."
+  collect_stations_file "${STATIONS_FILE}"
+  station_count="$(wc -l < "${STATIONS_FILE}" | tr -d '[:space:]')"
+  finish_stage "Loaded ${station_count} stations."
+  printf 'Available RaiPlaySound radio stations:\n'
+  while IFS=$'\t' read -r station_name station_link station_json_path; do
+    [[ -z "${station_name}" ]] && continue
+    printf '  - %s (%s)\n' "${station_name}" "https://www.raiplaysound.it${station_link}"
+    printf '      feed: https://www.raiplaysound.it%s\n' "${station_json_path}"
+  done < "${STATIONS_FILE}"
+  exit 0
+fi
+
+if [[ "${LIST_PODCASTS_ONLY}" -eq 1 ]]; then
+  LIST_TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/raiplaysound-list.XXXXXX")"
+  trap 'rm -rf "${LIST_TMP_DIR}" 2>/dev/null || true' EXIT
+  PODCASTS_FILE="${LIST_TMP_DIR}/podcasts.tsv"
+  show_stage "Collecting podcast catalog (this can take a while) ..."
+  collect_podcast_catalog_file "${PODCASTS_FILE}"
+  podcast_count="$(wc -l < "${PODCASTS_FILE}" | tr -d '[:space:]')"
+  finish_stage "Collected ${podcast_count} podcasts."
+
+  if [[ "${PODCASTS_GROUP_BY}" == "alpha" ]] || [[ "${PODCASTS_GROUP_BY}" == "both" ]]; then
+    print_podcasts_alpha "${PODCASTS_FILE}"
+  fi
+  if [[ "${PODCASTS_GROUP_BY}" == "both" ]]; then
+    printf '\n'
+  fi
+  if [[ "${PODCASTS_GROUP_BY}" == "station" ]] || [[ "${PODCASTS_GROUP_BY}" == "both" ]]; then
+    print_podcasts_station "${PODCASTS_FILE}"
+  fi
+  exit 0
+fi
 
 SLUG=""
 PROGRAM_URL=""

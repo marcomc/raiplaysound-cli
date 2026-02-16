@@ -21,6 +21,8 @@ A Bash-based downloader for RaiPlaySound programs that accepts a podcast slug or
 - Detects season numbers (from metadata or title patterns like `S2E13`) and prints selected seasons before download
 - Supports season filtering for downloads (`--seasons`)
 - Supports season and episode discovery modes (`--list-seasons`, `--list-episodes`)
+- Lists available RaiPlaySound radio stations (`--list-stations`)
+- Lists all podcasts, grouped alphabetically and/or by station (`--list-podcasts`, `--podcasts-group-by`)
 - Refreshes metadata automatically when cached data is older than 24 hours (configurable)
 
 ## Installation
@@ -65,6 +67,7 @@ Then edit your defaults, for example:
 TARGET_BASE="$HOME/Music/RaiPlaySound"
 AUDIO_FORMAT="mp3"
 JOBS=5
+PODCASTS_GROUP_BY="both"
 ```
 
 You can still override per run:
@@ -72,6 +75,8 @@ You can still override per run:
 ```bash
 ./raiplaysound-podcast.sh --format m4a --jobs 2 musicalbox
 ```
+
+List modes do not require a slug/URL.
 
 ## Usage
 
@@ -186,6 +191,24 @@ List episodes for one or more seasons:
 If `--list-episodes` is used without `--seasons`, it lists the latest detected season.
 
 If download is run without `--seasons`, it targets the current/latest season only.
+
+List all available radio stations:
+
+```bash
+./raiplaysound-podcast.sh --list-stations
+```
+
+List all podcasts (both alphabetic and by station):
+
+```bash
+./raiplaysound-podcast.sh --list-podcasts
+```
+
+List all podcasts grouped only by station:
+
+```bash
+./raiplaysound-podcast.sh --list-podcasts --podcasts-group-by station
+```
 
 Reference episode example for this program:
 
