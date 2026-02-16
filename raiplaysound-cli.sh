@@ -1613,6 +1613,24 @@ if [[ "${LIST_EPISODES_ONLY}" -eq 1 ]]; then
     printf '\n'
   fi
 
+  if [[ "${HAS_SEASONS}" -eq 0 ]]; then
+    if [[ "${SHOW_URLS}" -eq 1 ]]; then
+      printf '  | Date | Episode | ID | URL |\n'
+      printf '  |---|---|---|---|\n'
+    else
+      printf '  | Date | Episode | ID |\n'
+      printf '  |---|---|---|\n'
+    fi
+  else
+    if [[ "${SHOW_URLS}" -eq 1 ]]; then
+      printf '  | Season | Date | Episode | ID | URL |\n'
+      printf '  |---|---|---|---|---|\n'
+    else
+      printf '  | Season | Date | Episode | ID |\n'
+      printf '  |---|---|---|---|\n'
+    fi
+  fi
+
   for ((i = 0; i < TOTAL; i++)); do
     season="${EPISODE_SEASONS[i]}"
     if [[ -z "${LIST_SEASONS[${season}]:-}" ]]; then
@@ -1625,17 +1643,19 @@ if [[ "${LIST_EPISODES_ONLY}" -eq 1 ]]; then
     fi
     episode_id="${EPISODE_IDS[i]}"
     episode_url="${EPISODE_URLS[i]}"
+    episode_title="${EPISODE_TITLES[i]}"
+    episode_title="${episode_title//|//}"
     if [[ "${HAS_SEASONS}" -eq 0 ]]; then
       if [[ "${SHOW_URLS}" -eq 1 ]]; then
-        printf '  - %s | %s | %s | %s\n' "${episode_id}" "${pretty_date}" "${EPISODE_TITLES[i]}" "${episode_url}"
+        printf '  | %s | %s | %s | %s |\n' "${pretty_date}" "${episode_title}" "${episode_id}" "${episode_url}"
       else
-        printf '  - %s | %s | %s\n' "${episode_id}" "${pretty_date}" "${EPISODE_TITLES[i]}"
+        printf '  | %s | %s | %s |\n' "${pretty_date}" "${episode_title}" "${episode_id}"
       fi
     else
       if [[ "${SHOW_URLS}" -eq 1 ]]; then
-        printf '  - S%s | %s | %s | %s | %s\n' "${season}" "${episode_id}" "${pretty_date}" "${EPISODE_TITLES[i]}" "${episode_url}"
+        printf '  | S%s | %s | %s | %s | %s |\n' "${season}" "${pretty_date}" "${episode_title}" "${episode_id}" "${episode_url}"
       else
-        printf '  - S%s | %s | %s | %s\n' "${season}" "${episode_id}" "${pretty_date}" "${EPISODE_TITLES[i]}"
+        printf '  | S%s | %s | %s | %s |\n' "${season}" "${pretty_date}" "${episode_title}" "${episode_id}"
       fi
     fi
   done
