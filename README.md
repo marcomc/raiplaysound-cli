@@ -8,7 +8,7 @@ A Bash-based downloader for RaiPlaySound programs that accepts a podcast slug or
 - Downloads playlist/program episodes from RaiPlaySound
 - Saves audio as `.m4a`
 - Uses sortable file naming:
-  - `Show - EpisodeNumber - YYYY-MM-DD - EpisodeName.m4a`
+  - `Show - S0203 - YYYY-MM-DD - EpisodeName.m4a`
 - Stores files in `~/Music/RaiPlaySound/<slug>/`
 - Keeps a per-podcast archive file (`.download-archive.txt`) to avoid re-downloading episodes
 - Optional debug logging with `--log` (disabled by default)

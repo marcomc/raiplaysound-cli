@@ -236,7 +236,7 @@ fi
 TARGET_BASE="${HOME}/Music/RaiPlaySound"
 TARGET_DIR="${TARGET_BASE}/${SLUG}"
 ARCHIVE_FILE="${TARGET_DIR}/.download-archive.txt"
-OUTPUT_TEMPLATE="${TARGET_DIR}/%(series,playlist_title,uploader)s - %(episode_number|NA)s - %(upload_date>%Y-%m-%d)s - %(episode,title)s.%(ext)s"
+OUTPUT_TEMPLATE="${TARGET_DIR}/%(series,playlist_title,uploader)s - S%(season_number|0)02d%(episode_number|0)02d - %(upload_date>%Y-%m-%d)s - %(episode,title)s.%(ext)s"
 
 mkdir -p "${TARGET_DIR}"
 
