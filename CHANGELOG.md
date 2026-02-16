@@ -7,6 +7,7 @@ All notable changes to this project are documented in this file.
 ### Added
 
 - Introduced `raiplaysound-cli.sh` as the main CLI entrypoint.
+- Added `--version` option to print the CLI version.
 - Added support for listing stations with compact mode and detailed mode (`--list-stations`, `--stations-detailed`).
 - Added support for listing programs (`--list-programs`) with grouping modes and station filtering (`--podcasts-group-by`, `--station`, `--sorted`).
 - Added program year-range reporting in catalog output (for example `2018-2026`).

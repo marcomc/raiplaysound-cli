@@ -113,6 +113,12 @@ List modes do not require a slug/URL.
 
 ## Usage
 
+Print CLI version:
+
+```bash
+./raiplaysound-cli.sh --version
+```
+
 Run using a slug:
 
 ```bash
@@ -332,6 +338,7 @@ Set program catalog cache max age in hours:
 ```bash
 # Help
 ./raiplaysound-cli.sh --help
+./raiplaysound-cli.sh --version
 
 # Download mode
 ./raiplaysound-cli.sh musicalbox

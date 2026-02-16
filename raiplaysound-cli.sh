@@ -12,6 +12,8 @@ if ((BASH_VERSINFO[0] < 4)); then
   exit 1
 fi
 
+VERSION="1.0.0"
+
 usage() {
   cat <<'USAGE'
 Usage: raiplaysound-cli.sh [OPTIONS] <slug|program_url>
@@ -26,6 +28,7 @@ Input:
 
 Options:
   -h, --help                  Show this help and exit
+      --version               Show CLI version and exit
       --json                  Output list results as JSON (for automations/agents)
   -f, --format FORMAT         Audio format: mp3|m4a|aac|ogg|opus|flac|wav (default: m4a)
   -j, --jobs N                Parallel download jobs (default: 3)
@@ -59,6 +62,7 @@ Options:
                               Max age for program catalog cache (default: 2160 = 90 days)
 
 Examples:
+  raiplaysound-cli.sh --version
   raiplaysound-cli.sh musicalbox
   raiplaysound-cli.sh --format mp3 --jobs 3 musicalbox
   raiplaysound-cli.sh --seasons 1,2 america7
@@ -246,6 +250,10 @@ while [[ "$#" -gt 0 ]]; do
   case "$1" in
     -h | --help)
       usage
+      exit 0
+      ;;
+    --version)
+      printf 'raiplaysound-cli %s\n' "${VERSION}"
       exit 0
       ;;
     --json)
