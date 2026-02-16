@@ -43,6 +43,9 @@ CHECK_JOBS=8
 # Optional default: include episode URLs in --list-episodes output.
 # SHOW_URLS=0
 
+# Optional default: JSON output for list modes.
+# JSON_OUTPUT=0
+
 # Optional default: list all radio stations and exit.
 # LIST_STATIONS_ONLY=0
 

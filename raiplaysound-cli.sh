@@ -26,6 +26,7 @@ Input:
 
 Options:
   -h, --help                  Show this help and exit
+      --json                  Output list results as JSON (for automations/agents)
   -f, --format FORMAT         Audio format: mp3|m4a|aac|ogg|opus|flac|wav (default: m4a)
   -j, --jobs N                Parallel download jobs (default: 3)
   -s, --seasons LIST|all      Season filter for downloads/list-episodes (e.g. 1,2 or all)
@@ -144,6 +145,10 @@ load_config_file() {
         bool_v="$(normalize_bool "${value}")"
         [[ -n "${bool_v}" ]] && SHOW_URLS="${bool_v}"
         ;;
+      JSON_OUTPUT)
+        bool_v="$(normalize_bool "${value}")"
+        [[ -n "${bool_v}" ]] && JSON_OUTPUT="${bool_v}"
+        ;;
       LIST_STATIONS_ONLY)
         bool_v="$(normalize_bool "${value}")"
         [[ -n "${bool_v}" ]] && LIST_STATIONS_ONLY="${bool_v}"
@@ -206,6 +211,7 @@ EPISODE_URLS_ARG=""
 LIST_SEASONS_ONLY="0"
 LIST_EPISODES_ONLY="0"
 SHOW_URLS="0"
+JSON_OUTPUT="0"
 LIST_STATIONS_ONLY="0"
 STATIONS_DETAILED="0"
 LIST_PODCASTS_ONLY="0"
@@ -233,6 +239,10 @@ while [[ "$#" -gt 0 ]]; do
     -h | --help)
       usage
       exit 0
+      ;;
+    --json)
+      JSON_OUTPUT="1"
+      shift
       ;;
     -f | --format)
       if [[ "$#" -lt 2 ]]; then
@@ -559,6 +569,11 @@ if [[ "${LIST_EPISODES_ONLY}" -eq 0 ]] && [[ "${SHOW_URLS}" -eq 1 ]]; then
   exit 1
 fi
 
+if [[ "${JSON_OUTPUT}" -eq 1 ]] && [[ "${LIST_STATIONS_ONLY}" -eq 0 ]] && [[ "${LIST_PODCASTS_ONLY}" -eq 0 ]] && [[ "${LIST_SEASONS_ONLY}" -eq 0 ]] && [[ "${LIST_EPISODES_ONLY}" -eq 0 ]]; then
+  echo "Error: --json can only be used with --list-stations, --list-programs, --list-seasons, or --list-episodes." >&2
+  exit 1
+fi
+
 if [[ "${LIST_SEASONS_ONLY}" -eq 1 ]] || [[ "${LIST_EPISODES_ONLY}" -eq 1 ]] || [[ "${LIST_STATIONS_ONLY}" -eq 1 ]] || [[ "${LIST_PODCASTS_ONLY}" -eq 1 ]]; then
   if [[ -n "${EPISODES_ARG}" ]] || [[ -n "${EPISODE_URLS_ARG}" ]]; then
     echo "Error: --episodes/--episode-url/--episode-urls are only valid in download mode." >&2
@@ -593,6 +608,9 @@ fi
 
 show_stage() {
   local message="$1"
+  if [[ "${JSON_OUTPUT}" -eq 1 ]]; then
+    return 0
+  fi
   if [[ "${IS_TTY}" -eq 1 ]]; then
     printf '\r%b==>%b %s\033[K' "${C_CYAN}" "${C_RESET}" "${message}"
   else
@@ -602,6 +620,9 @@ show_stage() {
 
 finish_stage() {
   local message="$1"
+  if [[ "${JSON_OUTPUT}" -eq 1 ]]; then
+    return 0
+  fi
   if [[ "${IS_TTY}" -eq 1 ]]; then
     printf '\r%b==>%b %s\033[K\n' "${C_GREEN}" "${C_RESET}" "${message}"
   else
@@ -986,6 +1007,86 @@ print_podcasts_sorted() {
     { printf "  - %s (%s) [%s]\n", $2, $1, $5 }'
 }
 
+json_escape() {
+  local s="$1"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\n'/\\n}"
+  s="${s//$'\r'/\\r}"
+  s="${s//$'\t'/\\t}"
+  printf '%s' "${s}"
+}
+
+print_stations_json() {
+  local stations_file="$1"
+  local detailed="$2"
+  local count
+  local first="1"
+  local detailed_json
+  local short_e name_e page_e feed_e
+  count="$(wc -l < "${stations_file}" | tr -d '[:space:]')"
+  if [[ "${detailed}" -eq 1 ]]; then
+    detailed_json="true"
+  else
+    detailed_json="false"
+  fi
+  printf '{'
+  printf '"mode":"stations","count":%s,"detailed":%s,"stations":[' "${count}" "${detailed_json}"
+  while IFS=$'\t' read -r station_short station_name station_link station_json_path; do
+    [[ -z "${station_name}" ]] && continue
+    if [[ "${first}" -eq 0 ]]; then
+      printf ','
+    fi
+    first="0"
+    short_e="$(json_escape "${station_short}")"
+    name_e="$(json_escape "${station_name}")"
+    page_e="$(json_escape "https://www.raiplaysound.it${station_link}")"
+    feed_e="$(json_escape "https://www.raiplaysound.it${station_json_path}")"
+    printf '{"short":"%s","name":"%s","page_url":"%s","feed_url":"%s"}' \
+      "${short_e}" \
+      "${name_e}" \
+      "${page_e}" \
+      "${feed_e}"
+  done < "${stations_file}"
+  printf ']}\n'
+}
+
+print_programs_json() {
+  local catalog_file="$1"
+  local grouping="$2"
+  local station_filter="$3"
+  local count
+  local first="1"
+  local grouping_e station_filter_e slug_e title_e station_e station_short_e years_e
+  count="$(wc -l < "${catalog_file}" | tr -d '[:space:]')"
+  grouping_e="$(json_escape "${grouping}")"
+  station_filter_e="$(json_escape "${station_filter}")"
+  printf '{'
+  printf '"mode":"programs","count":%s,"grouping":"%s","station_filter":"%s","programs":[' \
+    "${count}" \
+    "${grouping_e}" \
+    "${station_filter_e}"
+  while IFS=$'\t' read -r slug title station station_short years; do
+    [[ -z "${slug}" ]] && continue
+    if [[ "${first}" -eq 0 ]]; then
+      printf ','
+    fi
+    first="0"
+    slug_e="$(json_escape "${slug}")"
+    title_e="$(json_escape "${title}")"
+    station_e="$(json_escape "${station}")"
+    station_short_e="$(json_escape "${station_short}")"
+    years_e="$(json_escape "${years}")"
+    printf '{"slug":"%s","title":"%s","station_name":"%s","station_short":"%s","years":"%s"}' \
+      "${slug_e}" \
+      "${title_e}" \
+      "${station_e}" \
+      "${station_short_e}" \
+      "${years_e}"
+  done < "${catalog_file}"
+  printf ']}\n'
+}
+
 if [[ "${LIST_STATIONS_ONLY}" -eq 1 ]]; then
   LIST_TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/raiplaysound-list.XXXXXX")"
   trap 'rm -rf "${LIST_TMP_DIR}" 2>/dev/null || true' EXIT
@@ -994,6 +1095,10 @@ if [[ "${LIST_STATIONS_ONLY}" -eq 1 ]]; then
   collect_stations_file "${STATIONS_FILE}"
   station_count="$(wc -l < "${STATIONS_FILE}" | tr -d '[:space:]')"
   finish_stage "Loaded ${station_count} stations."
+  if [[ "${JSON_OUTPUT}" -eq 1 ]]; then
+    print_stations_json "${STATIONS_FILE}" "${STATIONS_DETAILED}"
+    exit 0
+  fi
   if [[ "${STATIONS_DETAILED}" -eq 1 ]]; then
     printf 'Available RaiPlaySound radio stations (detailed):\n'
   else
@@ -1091,10 +1196,22 @@ if [[ "${LIST_PODCASTS_ONLY}" -eq 1 ]]; then
   fi
 
   if [[ "${effective_group_mode}" == "sorted" ]]; then
+    if [[ "${JSON_OUTPUT}" -eq 1 ]]; then
+      print_programs_json "${PODCASTS_FILE}" "sorted" "${STATION_FILTER}"
+      exit 0
+    fi
     print_podcasts_sorted "${PODCASTS_FILE}"
   elif [[ "${effective_group_mode}" == "alpha" ]]; then
+    if [[ "${JSON_OUTPUT}" -eq 1 ]]; then
+      print_programs_json "${PODCASTS_FILE}" "alpha" "${STATION_FILTER}"
+      exit 0
+    fi
     print_podcasts_alpha "${PODCASTS_FILE}"
   else
+    if [[ "${JSON_OUTPUT}" -eq 1 ]]; then
+      print_programs_json "${PODCASTS_FILE}" "station" "${STATION_FILTER}"
+      exit 0
+    fi
     print_podcasts_station "${PODCASTS_FILE}"
   fi
   exit 0
@@ -1548,6 +1665,66 @@ if [[ "${REQUESTED_SEASONS_COUNT}" -gt 0 ]]; then
 fi
 
 if [[ "${LIST_SEASONS_ONLY}" -eq 1 ]]; then
+  if [[ "${JSON_OUTPUT}" -eq 1 ]]; then
+    slug_e="$(json_escape "${SLUG}")"
+    program_url_e="$(json_escape "${PROGRAM_URL}")"
+    if [[ "${HAS_SEASONS}" -eq 1 ]]; then
+      has_seasons_json="true"
+    else
+      has_seasons_json="false"
+    fi
+    printf '{'
+    printf '"mode":"seasons","slug":"%s","program_url":"%s","has_seasons":%s,' \
+      "${slug_e}" \
+      "${program_url_e}" \
+      "${has_seasons_json}"
+    printf '"total_episodes":%s,' "${TOTAL}"
+    printf '"seasons":['
+    first_json_season="1"
+    if [[ "${HAS_SEASONS}" -eq 0 ]]; then
+      show_year_span="unknown year"
+      if [[ "${SHOW_YEAR_MIN}" =~ ^[0-9]{4}$ ]] && [[ "${SHOW_YEAR_MAX}" =~ ^[0-9]{4}$ ]]; then
+        if [[ "${SHOW_YEAR_MIN}" == "${SHOW_YEAR_MAX}" ]]; then
+          show_year_span="${SHOW_YEAR_MIN}"
+        else
+          show_year_span="${SHOW_YEAR_MIN}-${SHOW_YEAR_MAX}"
+        fi
+      fi
+      show_year_span_e="$(json_escape "${show_year_span}")"
+      if [[ "${first_json_season}" -eq 0 ]]; then
+        printf ','
+      fi
+      first_json_season="0"
+      printf '{"season":"1","episodes":%s,"published":"%s"}' "${TOTAL}" "${show_year_span_e}"
+    else
+      while IFS= read -r season; do
+        [[ -z "${season}" ]] && continue
+        year_min="${SEASON_YEAR_MIN[${season}]:-NA}"
+        year_max="${SEASON_YEAR_MAX[${season}]:-NA}"
+        year_span="unknown year"
+        if [[ "${year_min}" =~ ^[0-9]{4}$ ]] && [[ "${year_max}" =~ ^[0-9]{4}$ ]]; then
+          if [[ "${year_min}" == "${year_max}" ]]; then
+            year_span="${year_min}"
+          else
+            year_span="${year_min}-${year_max}"
+          fi
+        fi
+        if [[ "${first_json_season}" -eq 0 ]]; then
+          printf ','
+        fi
+        first_json_season="0"
+        season_e="$(json_escape "${season}")"
+        year_span_e="$(json_escape "${year_span}")"
+        printf '{"season":"%s","episodes":%s,"published":"%s"}' \
+          "${season_e}" \
+          "${SEASON_COUNTS[${season}]}" \
+          "${year_span_e}"
+      done <<< "${AVAILABLE_SEASONS_SORTED}"
+    fi
+    printf ']}\n'
+    exit 0
+  fi
+
   if [[ "${HAS_SEASONS}" -eq 0 ]]; then
     show_year_span="unknown year"
     if [[ "${SHOW_YEAR_MIN}" =~ ^[0-9]{4}$ ]] && [[ "${SHOW_YEAR_MAX}" =~ ^[0-9]{4}$ ]]; then
@@ -1596,6 +1773,60 @@ if [[ "${LIST_EPISODES_ONLY}" -eq 1 ]]; then
     LIST_SEASONS["${LATEST_SEASON}"]="1"
   fi
 
+  if [[ "${JSON_OUTPUT}" -eq 1 ]]; then
+    slug_e="$(json_escape "${SLUG}")"
+    program_url_e="$(json_escape "${PROGRAM_URL}")"
+    if [[ "${HAS_SEASONS}" -eq 1 ]]; then
+      has_seasons_json="true"
+    else
+      has_seasons_json="false"
+    fi
+    if [[ "${SHOW_URLS}" -eq 1 ]]; then
+      show_urls_json="true"
+    else
+      show_urls_json="false"
+    fi
+    printf '{'
+    printf '"mode":"episodes","slug":"%s","program_url":"%s","has_seasons":%s,"show_urls":%s,' \
+      "${slug_e}" \
+      "${program_url_e}" \
+      "${has_seasons_json}" \
+      "${show_urls_json}"
+    printf '"episodes":['
+    first_json_episode="1"
+    for ((i = 0; i < TOTAL; i++)); do
+      season="${EPISODE_SEASONS[i]}"
+      if [[ -z "${LIST_SEASONS[${season}]:-}" ]]; then
+        continue
+      fi
+      upload_date="${EPISODE_UPLOAD_DATES[i]}"
+      pretty_date="unknown-date"
+      if [[ "${upload_date}" =~ ^[0-9]{8}$ ]]; then
+        pretty_date="${upload_date:0:4}-${upload_date:4:2}-${upload_date:6:2}"
+      fi
+      episode_id="${EPISODE_IDS[i]}"
+      episode_url="${EPISODE_URLS[i]}"
+      episode_title="${EPISODE_TITLES[i]}"
+      if [[ "${first_json_episode}" -eq 0 ]]; then
+        printf ','
+      fi
+      first_json_episode="0"
+      season_e="$(json_escape "${season}")"
+      pretty_date_e="$(json_escape "${pretty_date}")"
+      episode_title_e="$(json_escape "${episode_title}")"
+      episode_id_e="$(json_escape "${episode_id}")"
+      episode_url_e="$(json_escape "${episode_url}")"
+      printf '{"season":"%s","date":"%s","title":"%s","id":"%s","url":"%s"}' \
+        "${season_e}" \
+        "${pretty_date_e}" \
+        "${episode_title_e}" \
+        "${episode_id_e}" \
+        "${episode_url_e}"
+    done
+    printf ']}\n'
+    exit 0
+  fi
+
   printf 'Episodes for %s (%s):\n' "${SLUG}" "${PROGRAM_URL}"
   if [[ "${HAS_SEASONS}" -eq 0 ]]; then
     printf '  Season model: none (single stream)\n'
@@ -1613,21 +1844,19 @@ if [[ "${LIST_EPISODES_ONLY}" -eq 1 ]]; then
     printf '\n'
   fi
 
+  EPISODES_TABLE_FILE="${WORK_DIR}/episodes-table.tsv"
+  : > "${EPISODES_TABLE_FILE}"
   if [[ "${HAS_SEASONS}" -eq 0 ]]; then
     if [[ "${SHOW_URLS}" -eq 1 ]]; then
-      printf '  | Date | Episode | ID | URL |\n'
-      printf '  |---|---|---|---|\n'
+      printf 'Date\tEpisode\tID\tURL\n' >> "${EPISODES_TABLE_FILE}"
     else
-      printf '  | Date | Episode | ID |\n'
-      printf '  |---|---|---|\n'
+      printf 'Date\tEpisode\tID\n' >> "${EPISODES_TABLE_FILE}"
     fi
   else
     if [[ "${SHOW_URLS}" -eq 1 ]]; then
-      printf '  | Season | Date | Episode | ID | URL |\n'
-      printf '  |---|---|---|---|---|\n'
+      printf 'Season\tDate\tEpisode\tID\tURL\n' >> "${EPISODES_TABLE_FILE}"
     else
-      printf '  | Season | Date | Episode | ID |\n'
-      printf '  |---|---|---|---|\n'
+      printf 'Season\tDate\tEpisode\tID\n' >> "${EPISODES_TABLE_FILE}"
     fi
   fi
 
@@ -1644,21 +1873,26 @@ if [[ "${LIST_EPISODES_ONLY}" -eq 1 ]]; then
     episode_id="${EPISODE_IDS[i]}"
     episode_url="${EPISODE_URLS[i]}"
     episode_title="${EPISODE_TITLES[i]}"
-    episode_title="${episode_title//|//}"
+    episode_title="${episode_title//$'\t'/ }"
     if [[ "${HAS_SEASONS}" -eq 0 ]]; then
       if [[ "${SHOW_URLS}" -eq 1 ]]; then
-        printf '  | %s | %s | %s | %s |\n' "${pretty_date}" "${episode_title}" "${episode_id}" "${episode_url}"
+        printf '%s\t%s\t%s\t%s\n' "${pretty_date}" "${episode_title}" "${episode_id}" "${episode_url}" >> "${EPISODES_TABLE_FILE}"
       else
-        printf '  | %s | %s | %s |\n' "${pretty_date}" "${episode_title}" "${episode_id}"
+        printf '%s\t%s\t%s\n' "${pretty_date}" "${episode_title}" "${episode_id}" >> "${EPISODES_TABLE_FILE}"
       fi
     else
       if [[ "${SHOW_URLS}" -eq 1 ]]; then
-        printf '  | S%s | %s | %s | %s | %s |\n' "${season}" "${pretty_date}" "${episode_title}" "${episode_id}" "${episode_url}"
+        printf 'S%s\t%s\t%s\t%s\t%s\n' "${season}" "${pretty_date}" "${episode_title}" "${episode_id}" "${episode_url}" >> "${EPISODES_TABLE_FILE}"
       else
-        printf '  | S%s | %s | %s | %s |\n' "${season}" "${pretty_date}" "${episode_title}" "${episode_id}"
+        printf 'S%s\t%s\t%s\t%s\n' "${season}" "${pretty_date}" "${episode_title}" "${episode_id}" >> "${EPISODES_TABLE_FILE}"
       fi
     fi
   done
+  EPISODES_TABLE_ALIGNED_FILE="${WORK_DIR}/episodes-table-aligned.txt"
+  column -t -s $'\t' "${EPISODES_TABLE_FILE}" > "${EPISODES_TABLE_ALIGNED_FILE}"
+  while IFS= read -r table_line; do
+    printf '  %s\n' "${table_line}"
+  done < "${EPISODES_TABLE_ALIGNED_FILE}"
   exit 0
 fi
 

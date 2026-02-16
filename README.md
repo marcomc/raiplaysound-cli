@@ -33,6 +33,7 @@ parallel download execution.
 - Supports season filtering for downloads (`--seasons`)
 - Supports season and episode discovery modes (`--list-seasons`, `--list-episodes`)
 - Prints episode IDs in `--list-episodes` output, with optional URLs via `--show-urls`
+- Supports JSON output for list modes via `--json` (`stations`, `programs`, `seasons`, `episodes`)
 - Lists available RaiPlaySound radio stations (`--list-stations`)
 - Can print detailed station listing with clickable page/feed URLs (`--stations-detailed`)
 - Lists programs in one mode at a time with smart defaults:
@@ -217,6 +218,12 @@ List episodes including URLs:
 ./raiplaysound-cli.sh --list-episodes --show-urls --seasons 2 america7
 ```
 
+List episodes as JSON (automation/agent-friendly):
+
+```bash
+./raiplaysound-cli.sh --list-episodes --seasons 2 --json america7
+```
+
 If `--list-episodes` is used without `--seasons`, it lists the latest detected season.
 
 If download is run without `--seasons`, it targets the current/latest season only.
@@ -255,10 +262,22 @@ List stations with detailed URLs (station page and feed):
 ./raiplaysound-cli.sh --list-stations --stations-detailed
 ```
 
+List stations as JSON:
+
+```bash
+./raiplaysound-cli.sh --list-stations --json
+```
+
 List programs using default grouping behavior:
 
 ```bash
 ./raiplaysound-cli.sh --list-programs
+```
+
+List programs as JSON:
+
+```bash
+./raiplaysound-cli.sh --list-programs --json
 ```
 
 Legacy alias still accepted: `--list-podcasts` (deprecated).
@@ -327,10 +346,12 @@ Set program catalog cache max age in hours:
 ./raiplaysound-cli.sh --list-seasons america7
 ./raiplaysound-cli.sh --list-episodes --seasons 2 america7
 ./raiplaysound-cli.sh --list-episodes --show-urls --seasons 2 america7
+./raiplaysound-cli.sh --list-episodes --seasons 2 --json america7
 
 # Station listing
 ./raiplaysound-cli.sh --list-stations
 ./raiplaysound-cli.sh --list-stations --stations-detailed
+./raiplaysound-cli.sh --list-stations --json
 
 # Program listing
 ./raiplaysound-cli.sh --list-programs
@@ -339,6 +360,7 @@ Set program catalog cache max age in hours:
 ./raiplaysound-cli.sh --list-programs --podcasts-group-by station
 ./raiplaysound-cli.sh --list-programs --podcasts-group-by alpha
 ./raiplaysound-cli.sh --list-programs --sorted
+./raiplaysound-cli.sh --list-programs --json
 ./raiplaysound-cli.sh --refresh-podcast-catalog --list-programs
 ./raiplaysound-cli.sh --catalog-max-age-hours 2160 --list-programs
 ```
