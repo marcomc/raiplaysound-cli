@@ -1,0 +1,14 @@
+# Archive and logs
+.download-archive.txt
+logs/
+
+# Downloaded media artifacts
+*.m4a
+*.mp3
+*.opus
+*.webm
+*.part
+*.ytdl
+
+# macOS metadata
+.DS_Store
