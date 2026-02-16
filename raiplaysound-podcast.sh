@@ -887,21 +887,70 @@ has_local_media_for_episode() {
 declare -a MISSING_ARCHIVE_IDS=()
 declare -a MISSING_ARCHIVE_LABELS=()
 if [[ "${#ARCHIVED_IDS[@]}" -gt 0 ]]; then
+  CHECK_JOBS="${RAIPLAYSOUND_CHECK_JOBS:-8}"
+  if ! [[ "${CHECK_JOBS}" =~ ^[0-9]+$ ]] || [[ "${CHECK_JOBS}" -lt 1 ]]; then
+    CHECK_JOBS="8"
+  fi
+
+  declare -a CHECK_PIDS=()
+  declare -a CHECK_RESULT_FILES=()
+  declare -a CHECK_IDS=()
+  declare -a CHECK_LABELS=()
+  check_running=0
+  check_total=0
+
+  show_stage "Checking archived episodes against local files ..."
   for ((i = 0; i < TOTAL; i++)); do
     episode_id="${EPISODE_IDS[i]}"
     if [[ -z "${ARCHIVED_IDS[${episode_id}]:-}" ]]; then
       continue
     fi
+    check_total=$((check_total + 1))
 
-    set +e
-    has_local_media_for_episode "${EPISODE_URLS[i]}"
-    media_check_rc=$?
-    set -e
-    if [[ "${media_check_rc}" -ne 0 ]]; then
-      MISSING_ARCHIVE_IDS+=("${episode_id}")
-      MISSING_ARCHIVE_LABELS+=("${EPISODE_LABELS[i]}")
+    while [[ "${check_running}" -ge "${CHECK_JOBS}" ]]; do
+      for ((j = 0; j < ${#CHECK_PIDS[@]}; j++)); do
+        if [[ "${CHECK_PIDS[j]}" != "0" ]] && ! kill -0 "${CHECK_PIDS[j]}" 2>/dev/null; then
+          wait "${CHECK_PIDS[j]}" || true
+          CHECK_PIDS[j]="0"
+          check_running=$((check_running - 1))
+        fi
+      done
+      sleep 0.05
+    done
+
+    result_file="${WORK_DIR}/archive-check-${i}.txt"
+    check_url="${EPISODE_URLS[i]}"
+    (
+      set +e
+      has_local_media_for_episode "${check_url}"
+      media_check_rc=$?
+      set -e
+      if [[ "${media_check_rc}" -eq 0 ]]; then
+        printf 'OK\n' > "${result_file}"
+      else
+        printf 'MISS\n' > "${result_file}"
+      fi
+    ) &
+    CHECK_PIDS+=("$!")
+    CHECK_RESULT_FILES+=("${result_file}")
+    CHECK_IDS+=("${episode_id}")
+    CHECK_LABELS+=("${EPISODE_LABELS[i]}")
+    check_running=$((check_running + 1))
+  done
+
+  for ((j = 0; j < ${#CHECK_PIDS[@]}; j++)); do
+    if [[ "${CHECK_PIDS[j]}" != "0" ]]; then
+      wait "${CHECK_PIDS[j]}" || true
     fi
   done
+
+  for ((j = 0; j < ${#CHECK_RESULT_FILES[@]}; j++)); do
+    if [[ -f "${CHECK_RESULT_FILES[j]}" ]] && [[ "$(cat "${CHECK_RESULT_FILES[j]}" 2>/dev/null || true)" == "MISS" ]]; then
+      MISSING_ARCHIVE_IDS+=("${CHECK_IDS[j]}")
+      MISSING_ARCHIVE_LABELS+=("${CHECK_LABELS[j]}")
+    fi
+  done
+  finish_stage "Archive/local check completed for ${check_total} archived episodes."
 fi
 
 if [[ "${#MISSING_ARCHIVE_IDS[@]}" -gt 0 ]]; then
