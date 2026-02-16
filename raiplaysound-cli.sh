@@ -124,7 +124,10 @@ load_config_file() {
       AUDIO_FORMAT) AUDIO_FORMAT="$(printf '%s' "${value}" | tr '[:upper:]' '[:lower:]')" ;;
       JOBS) JOBS="${value}" ;;
       COMMAND) COMMAND="$(printf '%s' "${value}" | tr '[:upper:]' '[:lower:]')" ;;
-      LIST_TARGET) LIST_TARGET="$(printf '%s' "${value}" | tr '[:upper:]' '[:lower:]')" ;;
+      LIST_TARGET)
+        LIST_TARGET="$(printf '%s' "${value}" | tr '[:upper:]' '[:lower:]')"
+        LIST_TARGET_SOURCE="config"
+        ;;
       SEASONS_ARG)
         SEASONS_ARG="${value}"
         SEASONS_ARG_SOURCE="config"
@@ -213,6 +216,8 @@ AUDIO_FORMAT="m4a"
 JOBS="3"
 COMMAND=""
 LIST_TARGET=""
+LIST_TARGET_SOURCE="default"
+CLI_LIST_TARGET_SELECTED="0"
 AUTO_REDOWNLOAD_MISSING="0"
 SEASONS_ARG=""
 EPISODES_ARG=""
@@ -312,6 +317,7 @@ while [[ "$#" -gt 0 ]]; do
       ;;
     --seasons)
       if [[ "${COMMAND}" == "list" ]]; then
+        CLI_LIST_TARGET_SELECTED="1"
         LIST_SEASONS_ONLY="1"
         shift
       else
@@ -349,6 +355,7 @@ while [[ "$#" -gt 0 ]]; do
       ;;
     --episodes)
       if [[ "${COMMAND}" == "list" ]]; then
+        CLI_LIST_TARGET_SELECTED="1"
         LIST_EPISODES_ONLY="1"
         shift
       elif [[ "${COMMAND}" == "" ]]; then
@@ -448,6 +455,7 @@ while [[ "$#" -gt 0 ]]; do
       if [[ -z "${COMMAND}" ]]; then
         COMMAND="list"
       fi
+      CLI_LIST_TARGET_SELECTED="1"
       LIST_STATIONS_ONLY="1"
       shift
       ;;
@@ -462,6 +470,7 @@ while [[ "$#" -gt 0 ]]; do
       if [[ -z "${COMMAND}" ]]; then
         COMMAND="list"
       fi
+      CLI_LIST_TARGET_SELECTED="1"
       LIST_PODCASTS_ONLY="1"
       shift
       ;;
@@ -469,6 +478,7 @@ while [[ "$#" -gt 0 ]]; do
       if [[ -z "${COMMAND}" ]]; then
         COMMAND="list"
       fi
+      CLI_LIST_TARGET_SELECTED="1"
       LIST_SEASONS_ONLY="1"
       shift
       ;;
@@ -476,6 +486,7 @@ while [[ "$#" -gt 0 ]]; do
       if [[ -z "${COMMAND}" ]]; then
         COMMAND="list"
       fi
+      CLI_LIST_TARGET_SELECTED="1"
       LIST_EPISODES_ONLY="1"
       shift
       ;;
@@ -564,21 +575,25 @@ while [[ "$#" -gt 0 ]]; do
       if [[ "${COMMAND}" == "list" ]]; then
         case "$1" in
           stations)
+            CLI_LIST_TARGET_SELECTED="1"
             LIST_STATIONS_ONLY="1"
             shift
             continue
             ;;
           programs)
+            CLI_LIST_TARGET_SELECTED="1"
             LIST_PODCASTS_ONLY="1"
             shift
             continue
             ;;
           seasons)
+            CLI_LIST_TARGET_SELECTED="1"
             LIST_SEASONS_ONLY="1"
             shift
             continue
             ;;
           episodes)
+            CLI_LIST_TARGET_SELECTED="1"
             LIST_EPISODES_ONLY="1"
             shift
             continue
@@ -674,16 +689,21 @@ if [[ "${CATALOG_CACHE_FILE}" == *"\$HOME"* ]] || [[ "${CATALOG_CACHE_FILE}" == 
 fi
 
 if [[ -n "${LIST_TARGET}" ]]; then
-  case "${LIST_TARGET}" in
-    stations) LIST_STATIONS_ONLY="1" ;;
-    programs) LIST_PODCASTS_ONLY="1" ;;
-    seasons) LIST_SEASONS_ONLY="1" ;;
-    episodes) LIST_EPISODES_ONLY="1" ;;
-    *)
-      echo "Error: LIST_TARGET must be one of: stations, programs, seasons, episodes." >&2
-      exit 1
-      ;;
-  esac
+  if [[ "${LIST_TARGET_SOURCE}" == "config" ]] && { [[ "${COMMAND}" == "download" ]] || [[ "${CLI_LIST_TARGET_SELECTED}" == "1" ]]; }; then
+    LIST_TARGET=""
+    LIST_TARGET_SOURCE="default"
+  else
+    case "${LIST_TARGET}" in
+      stations) LIST_STATIONS_ONLY="1" ;;
+      programs) LIST_PODCASTS_ONLY="1" ;;
+      seasons) LIST_SEASONS_ONLY="1" ;;
+      episodes) LIST_EPISODES_ONLY="1" ;;
+      *)
+        echo "Error: LIST_TARGET must be one of: stations, programs, seasons, episodes." >&2
+        exit 1
+        ;;
+    esac
+  fi
 fi
 
 if [[ -z "${COMMAND}" ]]; then

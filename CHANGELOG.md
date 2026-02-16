@@ -31,6 +31,7 @@ All notable changes to this project are documented in this file.
 - Fixed list-mode interactions with dot-config defaults:
   - config `INPUT` is now ignored for `list --stations` and `list --programs`
   - config-only download filters (`SEASONS_ARG`, `EPISODES_ARG`, `EPISODE_URLS_ARG`) are now ignored in incompatible list targets
+  - config `LIST_TARGET` is now ignored in `download` mode and no longer conflicts with explicit CLI list targets
 
 ## [1.0.0] - 2026-02-16
 
