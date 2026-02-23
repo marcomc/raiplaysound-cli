@@ -57,6 +57,7 @@ Download options:
       --episode-urls LIST     Download specific episode URLs (comma-separated)
   -m, --missing               Re-download archive-marked episodes missing locally
       --log[=PATH]            Enable debug log (default path in target dir if omitted)
+      --debug-pids            Log worker PID / yt-dlp PID lifecycle transitions to the run log
       --refresh-metadata      Force refresh of per-show metadata cache
       --clear-metadata-cache  Clear per-show metadata cache before run
       --metadata-max-age-hours N
@@ -191,6 +192,10 @@ load_config_file() {
         bool_v="$(normalize_bool "${value}")"
         [[ -n "${bool_v}" ]] && ENABLE_LOG="${bool_v}"
         ;;
+      DEBUG_PIDS)
+        bool_v="$(normalize_bool "${value}")"
+        [[ -n "${bool_v}" ]] && DEBUG_PIDS="${bool_v}"
+        ;;
       LOG_PATH_ARG) LOG_PATH_ARG="$(expand_config_path "${value}")" ;;
       FORCE_REFRESH_METADATA)
         bool_v="$(normalize_bool "${value}")"
@@ -240,6 +245,7 @@ FORCE_REFRESH_CATALOG="0"
 CATALOG_MAX_AGE_HOURS="${RAIPLAYSOUND_CATALOG_MAX_AGE_HOURS:-2160}"
 CATALOG_CACHE_FILE="${HOME}/.local/state/raiplaysound-cli/program-catalog.tsv"
 ENABLE_LOG="0"
+DEBUG_PIDS="0"
 LOG_PATH_ARG=""
 FORCE_REFRESH_METADATA="0"
 CLEAR_METADATA_CACHE="0"
@@ -442,6 +448,14 @@ while [[ "$#" -gt 0 ]]; do
       fi
       ENABLE_LOG="1"
       LOG_PATH_ARG="${1#--log=}"
+      shift
+      ;;
+    --debug-pids)
+      if [[ "${COMMAND}" == "list" ]]; then
+        echo "Error: --debug-pids is only valid with 'download'." >&2
+        exit 1
+      fi
+      DEBUG_PIDS="1"
       shift
       ;;
     -u | --show-urls)
@@ -1595,6 +1609,19 @@ LOCK_ACQUIRED="0"
 
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/raiplaysound.XXXXXX")"
 cleanup() {
+  local idx child_pid child_active
+
+  # Ensure no per-episode workers survive if parent exits unexpectedly.
+  if declare -p PIDS >/dev/null 2>&1 && declare -p ACTIVE >/dev/null 2>&1; then
+    for idx in "${!PIDS[@]}"; do
+      child_active="${ACTIVE[idx]:-0}"
+      child_pid="${PIDS[idx]:-0}"
+      if [[ "${child_active}" -eq 1 ]] && [[ "${child_pid}" -gt 0 ]] && kill -0 "${child_pid}" 2>/dev/null; then
+        kill "${child_pid}" 2>/dev/null || true
+      fi
+    done
+  fi
+
   if [[ "${CURSOR_HIDDEN:-0}" -eq 1 ]]; then
     printf '\033[?25h'
   fi
@@ -2312,6 +2339,12 @@ else
   DOWNLOAD_SEASONS_LABEL="current (${LATEST_SEASON})"
 fi
 
+if [[ "${HAS_SEASONS}" -eq 1 ]]; then
+  OUTPUT_TEMPLATE="${TARGET_DIR}/%(series,playlist_title,uploader)s - S%(season_number|0)02d%(episode_number|0)02d - %(upload_date>%Y-%m-%d)s - %(episode,title)s.%(ext)s"
+else
+  OUTPUT_TEMPLATE="${TARGET_DIR}/%(series,playlist_title,uploader)s - %(upload_date>%Y-%m-%d)s - %(episode,title)s.%(ext)s"
+fi
+
 EPISODE_FILTER_LABEL="none"
 if [[ "${HAS_EPISODE_FILTERS}" -eq 1 ]]; then
   EPISODE_FILTER_LABEL="ids=${REQUESTED_EPISODE_IDS_COUNT},urls=${REQUESTED_EPISODE_URLS_COUNT}"
@@ -2319,7 +2352,11 @@ fi
 
 RUN_TS="$(date '+%Y%m%d-%H%M%S')"
 LOG_FILE=""
-if [[ "${ENABLE_LOG}" -eq 1 ]]; then
+LOG_OUTPUT_ENABLED="0"
+if [[ "${ENABLE_LOG}" -eq 1 ]] || [[ "${DEBUG_PIDS}" -eq 1 ]]; then
+  LOG_OUTPUT_ENABLED="1"
+fi
+if [[ "${LOG_OUTPUT_ENABLED}" -eq 1 ]]; then
   if [[ -z "${LOG_PATH_ARG}" ]]; then
     LOG_FILE="${TARGET_DIR}/${SLUG}-run-${RUN_TS}.log"
   elif [[ -d "${LOG_PATH_ARG}" ]] || [[ "${LOG_PATH_ARG}" == */ ]]; then
@@ -2333,8 +2370,14 @@ if [[ "${ENABLE_LOG}" -eq 1 ]]; then
 fi
 
 log_line() {
-  if [[ "${ENABLE_LOG}" -eq 1 ]]; then
+  if [[ "${LOG_OUTPUT_ENABLED}" -eq 1 ]]; then
     printf '%s\n' "$1" >> "${LOG_FILE}"
+  fi
+}
+
+pid_trace() {
+  if [[ "${DEBUG_PIDS}" -eq 1 ]]; then
+    log_line "[pid] $1"
   fi
 }
 
@@ -2371,7 +2414,7 @@ if [[ ! -t 1 ]]; then
   printf 'Output format: %s\n' "${AUDIO_FORMAT}"
   printf 'Parallel jobs: %s\n' "${JOBS}"
   printf 'Episode filters: %s\n' "${EPISODE_FILTER_LABEL}"
-  if [[ "${ENABLE_LOG}" -eq 1 ]]; then
+  if [[ "${LOG_OUTPUT_ENABLED}" -eq 1 ]]; then
     printf 'Log file: %s\n' "${LOG_FILE}"
   fi
 fi
@@ -2385,7 +2428,8 @@ log_line "Archive file: ${ARCHIVE_FILE}"
 log_line "Output format: ${AUDIO_FORMAT}"
 log_line "Parallel jobs: ${JOBS}"
 log_line "Episode filters: ${EPISODE_FILTER_LABEL}"
-if [[ "${ENABLE_LOG}" -eq 1 ]]; then
+log_line "PID debug: ${DEBUG_PIDS}"
+if [[ "${LOG_OUTPUT_ENABLED}" -eq 1 ]]; then
   log_line "Log file: ${LOG_FILE}"
 fi
 
@@ -2500,7 +2544,14 @@ if [[ "${#MISSING_ARCHIVE_IDS[@]}" -gt 0 ]]; then
       printf '  - %s (%s)\n' "${MISSING_ARCHIVE_LABELS[i]}" "${MISSING_ARCHIVE_IDS[i]}"
     done
 
-    read -r -p "Re-download these missing archived episodes now? [y/N] " reply
+    reply=""
+    printf 'Re-download these missing archived episodes now? [y/N] '
+    if IFS= read -r -s -n 1 reply < /dev/tty; then
+      :
+    fi
+    # Drain any extra bytes (for example kitty/fish key sequences like CSI-u).
+    IFS= read -r -t 0.05 _drain_reply < /dev/tty || true
+    printf '\n'
     case "${reply}" in
       y | Y | yes | YES)
         if [[ -f "${ARCHIVE_FILE}" ]]; then
@@ -2532,7 +2583,7 @@ done
 CURSOR_HIDDEN="0"
 RENDER_INITIALIZED="0"
 RENDER_HEADER_LINES="10"
-if [[ "${ENABLE_LOG}" -eq 1 ]]; then
+if [[ "${LOG_OUTPUT_ENABLED}" -eq 1 ]]; then
   RENDER_HEADER_LINES=$((RENDER_HEADER_LINES + 1))
 fi
 TERM_LINES="$(tput lines 2>/dev/null || printf '24')"
@@ -2641,7 +2692,7 @@ render_progress() {
   printf 'Archive file: %s\033[K\n' "${ARCHIVE_FILE}"
   printf 'Output format: %s\033[K\n' "${AUDIO_FORMAT}"
   printf 'Parallel jobs: %s\033[K\n' "${JOBS}"
-  if [[ "${ENABLE_LOG}" -eq 1 ]]; then
+  if [[ "${LOG_OUTPUT_ENABLED}" -eq 1 ]]; then
     printf 'Log file: %s\033[K\n' "${LOG_FILE}"
   fi
   printf '%b==>%b Progress: %d/%d episodes, running=%d\033[K\n\033[K\n' "${C_CYAN}" "${C_RESET}" "${completed_count}" "${TOTAL}" "${running_count}"
@@ -2736,15 +2787,38 @@ start_episode_download() {
   local episode_url="${EPISODE_URLS[idx]}"
   local label="${EPISODE_LABELS[idx]}"
   local status_file="${STATUS_FILES[idx]}"
+  local yt_pipe="${WORK_DIR}/yt-${idx}.pipe"
 
   (
+    local rc
+    local current_state
+    local current_size
+    local line
+    local progress_payload
+    local downloaded_bytes
+    local total_bytes
+    local total_bytes_estimate
+    local raw_percent
+    local size_display
+    local percent_candidate
+    local downloaded_human
+    local total_human
+    local estimate_human
+    local yt_dlp_pid="0"
+    local -a yt_verbose_args=()
+
+    trap 'if [[ "${yt_dlp_pid}" =~ ^[0-9]+$ ]] && [[ "${yt_dlp_pid}" -gt 0 ]] && kill -0 "${yt_dlp_pid}" 2>/dev/null; then pid_trace "worker-exit worker_pid=${BASHPID} killing_yt_dlp_pid=${yt_dlp_pid}"; kill "${yt_dlp_pid}" 2>/dev/null || true; fi; rm -f "${yt_pipe}" 2>/dev/null || true' EXIT
+
     log_line "Starting episode: ${label} (${episode_id})"
+    pid_trace "worker-start worker_pid=${BASHPID} idx=${idx} episode_id=${episode_id}"
     printf 'DOWNLOADING|0|0B/?|%s\n' "${label}" > "${status_file}"
 
-    yt_verbose_args=()
     if [[ "${ENABLE_LOG}" -eq 1 ]]; then
       yt_verbose_args+=(--verbose)
     fi
+
+    rm -f "${yt_pipe}"
+    mkfifo "${yt_pipe}"
 
     yt-dlp \
       --format "bestaudio/best" \
@@ -2762,57 +2836,68 @@ start_episode_download() {
       --progress-template 'progress:%(progress.downloaded_bytes|0)d:%(progress.total_bytes|0)d:%(progress.total_bytes_estimate|0)d:%(progress._percent_str)s' \
       "${yt_verbose_args[@]}" \
       -o "${OUTPUT_TEMPLATE}" \
-      "${episode_url}" 2>&1 | while IFS= read -r line; do
-        if [[ "${ENABLE_LOG}" -eq 1 ]] && [[ "${line}" != download:*%* ]]; then
-          printf '%s\n' "${line}" >> "${LOG_FILE}"
-        fi
+      "${episode_url}" > "${yt_pipe}" 2>&1 &
+    yt_dlp_pid="$!"
+    pid_trace "yt-dlp-start worker_pid=${BASHPID} yt_dlp_pid=${yt_dlp_pid} idx=${idx} episode_id=${episode_id}"
 
-        if [[ "${line}" == *"has already been recorded in the archive"* ]]; then
-          printf 'SKIP|100|downloaded|%s\n' "${label}" > "${status_file}"
-          continue
-        fi
+    while IFS= read -r line; do
+      if [[ "${ENABLE_LOG}" -eq 1 ]] && [[ "${line}" != download:*%* ]]; then
+        printf '%s\n' "${line}" >> "${LOG_FILE}"
+      fi
 
-        if [[ "${line}" == ERROR:* ]]; then
-          printf 'ERROR|100|error|%s\n' "${label}" > "${status_file}"
-          continue
-        fi
+      if [[ "${line}" == *"has already been recorded in the archive"* ]]; then
+        printf 'SKIP|100|downloaded|%s\n' "${label}" > "${status_file}"
+        continue
+      fi
 
-        if [[ "${line}" == progress:* ]]; then
-          progress_payload="${line#progress:}"
-          IFS=':' read -r downloaded_bytes total_bytes total_bytes_estimate raw_percent <<< "${progress_payload}"
-          size_display="?"
+      if [[ "${line}" == ERROR:* ]]; then
+        printf 'ERROR|100|error|%s\n' "${label}" > "${status_file}"
+        continue
+      fi
 
-          percent_candidate=""
-          if [[ "${total_bytes}" =~ ^[0-9]+$ ]] && [[ "${total_bytes}" -gt 0 ]] && [[ "${downloaded_bytes}" =~ ^[0-9]+$ ]]; then
-            percent_candidate="$((downloaded_bytes * 100 / total_bytes))"
-            downloaded_human="$(format_bytes "${downloaded_bytes}")"
-            total_human="$(format_bytes "${total_bytes}")"
-            size_display="${downloaded_human}/${total_human}"
-          elif [[ "${total_bytes_estimate}" =~ ^[0-9]+$ ]] && [[ "${total_bytes_estimate}" -gt 0 ]] && [[ "${downloaded_bytes}" =~ ^[0-9]+$ ]]; then
-            percent_candidate="$((downloaded_bytes * 100 / total_bytes_estimate))"
-            downloaded_human="$(format_bytes "${downloaded_bytes}")"
-            estimate_human="$(format_bytes "${total_bytes_estimate}")"
-            size_display="${downloaded_human}/~${estimate_human}"
-          else
-            raw_percent="${raw_percent%%%*}"
-            raw_percent="${raw_percent// /}"
-            raw_percent="${raw_percent//$'\r'/}"
-            percent_candidate="${raw_percent%%.*}"
-            if [[ "${downloaded_bytes}" =~ ^[0-9]+$ ]]; then
-              size_display="$(format_bytes "${downloaded_bytes}")/?"
-            fi
-          fi
+      if [[ "${line}" == progress:* ]]; then
+        progress_payload="${line#progress:}"
+        IFS=':' read -r downloaded_bytes total_bytes total_bytes_estimate raw_percent <<< "${progress_payload}"
+        size_display="?"
 
-          if [[ "${percent_candidate}" =~ ^[0-9]+$ ]]; then
-            if [[ "${percent_candidate}" -gt 100 ]]; then
-              percent_candidate=100
-            fi
-            printf 'DOWNLOADING|%s|%s|%s\n' "${percent_candidate}" "${size_display}" "${label}" > "${status_file}"
+        percent_candidate=""
+        if [[ "${total_bytes}" =~ ^[0-9]+$ ]] && [[ "${total_bytes}" -gt 0 ]] && [[ "${downloaded_bytes}" =~ ^[0-9]+$ ]]; then
+          percent_candidate="$((downloaded_bytes * 100 / total_bytes))"
+          downloaded_human="$(format_bytes "${downloaded_bytes}")"
+          total_human="$(format_bytes "${total_bytes}")"
+          size_display="${downloaded_human}/${total_human}"
+        elif [[ "${total_bytes_estimate}" =~ ^[0-9]+$ ]] && [[ "${total_bytes_estimate}" -gt 0 ]] && [[ "${downloaded_bytes}" =~ ^[0-9]+$ ]]; then
+          percent_candidate="$((downloaded_bytes * 100 / total_bytes_estimate))"
+          downloaded_human="$(format_bytes "${downloaded_bytes}")"
+          estimate_human="$(format_bytes "${total_bytes_estimate}")"
+          size_display="${downloaded_human}/~${estimate_human}"
+        else
+          raw_percent="${raw_percent%%%*}"
+          raw_percent="${raw_percent// /}"
+          raw_percent="${raw_percent//$'\r'/}"
+          percent_candidate="${raw_percent%%.*}"
+          if [[ "${downloaded_bytes}" =~ ^[0-9]+$ ]]; then
+            size_display="$(format_bytes "${downloaded_bytes}")/?"
           fi
         fi
-      done
 
-    rc=${PIPESTATUS[0]}
+        if [[ "${percent_candidate}" =~ ^[0-9]+$ ]]; then
+          if [[ "${percent_candidate}" -gt 100 ]]; then
+            percent_candidate=100
+          fi
+          printf 'DOWNLOADING|%s|%s|%s\n' "${percent_candidate}" "${size_display}" "${label}" > "${status_file}"
+        fi
+      fi
+    done < "${yt_pipe}"
+
+    set +e
+    wait "${yt_dlp_pid}"
+    rc=$?
+    set -e
+    pid_trace "yt-dlp-exit worker_pid=${BASHPID} yt_dlp_pid=${yt_dlp_pid} rc=${rc} idx=${idx} episode_id=${episode_id}"
+    yt_dlp_pid="0"
+    rm -f "${yt_pipe}" 2>/dev/null || true
+
     IFS='|' read -r current_state _ current_size _ < "${status_file}"
 
     if [[ "${current_state}" == "SKIP" ]]; then
@@ -2836,6 +2921,7 @@ start_episode_download() {
 
   PIDS[idx]="$!"
   ACTIVE[idx]="1"
+  pid_trace "worker-spawn parent_pid=$$ worker_pid=${PIDS[idx]} idx=${idx} episode_id=${episode_id}"
 }
 
 running=0
@@ -2854,6 +2940,7 @@ while [[ "${completed}" -lt "${TOTAL}" ]]; do
       if wait "${PIDS[i]}"; then
         :
       fi
+      pid_trace "worker-reap parent_pid=$$ worker_pid=${PIDS[i]} idx=${i}"
       ACTIVE[i]="0"
       running=$((running - 1))
       completed=$((completed + 1))

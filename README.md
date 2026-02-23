@@ -17,16 +17,20 @@ parallel download execution.
 - Downloads playlist/program episodes from RaiPlaySound
 - Saves audio as `.m4a`
 - Uses sortable file naming:
-  - `Show - S0203 - YYYY-MM-DD - EpisodeName.m4a`
+  - with seasons: `Show - S0203 - YYYY-MM-DD - EpisodeName.m4a`
+  - without seasons: `Show - YYYY-MM-DD - EpisodeName.m4a`
 - Stores files in `~/Music/RaiPlaySound/<program_slug>/`
 - Keeps a per-program archive file (`.download-archive.txt`) to avoid re-downloading episodes
 - Optional debug logging with `--log` (disabled by default)
+- Optional PID lifecycle tracing with `--debug-pids` (writes PID transitions to the run log)
 - Safe to run repeatedly (idempotent)
+- Ensures active episode workers are terminated if the main process exits unexpectedly
 - Supports common audio output formats: `mp3`, `m4a`, `aac`, `ogg`, `opus`, `flac`, `wav`
 - Converts only when source format differs from requested output format
 - Supports parallel episode downloads (`--jobs`, default `3`)
 - Shows a live per-episode progress bar (`#####-----`) with ANSI colors in interactive terminals
 - Supports automatic re-download of archived-but-missing files (`download --missing`) without interactive prompt
+- Uses single-key interactive confirmation for missing archived files, compatible with terminals/shells that emit extended key sequences
 - Supports targeted downloads:
   - by episode ID list (`--episode-ids`)
   - by episode URL (`--episode-url`, `--episode-urls`)
@@ -116,6 +120,7 @@ Config keys and matching CLI options:
 | `EPISODE_URLS_ARG` | `--episode-url`, `--episode-urls` | download |
 | `AUTO_REDOWNLOAD_MISSING` | `--missing` | download |
 | `ENABLE_LOG` | `--log` | download |
+| `DEBUG_PIDS` | `--debug-pids` | download |
 | `LOG_PATH_ARG` | `--log[=PATH]` | download |
 | `FORCE_REFRESH_METADATA` | `--refresh-metadata` | download |
 | `CLEAR_METADATA_CACHE` | `--clear-metadata-cache` | download |
@@ -222,6 +227,12 @@ Enable debug log in a specific file path:
 
 ```bash
 ./raiplaysound-cli.sh download --log=/tmp/raiplaysound-debug.log america7
+```
+
+Enable PID lifecycle tracing (worker/`yt-dlp` transitions):
+
+```bash
+./raiplaysound-cli.sh download --debug-pids musicalbox
 ```
 
 Force metadata refresh:

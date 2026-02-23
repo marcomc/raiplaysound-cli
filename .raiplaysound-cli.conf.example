@@ -91,6 +91,10 @@ CHECK_JOBS=8
 # Optional default: enable verbose debug logging.
 # ENABLE_LOG=0
 
+# Optional default: log worker PID / yt-dlp PID lifecycle transitions.
+# Writes PID traces to the per-run log file.
+# DEBUG_PIDS=0
+
 # Optional default log destination.
 # - empty: log in program output dir
 # - directory path: creates <program_slug>-run-YYYYMMDD-HHMMSS.log in that dir

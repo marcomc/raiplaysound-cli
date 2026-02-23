@@ -23,6 +23,9 @@ The main goal is to download program episodes from a RaiPlaySound program slug o
 - For every new CLI/config option, update script parsing support for `~/.raiplaysound-cli.conf`.
 - For every new CLI/config option, update `.raiplaysound-cli.conf.example` in project root.
 - For every new CLI/config option, update `README.md` option/config documentation.
+- After implementing any task, update the `Unreleased` section of `CHANGELOG.md` with user-visible changes.
+- After implementing any feature, behavior change, config change, or workflow change relevant to users, update `README.md` accordingly.
+- If an implemented task is listed in `TODO.md`, remove it from `TODO.md` and record it in `CHANGELOG.md` under `Unreleased`.
 
 ## Scripting Constraints
 

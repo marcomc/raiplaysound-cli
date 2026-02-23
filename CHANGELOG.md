@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Diagnostics
+
+- Added `download --debug-pids` (and config key `DEBUG_PIDS`) to emit worker PID / `yt-dlp` PID lifecycle transitions to the debug log for diagnosis.
+
+### Fixed
+
+- Prevented orphan episode downloads when the main CLI process exits unexpectedly by terminating active worker jobs during cleanup.
+- Corrected output naming for programs without seasons so files no longer include synthetic `S00` prefixes (for example, `Musical Box - YYYY-MM-DD - EpisodeName.m4a`).
+- Hardened per-episode worker execution so `yt-dlp` is tied to worker lifecycle and cannot continue detached if a worker exits unexpectedly.
+- Fixed interactive missing-file re-download prompt input handling in fish/kitty-style terminals that emit `CSI-u` key sequences (for example `^[[13u`).
+
 ## [1.1.0] - 2026-02-16
 
 ### Changed
