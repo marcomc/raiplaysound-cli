@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-02-23
+
 ### Diagnostics
 
 - Added `download --debug-pids` (and config key `DEBUG_PIDS`) to emit worker PID / `yt-dlp` PID lifecycle transitions to the debug log for diagnosis.
