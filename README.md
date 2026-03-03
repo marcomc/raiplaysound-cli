@@ -21,6 +21,7 @@ parallel download execution.
   - without seasons: `Show - YYYY-MM-DD - EpisodeName.m4a`
 - Stores files in `~/Music/RaiPlaySound/<program_slug>/`
 - Keeps a per-program archive file (`.download-archive.txt`) to avoid re-downloading episodes
+- Optional RSS 2.0 podcast feed generation (`--rss`) — writes `feed.xml` to the show folder for import into any podcast client
 - Optional debug logging with `--log` (disabled by default)
 - Optional PID lifecycle tracing with `--debug-pids` (writes PID transitions to the run log)
 - Safe to run repeatedly (idempotent)
@@ -122,6 +123,8 @@ Config keys and matching CLI options:
 | `ENABLE_LOG` | `--log` | download |
 | `DEBUG_PIDS` | `--debug-pids` | download |
 | `LOG_PATH_ARG` | `--log[=PATH]` | download |
+| `RSS_FEED` | `--rss` / `--no-rss` | download |
+| `RSS_BASE_URL` | `--rss-base-url` | download |
 | `FORCE_REFRESH_METADATA` | `--refresh-metadata` | download |
 | `CLEAR_METADATA_CACHE` | `--clear-metadata-cache` | download |
 | `METADATA_MAX_AGE_HOURS` | `--metadata-max-age-hours` | download |
@@ -233,6 +236,56 @@ Enable PID lifecycle tracing (worker/`yt-dlp` transitions):
 
 ```bash
 ./raiplaysound-cli.sh download --debug-pids musicalbox
+```
+
+Generate a standard RSS 2.0 podcast feed (`feed.xml`) in the show's download folder:
+
+```bash
+./raiplaysound-cli.sh download --rss musicalbox
+```
+
+The feed is built from the metadata cache and all locally present audio files after
+every run. Re-running with all episodes already downloaded (skipped) still produces a
+complete and up-to-date feed — the metadata cache is the source of truth, not just the
+current session's downloads.
+
+By default, enclosure URLs use `file://` absolute paths, which work with Apple Podcasts
+on the same Mac. To make the feed usable from any device (iPhone, iPad, other computers),
+host the download folder at a public HTTP/S URL and set `--rss-base-url`.
+
+`RSS_BASE_URL` must point to the **parent folder** that contains your show subfolders
+(for example the `RaiPlaySound` level, not the per-show level). The CLI automatically
+appends `/<program_slug>/<filename>` to construct each episode URL.
+
+The recommended approach is pCloud's **Public Folder** (`/Public` in your pCloud Drive),
+which provides stable direct-download `filedn.eu` URLs:
+
+1. Move or sync your `RaiPlaySound` folder into your pCloud `/Public` folder.
+2. Right-click any file inside it → "Copy direct link". The `lXXXXX` hash in that URL
+   is your account-level identifier — it is the same for every file in your Public Folder.
+3. Your base URL is `https://filedn.eu/lXXXXX/RaiPlaySound` (without trailing slash).
+
+```bash
+./raiplaysound-cli.sh download --rss --rss-base-url https://filedn.eu/lXXXXX/RaiPlaySound musicalbox
+```
+
+With `--rss-base-url` set, every `<enclosure>` URL becomes
+`<base-url>/<program_slug>/<filename>`, for example:
+`https://filedn.eu/lXXXXX/RaiPlaySound/musicalbox/Musical%20Box%20-%20S0101%20-%202025-03-01%20-%20Episode.m4a`
+
+The `feed.xml` file also lives in the show subfolder, so the feed URL to add to your
+podcast client is `<base-url>/<program_slug>/feed.xml`, for example:
+`https://filedn.eu/lXXXXX/RaiPlaySound/musicalbox/feed.xml`
+
+> **Note**: pCloud's regular folder-share links (`publink/show?code=…`) are a web
+> browser interface, not direct download URLs. Podcast clients cannot stream from them.
+> Only the Public Folder `filedn.eu` links work as podcast enclosure URLs.
+
+Enable both via config for hands-free use:
+
+```ini
+RSS_FEED=true
+RSS_BASE_URL=https://filedn.eu/lXXXXX/RaiPlaySound
 ```
 
 Force metadata refresh:
@@ -407,10 +460,44 @@ Run daily at 06:30:
 30 6 * * * /usr/local/bin/raiplaysound-cli download musicalbox
 ```
 
-## How `--download-archive` Works
+## Output Folder Contents
+
+Every downloaded show creates a folder at:
+
+```text
+~/Music/RaiPlaySound/<program_slug>/
+```
+
+The following files are written there:
+
+| File | Created by | Purpose |
+| --- | --- | --- |
+| `*.m4a` / `*.mp3` / … | `yt-dlp` | Downloaded audio episodes |
+| `.download-archive.txt` | `yt-dlp` | Idempotency archive — records every downloaded episode ID |
+| `.metadata-cache.tsv` | CLI | Per-episode metadata cache (ID, date, season, title) |
+| `.run-lock/` | CLI | Lock directory that prevents concurrent runs for the same show |
+| `feed.xml` | CLI (`--rss`) | RSS 2.0 podcast feed (only when `--rss` / `RSS_FEED=true`) |
+| `<slug>-run-*.log` | CLI (`--log`) | Debug log (only when `--log` is enabled) |
+
+## How `.download-archive.txt` Works
 
 The script uses `--download-archive` with:
 
 - `~/Music/RaiPlaySound/<program_slug>/.download-archive.txt`
 
 Each downloaded episode ID is recorded in that file. On later runs, `yt-dlp` checks the archive and skips episodes already present there. This makes repeated runs incremental and prevents duplicate downloads.
+
+## How `.metadata-cache.tsv` Works
+
+After episode discovery, the CLI fetches and caches episode metadata (title, upload date, season number) in:
+
+- `~/Music/RaiPlaySound/<program_slug>/.metadata-cache.tsv`
+
+The file is tab-separated with four columns: `id`, `upload_date` (YYYYMMDD), `season`, `title`. It is used to:
+
+- Speed up repeated `list --episodes` and `list --seasons` runs by avoiding redundant API calls.
+- Supply episode metadata for RSS feed generation (when `--rss` is enabled).
+
+The cache expires after `METADATA_MAX_AGE_HOURS` (default: 24 hours). Force a refresh with `--refresh-metadata`, or clear the file entirely with `--clear-metadata-cache`.
+
+Because the metadata cache accumulates entries across runs (including runs filtered to specific seasons), the RSS feed built from it is always complete — it reflects every episode the CLI has ever discovered for that show, not only the ones downloaded in the current session.

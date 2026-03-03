@@ -207,6 +207,11 @@ load_config_file() {
         ;;
       METADATA_MAX_AGE_HOURS) METADATA_MAX_AGE_HOURS="${value}" ;;
       CHECK_JOBS) CHECK_JOBS="${value}" ;;
+      RSS_FEED)
+        bool_v="$(normalize_bool "${value}")"
+        [[ -n "${bool_v}" ]] && RSS_FEED="${bool_v}"
+        ;;
+      RSS_BASE_URL) RSS_BASE_URL="${value}" ;;
       TARGET_BASE) TARGET_BASE="$(expand_config_path "${value}")" ;;
       INPUT)
         INPUT="${value}"
@@ -251,6 +256,8 @@ FORCE_REFRESH_METADATA="0"
 CLEAR_METADATA_CACHE="0"
 METADATA_MAX_AGE_HOURS="${RAIPLAYSOUND_METADATA_MAX_AGE_HOURS:-24}"
 CHECK_JOBS="${RAIPLAYSOUND_CHECK_JOBS:-8}"
+RSS_FEED="0"
+RSS_BASE_URL=""
 TARGET_BASE="${HOME}/Music/RaiPlaySound"
 INPUT=""
 INPUT_FROM_CONFIG="0"
@@ -574,6 +581,35 @@ while [[ "$#" -gt 0 ]]; do
         exit 1
       fi
       METADATA_MAX_AGE_HOURS="$2"
+      shift 2
+      ;;
+    --rss)
+      if [[ "${COMMAND}" == "list" ]]; then
+        echo "Error: --rss is only valid with 'download'." >&2
+        exit 1
+      fi
+      RSS_FEED="1"
+      shift
+      ;;
+    --no-rss)
+      if [[ "${COMMAND}" == "list" ]]; then
+        echo "Error: --no-rss is only valid with 'download'." >&2
+        exit 1
+      fi
+      RSS_FEED="0"
+      shift
+      ;;
+    --rss-base-url)
+      if [[ "${COMMAND}" == "list" ]]; then
+        echo "Error: --rss-base-url is only valid with 'download'." >&2
+        exit 1
+      fi
+      if [[ "$#" -lt 2 ]]; then
+        echo "Error: --rss-base-url requires a value." >&2
+        usage
+        exit 1
+      fi
+      RSS_BASE_URL="${2%/}"
       shift 2
       ;;
     --)
@@ -1289,6 +1325,147 @@ json_escape() {
   s="${s//$'\r'/\\r}"
   s="${s//$'\t'/\\t}"
   printf '%s' "${s}"
+}
+
+xml_escape() {
+  local s="$1"
+  s="${s//&/&amp;}"
+  s="${s//</&lt;}"
+  s="${s//>/&gt;}"
+  s="${s//\"/&quot;}"
+  printf '%s' "${s}"
+}
+
+yyyymmdd_to_rfc822() {
+  local d="$1"
+  local year month_num day m_idx
+  local -a month_names
+  month_names=("" "Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec")
+  [[ "${d}" =~ ^[0-9]{8}$ ]] || { printf '%s' "${d}"; return; }
+  year="${d:0:4}"
+  month_num="${d:4:2}"
+  day="${d:6:2}"
+  m_idx="${month_num#0}"
+  [[ -z "${m_idx}" ]] && m_idx="0"
+  printf '%s %s %s 00:00:00 +0000' "${day}" "${month_names[${m_idx}]}" "${year}"
+}
+
+fetch_show_title() {
+  local slug="$1"
+  local json_line title_raw title
+  json_line="$(curl -Ls --connect-timeout 5 --max-time 20 --retry 1 \
+    "https://www.raiplaysound.it/programmi/${slug}.json" 2>/dev/null | tr -d '\n' || true)"
+  if [[ -z "${json_line}" ]]; then
+    printf '%s' "${slug}"
+    return
+  fi
+  title_raw="$(printf '%s' "${json_line}" | awk -F '"title":"' '{if (NF>1) { split($2,a,"\""); print a[1] }}')"
+  title="${title_raw//\\\//\/}"
+  title="${title//\\\"/\"}"
+  title="${title//\\n/ }"
+  title="${title//\\t/ }"
+  title="${title//\\\\/\\}"
+  if [[ -n "${title}" ]]; then
+    printf '%s' "${title}"
+  else
+    printf '%s' "${slug}"
+  fi
+}
+
+generate_rss_feed() {
+  local target_dir="$1"
+  local slug="$2"
+  local program_url="$3"
+  local audio_format="$4"
+  local metadata_cache="$5"
+  local base_url="$6"
+  local feed_file mime_type show_title show_title_esc program_url_esc tmp_feed
+  local cache_id cache_upload cache_title
+  local date_formatted pub_date title_esc guid_esc file_path file_path_encoded file_url file_size
+  local f base file_date
+  local -A file_by_date
+
+  feed_file="${target_dir}/feed.xml"
+
+  case "${audio_format}" in
+    mp3)  mime_type="audio/mpeg" ;;
+    m4a)  mime_type="audio/mp4" ;;
+    ogg)  mime_type="audio/ogg" ;;
+    opus) mime_type="audio/ogg; codecs=opus" ;;
+    aac)  mime_type="audio/aac" ;;
+    flac) mime_type="audio/flac" ;;
+    wav)  mime_type="audio/wav" ;;
+    *)    mime_type="audio/mpeg" ;;
+  esac
+
+  show_stage "Generating RSS feed ..."
+
+  # Pre-scan target dir: build date→file map (YYYY-MM-DD → first matching audio file).
+  file_by_date=()
+  for f in "${target_dir}/"*; do
+    [[ -f "${f}" ]] || continue
+    base="$(basename "${f}")"
+    if [[ "${base}" =~ ([0-9]{4}-[0-9]{2}-[0-9]{2}) ]]; then
+      file_date="${BASH_REMATCH[1]}"
+      [[ -z "${file_by_date[${file_date}]+x}" ]] && file_by_date["${file_date}"]="${f}"
+    fi
+  done
+
+  show_title="$(fetch_show_title "${slug}")"
+  show_title_esc="$(xml_escape "${show_title}")"
+  program_url_esc="$(xml_escape "${program_url}")"
+  tmp_feed="$(mktemp "${WORK_DIR}/feed.XXXXXX")"
+
+  {
+    printf '<?xml version="1.0" encoding="UTF-8"?>\n'
+    printf '<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">\n'
+    printf '  <channel>\n'
+    printf '    <title>%s</title>\n' "${show_title_esc}"
+    printf '    <link>%s</link>\n' "${program_url_esc}"
+    printf '    <description>%s</description>\n' "${show_title_esc}"
+    printf '    <language>it</language>\n'
+    printf '    <itunes:title>%s</itunes:title>\n' "${show_title_esc}"
+    printf '    <itunes:author>RAI Play Sound</itunes:author>\n'
+    printf '    <itunes:explicit>false</itunes:explicit>\n'
+
+    if [[ -f "${metadata_cache}" ]]; then
+      while IFS=$'\t' read -r cache_id cache_upload _ cache_title; do
+        [[ -z "${cache_id}" ]] && continue
+        [[ "${cache_upload}" =~ ^[0-9]{8}$ ]] || continue
+        date_formatted="${cache_upload:0:4}-${cache_upload:4:2}-${cache_upload:6:2}"
+        file_path="${file_by_date[${date_formatted}]:-}"
+        [[ -z "${file_path}" ]] && continue
+        pub_date="$(yyyymmdd_to_rfc822 "${cache_upload}")"
+        title_esc="$(xml_escape "${cache_title:-${cache_id}}")"
+        guid_esc="$(xml_escape "${cache_id}")"
+        file_path_encoded="$(basename "${file_path}")"
+        file_path_encoded="${file_path_encoded// /%20}"
+        if [[ -n "${base_url}" ]]; then
+          file_url="${base_url}/${slug}/${file_path_encoded}"
+        else
+          local abs_path
+          abs_path="${file_path// /%20}"
+          file_url="file://${abs_path}"
+        fi
+        file_size="$(wc -c < "${file_path}")"
+        file_size="${file_size// /}"
+        printf '    <item>\n'
+        printf '      <title>%s</title>\n' "${title_esc}"
+        printf '      <link>%s</link>\n' "${program_url_esc}"
+        printf '      <guid isPermaLink="false">%s</guid>\n' "${guid_esc}"
+        printf '      <pubDate>%s</pubDate>\n' "${pub_date}"
+        printf '      <enclosure url="%s" length="%s" type="%s"/>\n' \
+          "${file_url}" "${file_size}" "${mime_type}"
+        printf '    </item>\n'
+      done < <(LC_ALL=C sort -t $'\t' -k2,2 -r "${metadata_cache}" || true)
+    fi
+
+    printf '  </channel>\n'
+    printf '</rss>\n'
+  } > "${tmp_feed}"
+
+  mv "${tmp_feed}" "${feed_file}"
+  finish_stage "RSS feed written: ${feed_file}"
 }
 
 print_stations_json() {
@@ -2980,6 +3157,10 @@ printf '%b==>%b Completed: done=%d, skipped=%d, errors=%d\n' "${C_BLUE}" "${C_RE
 END_TS="$(date '+%Y-%m-%d %H:%M:%S')"
 log_line "[${END_TS}] Download run completed"
 log_line "Summary: done=${done_count}, skipped=${skip_count}, errors=${error_count}"
+
+if [[ "${RSS_FEED}" -eq 1 ]]; then
+  generate_rss_feed "${TARGET_DIR}" "${SLUG}" "${PROGRAM_URL}" "${AUDIO_FORMAT}" "${METADATA_CACHE_FILE}" "${RSS_BASE_URL}"
+fi
 
 if [[ "${error_count}" -gt 0 ]]; then
   exit 1

@@ -4,6 +4,11 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- RSS 2.0 podcast feed generation (`download --rss`, config key `RSS_FEED`). After each download run the tool writes `feed.xml` to the show's output folder. The feed is built from the per-show metadata cache and locally present audio files, so re-running with all episodes already downloaded (skipped) still produces a complete, accurate feed. Off by default; use `--no-rss` to override a `RSS_FEED=true` config entry.
+- `--rss-base-url <URL>` (config key `RSS_BASE_URL`): when set, RSS enclosure URLs use `<base-url>/<filename>` instead of local `file://` paths, making the feed usable from any podcast client on any device. Intended for workflows where the download folder is synced to a hosted location (for example a pCloud public share).
+
 ## [1.1.1] - 2026-02-23
 
 ### Diagnostics

@@ -109,3 +109,24 @@ CHECK_JOBS=8
 
 # Optional default input when you do not pass program_slug/program_url on CLI.
 # INPUT="musicalbox"
+
+# Optional: generate a standard RSS 2.0 podcast feed (feed.xml) in the show's
+# download folder after every run. The feed is built from the metadata cache and
+# all locally present audio files, so it stays accurate even on re-runs where
+# all episodes are already downloaded. Off by default.
+# Values: 1/0, true/false, yes/no, on/off
+# RSS_FEED=false
+
+# Optional: base URL for the parent folder containing all show subfolders.
+# When set, RSS enclosure URLs are built as <RSS_BASE_URL>/<program_slug>/<filename>
+# instead of local file:// absolute paths. This makes the feed usable from any
+# podcast client on any device.
+#
+# Use pCloud's Public Folder (/Public in your pCloud Drive) to get stable
+# direct-download filedn.eu links — right-click any file inside it to find
+# your lXXXXX account hash. Regular pCloud folder-share links (publink/show?code=...)
+# are a web browser interface and do NOT work as podcast enclosure URLs.
+#
+# Example: RaiPlaySound synced into pCloud Public Folder
+# RSS_BASE_URL=https://filedn.eu/lXXXXXXX/RaiPlaySound
+# RSS_BASE_URL=
