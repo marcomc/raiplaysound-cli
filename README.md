@@ -22,6 +22,7 @@ parallel download execution.
 - Stores files in `~/Music/RaiPlaySound/<program_slug>/`
 - Keeps a per-program archive file (`.download-archive.txt`) to avoid re-downloading episodes
 - Optional RSS 2.0 podcast feed generation (`--rss`) — writes `feed.xml` to the show folder for import into any podcast client
+- Optional M3U playlist generation (`--playlist`) — writes `playlist.m3u` with relative paths for VLC and other media players
 - Optional debug logging with `--log` (disabled by default)
 - Optional PID lifecycle tracing with `--debug-pids` (writes PID transitions to the run log)
 - Safe to run repeatedly (idempotent)
@@ -125,6 +126,7 @@ Config keys and matching CLI options:
 | `LOG_PATH_ARG` | `--log[=PATH]` | download |
 | `RSS_FEED` | `--rss` / `--no-rss` | download |
 | `RSS_BASE_URL` | `--rss-base-url` | download |
+| `PLAYLIST` | `--playlist` / `--no-playlist` | download |
 | `FORCE_REFRESH_METADATA` | `--refresh-metadata` | download |
 | `CLEAR_METADATA_CACHE` | `--clear-metadata-cache` | download |
 | `METADATA_MAX_AGE_HOURS` | `--metadata-max-age-hours` | download |
@@ -286,6 +288,24 @@ Enable both via config for hands-free use:
 ```ini
 RSS_FEED=true
 RSS_BASE_URL=https://filedn.eu/lXXXXX/RaiPlaySound
+```
+
+Generate an M3U playlist (`playlist.m3u`) in the show's download folder:
+
+```bash
+./raiplaysound-cli.sh download --playlist musicalbox
+```
+
+The playlist is built from the metadata cache and all locally present audio files,
+sorted oldest-to-newest (chronological listening order). All file paths are relative
+to the playlist file itself, so the entire show folder can be moved or shared without
+breaking the playlist. Open `playlist.m3u` directly in VLC, mpv, or any media player
+that supports M3U.
+
+Enable via config for hands-free use:
+
+```ini
+PLAYLIST=true
 ```
 
 Force metadata refresh:
@@ -477,6 +497,7 @@ The following files are written there:
 | `.metadata-cache.tsv` | CLI | Per-episode metadata cache (ID, date, season, title) |
 | `.run-lock/` | CLI | Lock directory that prevents concurrent runs for the same show |
 | `feed.xml` | CLI (`--rss`) | RSS 2.0 podcast feed (only when `--rss` / `RSS_FEED=true`) |
+| `playlist.m3u` | CLI (`--playlist`) | M3U playlist with relative paths (only when `--playlist` / `PLAYLIST=true`) |
 | `<slug>-run-*.log` | CLI (`--log`) | Debug log (only when `--log` is enabled) |
 
 ## How `.download-archive.txt` Works
@@ -497,7 +518,8 @@ The file is tab-separated with four columns: `id`, `upload_date` (YYYYMMDD), `se
 
 - Speed up repeated `list --episodes` and `list --seasons` runs by avoiding redundant API calls.
 - Supply episode metadata for RSS feed generation (when `--rss` is enabled).
+- Supply episode metadata for playlist generation (when `--playlist` is enabled).
 
 The cache expires after `METADATA_MAX_AGE_HOURS` (default: 24 hours). Force a refresh with `--refresh-metadata`, or clear the file entirely with `--clear-metadata-cache`.
 
-Because the metadata cache accumulates entries across runs (including runs filtered to specific seasons), the RSS feed built from it is always complete — it reflects every episode the CLI has ever discovered for that show, not only the ones downloaded in the current session.
+Because the metadata cache accumulates entries across runs (including runs filtered to specific seasons), the RSS feed and playlist built from it are always complete — they reflect every episode the CLI has ever discovered for that show, not only the ones downloaded in the current session.

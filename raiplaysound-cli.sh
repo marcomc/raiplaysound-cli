@@ -12,7 +12,7 @@ if ((BASH_VERSINFO[0] < 4)); then
   exit 1
 fi
 
-VERSION="1.0.0"
+VERSION="1.2.0"
 
 usage() {
   cat <<'USAGE'
@@ -212,6 +212,10 @@ load_config_file() {
         [[ -n "${bool_v}" ]] && RSS_FEED="${bool_v}"
         ;;
       RSS_BASE_URL) RSS_BASE_URL="${value}" ;;
+      PLAYLIST)
+        bool_v="$(normalize_bool "${value}")"
+        [[ -n "${bool_v}" ]] && PLAYLIST="${bool_v}"
+        ;;
       TARGET_BASE) TARGET_BASE="$(expand_config_path "${value}")" ;;
       INPUT)
         INPUT="${value}"
@@ -258,6 +262,7 @@ METADATA_MAX_AGE_HOURS="${RAIPLAYSOUND_METADATA_MAX_AGE_HOURS:-24}"
 CHECK_JOBS="${RAIPLAYSOUND_CHECK_JOBS:-8}"
 RSS_FEED="0"
 RSS_BASE_URL=""
+PLAYLIST="0"
 TARGET_BASE="${HOME}/Music/RaiPlaySound"
 INPUT=""
 INPUT_FROM_CONFIG="0"
@@ -611,6 +616,22 @@ while [[ "$#" -gt 0 ]]; do
       fi
       RSS_BASE_URL="${2%/}"
       shift 2
+      ;;
+    --playlist)
+      if [[ "${COMMAND}" == "list" ]]; then
+        echo "Error: --playlist is only valid with 'download'." >&2
+        exit 1
+      fi
+      PLAYLIST="1"
+      shift
+      ;;
+    --no-playlist)
+      if [[ "${COMMAND}" == "list" ]]; then
+        echo "Error: --no-playlist is only valid with 'download'." >&2
+        exit 1
+      fi
+      PLAYLIST="0"
+      shift
       ;;
     --)
       shift
@@ -1373,47 +1394,48 @@ fetch_show_title() {
 }
 
 generate_rss_feed() {
-  local target_dir="$1"
-  local slug="$2"
-  local program_url="$3"
-  local audio_format="$4"
-  local metadata_cache="$5"
-  local base_url="$6"
-  local feed_file mime_type show_title show_title_esc program_url_esc tmp_feed
-  local cache_id cache_upload cache_title
-  local date_formatted pub_date title_esc guid_esc file_path file_path_encoded file_url file_size
-  local f base file_date
-  local -A file_by_date
+  local target_dir="$1" slug="$2" program_url="$3"
+  local metadata_cache="$4" base_url="$5"
+  local feed_file show_title show_title_esc program_url_esc tmp_feed entries_tmp
+  local cache_id cache_upload cache_title date_key
+  local f base_f file_date file_path ext_f mime_type
+  local base_noext title_fallback title_esc guid_esc
+  local pub_date_digits pub_date file_path_encoded file_url file_size abs_path
+  local -A cache_title_by_date cache_id_by_date
 
   feed_file="${target_dir}/feed.xml"
 
-  case "${audio_format}" in
-    mp3)  mime_type="audio/mpeg" ;;
-    m4a)  mime_type="audio/mp4" ;;
-    ogg)  mime_type="audio/ogg" ;;
-    opus) mime_type="audio/ogg; codecs=opus" ;;
-    aac)  mime_type="audio/aac" ;;
-    flac) mime_type="audio/flac" ;;
-    wav)  mime_type="audio/wav" ;;
-    *)    mime_type="audio/mpeg" ;;
-  esac
-
   show_stage "Generating RSS feed ..."
 
-  # Pre-scan target dir: build date→file map (YYYY-MM-DD → first matching audio file).
-  file_by_date=()
-  for f in "${target_dir}/"*; do
-    [[ -f "${f}" ]] || continue
-    base="$(basename "${f}")"
-    if [[ "${base}" =~ ([0-9]{4}-[0-9]{2}-[0-9]{2}) ]]; then
-      file_date="${BASH_REMATCH[1]}"
-      [[ -z "${file_by_date[${file_date}]+x}" ]] && file_by_date["${file_date}"]="${f}"
-    fi
-  done
+  # Build lookup maps from metadata cache (keyed by YYYY-MM-DD).
+  # Used to enrich locally present files; does not gate which files appear.
+  cache_title_by_date=()
+  cache_id_by_date=()
+  if [[ -f "${metadata_cache}" ]]; then
+    while IFS=$'\t' read -r cache_id cache_upload _ cache_title; do
+      [[ -z "${cache_id}" ]] && continue
+      [[ "${cache_upload}" =~ ^[0-9]{8}$ ]] || continue
+      date_key="${cache_upload:0:4}-${cache_upload:4:2}-${cache_upload:6:2}"
+      [[ -n "${cache_title_by_date[${date_key}]+x}" ]] || cache_title_by_date["${date_key}"]="${cache_title}"
+      [[ -n "${cache_id_by_date[${date_key}]+x}" ]] || cache_id_by_date["${date_key}"]="${cache_id}"
+    done < "${metadata_cache}"
+  fi
 
   show_title="$(fetch_show_title "${slug}")"
   show_title_esc="$(xml_escape "${show_title}")"
   program_url_esc="$(xml_escape "${program_url}")"
+
+  # Collect every audio file that carries a date in its name; sort newest-first.
+  entries_tmp="$(mktemp "${WORK_DIR}/entries.XXXXXX")"
+  for f in "${target_dir}/"*; do
+    [[ -f "${f}" ]] || continue
+    base_f="$(basename "${f}")"
+    if [[ "${base_f}" =~ ([0-9]{4}-[0-9]{2}-[0-9]{2}) ]]; then
+      printf '%s\t%s\n' "${BASH_REMATCH[1]}" "${f}"
+    fi
+  done > "${entries_tmp}"
+  LC_ALL=C sort -t $'\t' -k1,1 -r -o "${entries_tmp}" "${entries_tmp}" || true
+
   tmp_feed="$(mktemp "${WORK_DIR}/feed.XXXXXX")"
 
   {
@@ -1428,44 +1450,122 @@ generate_rss_feed() {
     printf '    <itunes:author>RAI Play Sound</itunes:author>\n'
     printf '    <itunes:explicit>false</itunes:explicit>\n'
 
-    if [[ -f "${metadata_cache}" ]]; then
-      while IFS=$'\t' read -r cache_id cache_upload _ cache_title; do
-        [[ -z "${cache_id}" ]] && continue
-        [[ "${cache_upload}" =~ ^[0-9]{8}$ ]] || continue
-        date_formatted="${cache_upload:0:4}-${cache_upload:4:2}-${cache_upload:6:2}"
-        file_path="${file_by_date[${date_formatted}]:-}"
-        [[ -z "${file_path}" ]] && continue
-        pub_date="$(yyyymmdd_to_rfc822 "${cache_upload}")"
-        title_esc="$(xml_escape "${cache_title:-${cache_id}}")"
-        guid_esc="$(xml_escape "${cache_id}")"
-        file_path_encoded="$(basename "${file_path}")"
-        file_path_encoded="${file_path_encoded// /%20}"
-        if [[ -n "${base_url}" ]]; then
-          file_url="${base_url}/${slug}/${file_path_encoded}"
+    while IFS=$'\t' read -r file_date file_path; do
+      base_f="$(basename "${file_path}")"
+      ext_f="${base_f##*.}"
+      case "${ext_f,,}" in
+        mp3)  mime_type="audio/mpeg" ;;
+        m4a)  mime_type="audio/mp4" ;;
+        ogg)  mime_type="audio/ogg" ;;
+        opus) mime_type="audio/ogg; codecs=opus" ;;
+        aac)  mime_type="audio/aac" ;;
+        flac) mime_type="audio/flac" ;;
+        wav)  mime_type="audio/wav" ;;
+        *)    mime_type="audio/mpeg" ;;
+      esac
+
+      if [[ -n "${cache_title_by_date[${file_date}]+x}" ]]; then
+        title_esc="$(xml_escape "${cache_title_by_date[${file_date}]}")"
+        guid_esc="$(xml_escape "${cache_id_by_date[${file_date}]}")"
+      else
+        base_noext="${base_f%.*}"
+        if [[ "${base_noext}" =~ [0-9]{4}-[0-9]{2}-[0-9]{2}[[:space:]]-[[:space:]](.+)$ ]]; then
+          title_fallback="${BASH_REMATCH[1]}"
         else
-          local abs_path
-          abs_path="${file_path// /%20}"
-          file_url="file://${abs_path}"
+          title_fallback="${base_noext}"
         fi
-        file_size="$(wc -c < "${file_path}")"
-        file_size="${file_size// /}"
-        printf '    <item>\n'
-        printf '      <title>%s</title>\n' "${title_esc}"
-        printf '      <link>%s</link>\n' "${program_url_esc}"
-        printf '      <guid isPermaLink="false">%s</guid>\n' "${guid_esc}"
-        printf '      <pubDate>%s</pubDate>\n' "${pub_date}"
-        printf '      <enclosure url="%s" length="%s" type="%s"/>\n' \
-          "${file_url}" "${file_size}" "${mime_type}"
-        printf '    </item>\n'
-      done < <(LC_ALL=C sort -t $'\t' -k2,2 -r "${metadata_cache}" || true)
-    fi
+        title_esc="$(xml_escape "${title_fallback}")"
+        guid_esc="$(xml_escape "${base_noext}")"
+      fi
+
+      pub_date_digits="${file_date//-/}"
+      pub_date="$(yyyymmdd_to_rfc822 "${pub_date_digits}")"
+
+      file_path_encoded="$(basename "${file_path}")"
+      file_path_encoded="${file_path_encoded// /%20}"
+      if [[ -n "${base_url}" ]]; then
+        file_url="${base_url}/${slug}/${file_path_encoded}"
+      else
+        abs_path="${file_path// /%20}"
+        file_url="file://${abs_path}"
+      fi
+
+      file_size="$(wc -c < "${file_path}")"
+      file_size="${file_size// /}"
+      printf '    <item>\n'
+      printf '      <title>%s</title>\n' "${title_esc}"
+      printf '      <link>%s</link>\n' "${program_url_esc}"
+      printf '      <guid isPermaLink="false">%s</guid>\n' "${guid_esc}"
+      printf '      <pubDate>%s</pubDate>\n' "${pub_date}"
+      printf '      <enclosure url="%s" length="%s" type="%s"/>\n' \
+        "${file_url}" "${file_size}" "${mime_type}"
+      printf '    </item>\n'
+    done < "${entries_tmp}"
 
     printf '  </channel>\n'
     printf '</rss>\n'
   } > "${tmp_feed}"
 
+  rm -f "${entries_tmp}"
   mv "${tmp_feed}" "${feed_file}"
   finish_stage "RSS feed written: ${feed_file}"
+}
+
+generate_playlist() {
+  local target_dir="$1" metadata_cache="$2"
+  local playlist_file entries_tmp
+  local cache_id cache_upload cache_title date_key
+  local f base_f file_date file_path base_noext title_fallback
+  local -A cache_title_by_date
+
+  playlist_file="${target_dir}/playlist.m3u"
+
+  show_stage "Generating playlist ..."
+
+  # Build title lookup map from metadata cache (keyed by YYYY-MM-DD).
+  # Used to enrich locally present files; does not gate which files appear.
+  cache_title_by_date=()
+  if [[ -f "${metadata_cache}" ]]; then
+    while IFS=$'\t' read -r cache_id cache_upload _ cache_title; do
+      [[ -z "${cache_id}" ]] && continue
+      [[ "${cache_upload}" =~ ^[0-9]{8}$ ]] || continue
+      date_key="${cache_upload:0:4}-${cache_upload:4:2}-${cache_upload:6:2}"
+      [[ -n "${cache_title_by_date[${date_key}]+x}" ]] || cache_title_by_date["${date_key}"]="${cache_title}"
+    done < "${metadata_cache}"
+  fi
+
+  # Collect every audio file that carries a date in its name; sort oldest-first.
+  entries_tmp="$(mktemp "${WORK_DIR}/entries.XXXXXX")"
+  for f in "${target_dir}/"*; do
+    [[ -f "${f}" ]] || continue
+    base_f="$(basename "${f}")"
+    if [[ "${base_f}" =~ ([0-9]{4}-[0-9]{2}-[0-9]{2}) ]]; then
+      printf '%s\t%s\n' "${BASH_REMATCH[1]}" "${f}"
+    fi
+  done > "${entries_tmp}"
+  LC_ALL=C sort -t $'\t' -k1,1 -o "${entries_tmp}" "${entries_tmp}" || true
+
+  {
+    printf '#EXTM3U\n'
+    while IFS=$'\t' read -r file_date file_path; do
+      base_f="$(basename "${file_path}")"
+      if [[ -n "${cache_title_by_date[${file_date}]+x}" ]]; then
+        printf '#EXTINF:-1,%s\n' "${cache_title_by_date[${file_date}]}"
+      else
+        base_noext="${base_f%.*}"
+        if [[ "${base_noext}" =~ [0-9]{4}-[0-9]{2}-[0-9]{2}[[:space:]]-[[:space:]](.+)$ ]]; then
+          title_fallback="${BASH_REMATCH[1]}"
+        else
+          title_fallback="${base_noext}"
+        fi
+        printf '#EXTINF:-1,%s\n' "${title_fallback}"
+      fi
+      printf '%s\n' "${base_f}"
+    done < "${entries_tmp}"
+  } > "${playlist_file}"
+
+  rm -f "${entries_tmp}"
+  finish_stage "Playlist written: ${playlist_file}"
 }
 
 print_stations_json() {
@@ -3159,7 +3259,11 @@ log_line "[${END_TS}] Download run completed"
 log_line "Summary: done=${done_count}, skipped=${skip_count}, errors=${error_count}"
 
 if [[ "${RSS_FEED}" -eq 1 ]]; then
-  generate_rss_feed "${TARGET_DIR}" "${SLUG}" "${PROGRAM_URL}" "${AUDIO_FORMAT}" "${METADATA_CACHE_FILE}" "${RSS_BASE_URL}"
+  generate_rss_feed "${TARGET_DIR}" "${SLUG}" "${PROGRAM_URL}" "${METADATA_CACHE_FILE}" "${RSS_BASE_URL}"
+fi
+
+if [[ "${PLAYLIST}" -eq 1 ]]; then
+  generate_playlist "${TARGET_DIR}" "${METADATA_CACHE_FILE}"
 fi
 
 if [[ "${error_count}" -gt 0 ]]; then

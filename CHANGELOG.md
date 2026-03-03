@@ -4,10 +4,17 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-03-03
+
 ### Added
 
-- RSS 2.0 podcast feed generation (`download --rss`, config key `RSS_FEED`). After each download run the tool writes `feed.xml` to the show's output folder. The feed is built from the per-show metadata cache and locally present audio files, so re-running with all episodes already downloaded (skipped) still produces a complete, accurate feed. Off by default; use `--no-rss` to override a `RSS_FEED=true` config entry.
-- `--rss-base-url <URL>` (config key `RSS_BASE_URL`): when set, RSS enclosure URLs use `<base-url>/<filename>` instead of local `file://` paths, making the feed usable from any podcast client on any device. Intended for workflows where the download folder is synced to a hosted location (for example a pCloud public share).
+- RSS 2.0 podcast feed generation (`download --rss`, config key `RSS_FEED`). After each download run the tool writes `feed.xml` to the show's output folder. The feed is built from all locally present audio files and enriched with metadata from the per-show cache. Re-running with all episodes already downloaded (skipped) still produces a complete, accurate feed. Off by default; use `--no-rss` to override a `RSS_FEED=true` config entry.
+- `--rss-base-url <URL>` (config key `RSS_BASE_URL`): when set, RSS enclosure URLs use `<base-url>/<program_slug>/<filename>` instead of local `file://` paths, making the feed usable from any podcast client on any device. Intended for workflows where the download folder is synced to a hosted location (for example a pCloud Public Folder).
+- M3U playlist generation (`download --playlist`, config key `PLAYLIST`). After each download run the tool writes `playlist.m3u` to the show's output folder. All locally present audio files are included, sorted oldest-to-newest. Paths are relative to the playlist file so the folder stays portable. Playable in VLC, mpv, and any M3U-compatible media player. Off by default; use `--no-playlist` to override a `PLAYLIST=true` config entry.
+
+### Fixed
+
+- RSS feed and M3U playlist now include **all locally present audio files**, not only episodes still available in RAI's online catalog. Previously, episodes removed from the RAI API were silently dropped from both outputs even though their files remained on disk. Both generators now iterate over files first and use the metadata cache only for title/GUID enrichment, falling back to filename-derived metadata for any file not in the cache.
 
 ## [1.1.1] - 2026-02-23
 

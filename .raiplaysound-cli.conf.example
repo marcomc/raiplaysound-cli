@@ -110,6 +110,13 @@ CHECK_JOBS=8
 # Optional default input when you do not pass program_slug/program_url on CLI.
 # INPUT="musicalbox"
 
+# Optional: generate an M3U playlist (playlist.m3u) in the show's download folder
+# after every run. The playlist is built from the metadata cache and all locally
+# present audio files, sorted oldest-to-newest. File paths are relative to the
+# playlist file so the folder stays portable. Off by default.
+# Values: 1/0, true/false, yes/no, on/off
+# PLAYLIST=false
+
 # Optional: generate a standard RSS 2.0 podcast feed (feed.xml) in the show's
 # download folder after every run. The feed is built from the metadata cache and
 # all locally present audio files, so it stays accurate even on re-runs where
