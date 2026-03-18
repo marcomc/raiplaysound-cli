@@ -123,11 +123,12 @@ CHECK_JOBS=8
 # instead of local file:// absolute paths. This makes the feed usable from any
 # podcast client on any device.
 #
-# Use pCloud's Public Folder (/Public in your pCloud Drive) to get stable
-# direct-download filedn.eu links — right-click any file inside it to find
-# your lXXXXX account hash. Regular pCloud folder-share links (publink/show?code=...)
-# are a web browser interface and do NOT work as podcast enclosure URLs.
+# RSS_BASE_URL must be a direct file-serving base URL.
+# The CLI appends /<program_slug>/<filename> to it.
 #
-# Example: RaiPlaySound synced into pCloud Public Folder
-# RSS_BASE_URL=https://filedn.eu/lXXXXXXX/RaiPlaySound
+# Works:
+# RSS_BASE_URL=https://media.example.net/RaiPlaySound
+#
+# Does not work:
+# RSS_BASE_URL=https://files.example.net/share?code=abcd1234
 # RSS_BASE_URL=

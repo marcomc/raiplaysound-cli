@@ -207,3 +207,12 @@ raiplaysound-cli list episodes america7 --json
 If download behavior was changed, also run a small real download against a
 temporary `HOME` or a temporary target directory so local archives and media
 files do not pollute the main environment.
+
+If RSS behavior or `RSS_BASE_URL` handling was changed, also verify one real
+enclosure URL:
+
+```bash
+raiplaysound-cli download --rss <slug>
+grep -n "<enclosure" "$TARGET_BASE/<slug>/feed.xml"
+curl -I "<one enclosure URL from feed.xml>"
+```

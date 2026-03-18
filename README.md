@@ -161,6 +161,16 @@ Supported config keys:
 | `SHOW_URLS` | `--show-urls` | list `--episodes` |
 | `INPUT` | `<program_slug\|program_url>` | download |
 
+`RSS_BASE_URL` must be a direct file-serving base URL. The CLI builds enclosure
+URLs as:
+
+```text
+<RSS_BASE_URL>/<program_slug>/<filename>
+```
+
+That means ordinary browser share-page URLs with query strings are not valid
+RSS enclosure bases.
+
 ## Usage
 
 ## Quick Start

@@ -34,6 +34,11 @@ All notable changes to this project are documented in this file.
   misassigned titles and GUIDs.
 - Expanded the default Markdown lint target so documentation under `docs/` is
   validated by `make lint`.
+- Clarified the RSS documentation and sample config so `RSS_BASE_URL` is
+  documented as a direct file-serving base URL, with generic valid and invalid
+  URL shapes instead of provider-specific examples.
+- Added an RSS validation step to the testing guide so users and agents can
+  confirm generated enclosure URLs resolve correctly.
 
 ### Added
 
@@ -55,7 +60,10 @@ All notable changes to this project are documented in this file.
 ### Added
 
 - RSS 2.0 podcast feed generation (`download --rss`, config key `RSS_FEED`). After each download run the tool writes `feed.xml` to the show's output folder. The feed is built from all locally present audio files and enriched with metadata from the per-show cache. Re-running with all episodes already downloaded (skipped) still produces a complete, accurate feed. Off by default; use `--no-rss` to override a `RSS_FEED=true` config entry.
-- `--rss-base-url <URL>` (config key `RSS_BASE_URL`): when set, RSS enclosure URLs use `<base-url>/<program_slug>/<filename>` instead of local `file://` paths, making the feed usable from any podcast client on any device. Intended for workflows where the download folder is synced to a hosted location (for example a pCloud Public Folder).
+- `--rss-base-url <URL>` (config key `RSS_BASE_URL`): when set, RSS enclosure
+  URLs use `<base-url>/<program_slug>/<filename>` instead of local `file://`
+  paths, making the feed usable from any podcast client on any device. The
+  configured base must be a direct file-serving URL, not a browser share page.
 - M3U playlist generation (`download --playlist`, config key `PLAYLIST`). After each download run the tool writes `playlist.m3u` to the show's output folder. All locally present audio files are included, sorted oldest-to-newest. Paths are relative to the playlist file so the folder stays portable. Playable in VLC, mpv, and any M3U-compatible media player. Off by default; use `--no-playlist` to override a `PLAYLIST=true` config entry.
 
 ### Fixed
