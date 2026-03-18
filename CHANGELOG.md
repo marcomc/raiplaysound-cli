@@ -22,6 +22,12 @@ All notable changes to this project are documented in this file.
   now live under `~/.local/share/raiplaysound-cli/venv` with the CLI exposed at
   `~/.local/bin/raiplaysound-cli`, while `install-dev` points that same command
   at the project `.venv` for editable development.
+- Tightened the Makefile workflow further toward `cligoo` by moving dev setup
+  to `pip install -e ".[dev]"`, adding `make run`, and making prerequisite
+  checks validate Python 3.10+ explicitly.
+- Added an explicit README disclaimer clarifying that the project is
+  independent from RAI and RaiPlaySound and that station/program names remain
+  the property of their respective owners.
 
 ### Added
 

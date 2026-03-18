@@ -17,7 +17,7 @@ INSTALL_PATH ?= $(BINDIR)/$(INSTALL_NAME)
 MARKDOWNLINT ?= markdownlint
 DOCS := README.md AGENTS.md TODO.md CHANGELOG.md
 
-.PHONY: help check-deps venv dev-deps _install-venv install install-dev uninstall uninstall-dev reinstall test lint lint-docs format clean
+.PHONY: help check-deps venv dev-deps _install-venv install install-dev uninstall uninstall-dev reinstall test lint lint-docs format run clean
 
 help:
 	@echo "Targets:"
@@ -31,10 +31,15 @@ help:
 	@echo "  make lint        # Run Python lint, typing, format check, tests, compile, markdownlint"
 	@echo "  make lint-docs   # Run markdownlint"
 	@echo "  make format      # Format Python code with black"
+	@echo "  make run         # Show installed CLI help"
 	@echo "  make clean       # Remove build/test artifacts"
 
 check-deps:
+	@echo "Checking prerequisites..."
 	@command -v "$(PYTHON)" >/dev/null 2>&1 || { echo "python not found: $(PYTHON)"; exit 1; }
+	@"$(PYTHON)" -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)" \
+		|| { echo "Python 3.10+ required (found $$($(PYTHON) --version 2>&1))"; exit 1; }
+	@echo "Using $$($(PYTHON) --version 2>&1)"
 	@mkdir -p "$(BINDIR)"
 	@if echo "$$PATH" | tr ':' '\n' | grep -Fxq "$(BINDIR)"; then \
 		echo "$(BINDIR) is on PATH"; \
@@ -52,8 +57,7 @@ venv:
 	fi
 
 dev-deps: venv
-	@"$(VENV_PIP)" install setuptools wheel rich pytest pytest-cov ruff black mypy --quiet
-	@"$(VENV_PIP)" install --no-build-isolation -e . --quiet
+	@"$(VENV_PIP)" install -e ".[dev]" --quiet
 
 _install-venv:
 	@if ! "$(INSTALL_PIP)" --version >/dev/null 2>&1; then \
@@ -111,5 +115,10 @@ lint-docs:
 format: dev-deps
 	@"$(VENV)/bin/black" src tests
 
+run:
+	@"$(INSTALL_PATH)" --help
+
 clean:
 	@rm -rf "$(VENV)" .pytest_cache .coverage __pycache__ src/*.egg-info dist build
+	@echo "Removed development artifacts"
+	@echo "Standalone install at $(INSTALL_PATH) was left unchanged"

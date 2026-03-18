@@ -4,6 +4,16 @@ A Python CLI for RaiPlaySound program discovery, season and episode inspection,
 incremental downloads, Rich-based transfer progress, metadata caching, RSS feed
 generation, and playlist generation.
 
+> **Disclaimer:** RaiPlaySound CLI is an independent, community-developed
+> project and is **not** affiliated with, endorsed by, or in any way officially
+> connected with RAI, RaiPlaySound, or the official RaiPlaySound application.
+> "RAI", "RaiPlaySound", radio station names, program names, show titles, and
+> related marks remain the property of their respective owners. This tool
+> references publicly accessible RaiPlaySound web resources only to help users
+> inspect programs and download episodes they already have access to. It is
+> provided as a free, open-source convenience utility for users who prefer a
+> terminal-based workflow.
+
 ## Table of Contents
 
 - [Installation](#installation)
@@ -11,10 +21,17 @@ generation, and playlist generation.
 - [Configuration](#configuration)
 - [Usage](#usage)
 - [Development](#development)
+- [Disclaimer](#disclaimer)
 
 ## Installation
 
-System dependencies:
+Requirements:
+
+- Python 3.10+
+- `yt-dlp`
+- `ffmpeg`
+
+System dependency example on macOS:
 
 ```bash
 brew install python yt-dlp ffmpeg
@@ -58,6 +75,23 @@ Or run it directly from the project venv:
 ```bash
 .venv/bin/python -m raiplaysound_cli --version
 ```
+
+Alternative installs from Git:
+
+```bash
+pip install "git+https://github.com/<owner>/raiplaysound-cli.git"
+pip install --user "git+https://github.com/<owner>/raiplaysound-cli.git"
+pipx install "git+https://github.com/<owner>/raiplaysound-cli.git"
+```
+
+Uninstalling:
+
+| Install method | Uninstall command |
+| --- | --- |
+| `make install` | `make uninstall` |
+| `make install-dev` | `make uninstall-dev` |
+| `pip install ...` | `pip uninstall raiplaysound-cli` |
+| `pipx install ...` | `pipx uninstall raiplaysound-cli` |
 
 ## Capabilities
 
@@ -128,7 +162,7 @@ Supported config keys:
 
 ## Usage
 
-Quick start:
+## Quick Start
 
 ```bash
 raiplaysound-cli list --stations
@@ -137,28 +171,55 @@ raiplaysound-cli list --episodes america7
 raiplaysound-cli download america7
 ```
 
+## Common Workflows
+
+### Discover stations and programs
+
+```bash
+raiplaysound-cli list --stations
+raiplaysound-cli list --programs
+raiplaysound-cli list --programs --filter radio2
+raiplaysound-cli list --stations --detailed
+```
+
+### Inspect seasons and episodes
+
+```bash
+raiplaysound-cli list seasons america7
+raiplaysound-cli list episodes america7
+raiplaysound-cli list episodes america7 --show-urls
+raiplaysound-cli list seasons america7 --json
+```
+
+### Download episodes
+
+```bash
+raiplaysound-cli download [OPTIONS] <program_slug|program_url>
+raiplaysound-cli download musicalbox
+raiplaysound-cli download --format mp3 --jobs 5 musicalbox
+raiplaysound-cli download --season 1,2 america7
+raiplaysound-cli download --missing america7
+```
+
+### Download specific episode selections
+
+```bash
+raiplaysound-cli download --episode-ids <id1,id2> america7
+raiplaysound-cli download --episode-url <episode-url> america7
+```
+
+### Generate RSS and playlists
+
+```bash
+raiplaysound-cli download --rss --playlist musicalbox
+```
+
 Command forms:
 
 ```bash
 raiplaysound-cli download [OPTIONS] <program_slug|program_url>
 raiplaysound-cli list [OPTIONS] stations|programs
 raiplaysound-cli list [OPTIONS] seasons|episodes <program_slug|program_url>
-```
-
-Examples:
-
-```bash
-raiplaysound-cli download musicalbox
-raiplaysound-cli download --format mp3 --jobs 5 musicalbox
-raiplaysound-cli download --season 1,2 america7
-raiplaysound-cli download --missing america7
-raiplaysound-cli download --episode-ids <id1,id2> america7
-raiplaysound-cli download --episode-url <episode-url> america7
-raiplaysound-cli download --rss --playlist musicalbox
-raiplaysound-cli list --stations --detailed
-raiplaysound-cli list --programs --filter radio2
-raiplaysound-cli list episodes america7 --show-urls
-raiplaysound-cli list seasons america7 --json
 ```
 
 Output folder contents:
@@ -180,6 +241,7 @@ Common commands:
 make install
 make install-dev
 make uninstall
+make run
 make test
 make lint
 make lint-docs
@@ -193,3 +255,11 @@ Validation currently includes:
 - `python -m py_compile src/raiplaysound_cli/*.py`
 - `pytest`
 - `markdownlint`
+
+## Disclaimer
+
+RaiPlaySound CLI is an independent, community-developed project and is not
+affiliated with, endorsed by, or officially connected with RAI, RaiPlaySound,
+or the official RaiPlaySound application. "RAI", "RaiPlaySound", radio station
+names, program names, and related marks remain the property of their
+respective owners.
