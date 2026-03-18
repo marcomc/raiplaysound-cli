@@ -309,9 +309,17 @@ class Episode:
 
 def parse_stations(raw_json: str) -> list[Station]:
     payload = json.loads(raw_json)
+    if isinstance(payload, dict):
+        items = payload.get("contents") or []
+    elif isinstance(payload, list):
+        items = payload
+    else:
+        items = []
     stations: list[Station] = []
     seen: set[str] = set()
-    for item in payload:
+    for item in items:
+        if not isinstance(item, dict):
+            continue
         link = item.get("weblink", "")
         short = link.strip("/").split("/", 1)[0] or "unknown"
         if short in seen:
@@ -1011,19 +1019,16 @@ def list_stations(settings: Settings, args: argparse.Namespace) -> int:
 
 def list_programs(settings: Settings, args: argparse.Namespace) -> int:
     station_filter = (args.filter or settings.station_filter or "").lower()
-    if station_filter and station_filter != "none":
-        programs = collect_station_program_catalog(station_filter)
+    cache_ok = (
+        not args.refresh_catalog
+        and program_cache_format_is_current(settings.catalog_cache_file)
+        and cache_file_is_fresh(settings.catalog_cache_file, args.catalog_max_age_hours)
+    )
+    if cache_ok:
+        programs = load_cached_programs(settings.catalog_cache_file)
     else:
-        cache_ok = (
-            not args.refresh_catalog
-            and program_cache_format_is_current(settings.catalog_cache_file)
-            and cache_file_is_fresh(settings.catalog_cache_file, args.catalog_max_age_hours)
-        )
-        if cache_ok:
-            programs = load_cached_programs(settings.catalog_cache_file)
-        else:
-            programs = collect_program_catalog()
-            write_program_cache(settings.catalog_cache_file, programs)
+        programs = collect_program_catalog()
+        write_program_cache(settings.catalog_cache_file, programs)
     if station_filter:
         programs = [program for program in programs if program.station_short == station_filter]
         if not programs:
