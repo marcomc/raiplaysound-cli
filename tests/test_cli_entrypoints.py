@@ -24,6 +24,34 @@ def test_main_version_prints_cli_version() -> None:
     assert "raiplaysound-cli 2.0.0" in result.stdout
 
 
+def test_main_without_args_prints_extensive_help(capsys) -> None:
+    result = cli.main([])
+    captured = capsys.readouterr()
+
+    assert result == 0
+    assert "usage: raiplaysound-cli [--version] <command>" in captured.out
+    assert "Commands:" in captured.out
+    assert "list      Inspect stations, programs, seasons, or episodes" in captured.out
+    assert "download  Download one program into the local music library" in captured.out
+    assert "usage: raiplaysound-cli list" in captured.out
+    assert "usage: raiplaysound-cli download" in captured.out
+    assert "TARGET_OR_INPUT" in captured.out
+    assert "Optional positional target" in captured.out
+    assert "--stations" in captured.out
+    assert "--episode-ids" in captured.out
+    assert "\x1b[" not in captured.out
+
+
+def test_main_help_prints_extensive_help(capsys) -> None:
+    result = cli.main(["--help"])
+    captured = capsys.readouterr()
+
+    assert result == 0
+    assert "Commands:" in captured.out
+    assert "usage: raiplaysound-cli list" in captured.out
+    assert "usage: raiplaysound-cli download" in captured.out
+
+
 def test_main_list_programs_uses_config_filter_and_json(
     monkeypatch, tmp_path: Path, capsys
 ) -> None:
@@ -92,24 +120,24 @@ def test_list_episodes_does_not_create_download_directory(
     assert not (settings.target_base / "america7").exists()
 
 
-def test_main_list_seasons_uses_config_input(monkeypatch, capsys) -> None:
+def test_main_without_args_ignores_configured_list_seasons(monkeypatch, capsys) -> None:
     settings = Settings.from_config(
         {"COMMAND": "list", "LIST_TARGET": "seasons", "INPUT": "america7"}
     )
 
-    def fake_list_seasons(_settings: Settings, args: object) -> int:
-        cli.console.print(f"season-input={args.input}")  # type: ignore[attr-defined]
-        return 0
+    def fail(*_args, **_kwargs) -> None:
+        raise AssertionError("empty invocation should print help instead of dispatching")
 
     monkeypatch.setattr(cli, "parse_env_file", lambda _path: {"COMMAND": "list"})
     monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
-    monkeypatch.setattr(cli, "list_seasons", fake_list_seasons)
+    monkeypatch.setattr(cli, "list_seasons", fail)
 
     result = cli.main([])
     captured = capsys.readouterr()
 
     assert result == 0
-    assert "season-input=america7" in captured.out
+    assert "Commands:" in captured.out
+    assert "usage: raiplaysound-cli list" in captured.out
 
 
 def test_list_seasons_skips_metadata_refresh_and_cache_writes(
@@ -164,21 +192,21 @@ def test_list_seasons_skips_metadata_refresh_and_cache_writes(
     assert not (settings.target_base / "america7").exists()
 
 
-def test_main_list_episodes_uses_config_input(monkeypatch, capsys) -> None:
+def test_main_without_args_ignores_configured_list_episodes(monkeypatch, capsys) -> None:
     settings = Settings.from_config(
         {"COMMAND": "list", "LIST_TARGET": "episodes", "INPUT": "america7"}
     )
 
-    def fake_list_episodes(_settings: Settings, args: object) -> int:
-        cli.console.print(f"episode-input={args.input}")  # type: ignore[attr-defined]
-        return 0
+    def fail(*_args, **_kwargs) -> None:
+        raise AssertionError("empty invocation should print help instead of dispatching")
 
     monkeypatch.setattr(cli, "parse_env_file", lambda _path: {"COMMAND": "list"})
     monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
-    monkeypatch.setattr(cli, "list_episodes", fake_list_episodes)
+    monkeypatch.setattr(cli, "list_episodes", fail)
 
     result = cli.main([])
     captured = capsys.readouterr()
 
     assert result == 0
-    assert "episode-input=america7" in captured.out
+    assert "Commands:" in captured.out
+    assert "usage: raiplaysound-cli download" in captured.out

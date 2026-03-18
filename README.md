@@ -71,6 +71,12 @@ Run the CLI from the user install:
 ~/.local/bin/raiplaysound-cli --version
 ```
 
+Print the full command overview, including both `list` and `download` options:
+
+```bash
+~/.local/bin/raiplaysound-cli
+```
+
 Or run it directly from the project venv:
 
 ```bash

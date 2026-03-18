@@ -12,6 +12,9 @@ All notable changes to this project are documented in this file.
 - Added developer-facing documentation under `docs/` covering the current
   RaiPlaySound site structure assumptions, verified season URL patterns, cache
   behavior, and known discovery gaps for future contributors.
+- Changed the empty CLI invocation and top-level help path so
+  `raiplaysound-cli` now prints an extensive help message listing both commands
+  and their available options.
 
 ## [2.0.0] - 2026-03-10 - Python Package Port
 

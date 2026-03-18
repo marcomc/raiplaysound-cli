@@ -90,7 +90,7 @@ def test_discover_season_listing_sources_probes_unlinked_next_season(monkeypatch
     ]
 
 
-def test_discover_season_listing_sources_supports_puntate_and_text_only_current(monkeypatch) -> None:
+def test_discover_season_listing_supports_puntate_and_text_current(monkeypatch) -> None:
     def fake_http_get(url: str) -> str:
         if url == "https://www.raiplaysound.it/programmi/leripetizioni":
             return (
