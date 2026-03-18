@@ -21,6 +21,7 @@ generation, and playlist generation.
 - [Configuration](#configuration)
 - [Usage](#usage)
 - [Development](#development)
+- [Testing](#testing)
 - [Disclaimer](#disclaimer)
 
 ## Installation
@@ -255,6 +256,11 @@ Validation currently includes:
 - `python -m py_compile src/raiplaysound_cli/*.py`
 - `pytest`
 - `markdownlint`
+
+## Testing
+
+See [`docs/TESTING.md`](/Users/mmassari/Development/raiplaysound-cli/docs/TESTING.md)
+for the full validation and regression-test guide for users and AI agents.
 
 ## Disclaimer
 

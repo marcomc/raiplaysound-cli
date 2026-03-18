@@ -13,6 +13,8 @@ or URL into `~/Music/RaiPlaySound/<slug>/`, with idempotent repeat runs using
 - At the start of every new AI agent chat for this repository, read `Makefile`.
 - At the start of every new AI agent chat for this repository, read
   `pyproject.toml`.
+- At the start of every new AI agent chat for this repository, read
+  `docs/TESTING.md`.
 
 ## Python Quality Rules
 

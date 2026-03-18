@@ -34,6 +34,11 @@ All notable changes to this project are documented in this file.
 - Added a packaged Python CLI implementation under `src/raiplaysound_cli/`.
 - Added a Python test suite covering config parsing and core selection and
   normalization helpers.
+- Expanded regression coverage with tests for CLI entrypoints, RSS/playlist
+  generation, downloader progress parsing, and mocked RaiPlaySound discovery
+  flows.
+- Added `docs/TESTING.md` to document the test suite and validation workflow
+  for both users and AI agents.
 
 ### Removed
 
