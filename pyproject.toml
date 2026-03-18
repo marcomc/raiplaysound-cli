@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "raiplaysound-cli"
+version = "2.0.0"
+description = "Python CLI for RaiPlaySound program discovery and episode downloads"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "Marco Massari Calderone" }
+]
+dependencies = [
+  "rich>=13.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  "black>=25.0",
+  "mypy>=1.12.0",
+  "pytest>=8.0",
+  "pytest-cov>=5.0",
+  "ruff>=0.11.0"
+]
+
+[project.scripts]
+raiplaysound-cli = "raiplaysound_cli.cli:main"
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+  "E",
+  "F",
+  "I",
+  "W",
+  "B",
+]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["src", "tests"]
+check_untyped_defs = true
+no_implicit_optional = true
+warn_unused_ignores = true

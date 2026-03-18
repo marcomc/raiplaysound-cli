@@ -1,9 +1,9 @@
-# RaiPlaySound downloader user defaults
+# RaiPlaySound CLI user defaults
 #
 # Install for current user:
 #   cp .raiplaysound-cli.conf.example ~/.raiplaysound-cli.conf
 #
-# Format is simple KEY=VALUE (bash-style env file, no sections).
+# Format is simple KEY=VALUE (env-style file, no sections).
 # Empty/commented keys are ignored.
 
 # Base folder for all program downloads.
@@ -48,18 +48,11 @@ CHECK_JOBS=8
 # Optional alias with same behavior:
 # DOWNLOAD_MISSING=0
 
-# Legacy list defaults (still supported):
-# LIST_SEASONS_ONLY=0
-# LIST_EPISODES_ONLY=0
-# LIST_STATIONS_ONLY=0
-# LIST_PROGRAMS_ONLY=0
-# LIST_PODCASTS_ONLY=0
-
 # Optional default: include episode URLs in list episodes output.
 # SHOW_URLS=0
 
 # Optional default: show detailed station listing with URLs.
-# Requires LIST_TARGET="stations" or LIST_STATIONS_ONLY=1.
+# Requires LIST_TARGET="stations".
 # STATIONS_DETAILED=0
 
 # Optional program listing grouping mode.
@@ -108,6 +101,7 @@ CHECK_JOBS=8
 # CLEAR_METADATA_CACHE=0
 
 # Optional default input when you do not pass program_slug/program_url on CLI.
+# Also used for list mode when LIST_TARGET is "seasons" or "episodes".
 # INPUT="musicalbox"
 
 # Optional: generate an M3U playlist (playlist.m3u) in the show's download folder
@@ -129,11 +123,12 @@ CHECK_JOBS=8
 # instead of local file:// absolute paths. This makes the feed usable from any
 # podcast client on any device.
 #
-# Use pCloud's Public Folder (/Public in your pCloud Drive) to get stable
-# direct-download filedn.eu links — right-click any file inside it to find
-# your lXXXXX account hash. Regular pCloud folder-share links (publink/show?code=...)
-# are a web browser interface and do NOT work as podcast enclosure URLs.
+# RSS_BASE_URL must be a direct file-serving base URL.
+# The CLI appends /<program_slug>/<filename> to it.
 #
-# Example: RaiPlaySound synced into pCloud Public Folder
-# RSS_BASE_URL=https://filedn.eu/lXXXXXXX/RaiPlaySound
+# Works:
+# RSS_BASE_URL=https://media.example.net/RaiPlaySound
+#
+# Does not work:
+# RSS_BASE_URL=https://files.example.net/share?code=abcd1234
 # RSS_BASE_URL=

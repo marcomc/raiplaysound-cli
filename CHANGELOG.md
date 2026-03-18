@@ -2,14 +2,68 @@
 
 All notable changes to this project are documented in this file.
 
-## [Unreleased]
+## [2.0.0] - 2026-03-10 - Python Package Port
+
+### Changed
+
+- Ported the project from a single Bash script to a Python package with the
+  `raiplaysound-cli` entry point, preserving the `list` and `download`
+  workflows, the existing dot-config file format, and the same download/output
+  directories.
+- Replaced the custom ANSI progress renderer with a Rich-based live transfer
+  display for episode downloads.
+- Updated the repository workflow, Makefile, and agent guidance for a
+  Python-only architecture.
+- Split the Python implementation into focused modules, added stale-lock
+  recovery for interrupted download runs, corrected metadata cache validation,
+  and aligned the overall Rich progress bar with episode-count semantics.
+- Standardized Python development checks around `ruff`, `black`, and `mypy`.
+- Changed the Makefile install workflow to match `cligoo`: standalone installs
+  now live under `~/.local/share/raiplaysound-cli/venv` with the CLI exposed at
+  `~/.local/bin/raiplaysound-cli`, while `install-dev` points that same command
+  at the project `.venv` for editable development.
+- Tightened the Makefile workflow further toward `cligoo` by moving dev setup
+  to `pip install -e ".[dev]"`, adding `make run`, and making prerequisite
+  checks validate Python 3.10+ explicitly.
+- Added an explicit README disclaimer clarifying that the project is
+  independent from RAI and RaiPlaySound and that station/program names remain
+  the property of their respective owners.
+- Avoided creating download directories during list-only commands.
+- Made RSS and playlist generation fall back to filename-derived metadata when
+  multiple cached episodes share the same publication date, avoiding
+  misassigned titles and GUIDs.
+- Expanded the default Markdown lint target so documentation under `docs/` is
+  validated by `make lint`.
+- Clarified the RSS documentation and sample config so `RSS_BASE_URL` is
+  documented as a direct file-serving base URL, with generic valid and invalid
+  URL shapes instead of provider-specific examples.
+- Added an RSS validation step to the testing guide so users and agents can
+  confirm generated enclosure URLs resolve correctly.
+
+### Added
+
+- Added a packaged Python CLI implementation under `src/raiplaysound_cli/`.
+- Added a Python test suite covering config parsing and core selection and
+  normalization helpers.
+- Expanded regression coverage with tests for CLI entrypoints, RSS/playlist
+  generation, downloader progress parsing, and mocked RaiPlaySound discovery
+  flows.
+- Added `docs/TESTING.md` to document the test suite and validation workflow
+  for both users and AI agents.
+
+### Removed
+
+- Removed the legacy Bash entrypoint and the old Bash-only project constraints.
 
 ## [1.2.0] - 2026-03-03
 
 ### Added
 
 - RSS 2.0 podcast feed generation (`download --rss`, config key `RSS_FEED`). After each download run the tool writes `feed.xml` to the show's output folder. The feed is built from all locally present audio files and enriched with metadata from the per-show cache. Re-running with all episodes already downloaded (skipped) still produces a complete, accurate feed. Off by default; use `--no-rss` to override a `RSS_FEED=true` config entry.
-- `--rss-base-url <URL>` (config key `RSS_BASE_URL`): when set, RSS enclosure URLs use `<base-url>/<program_slug>/<filename>` instead of local `file://` paths, making the feed usable from any podcast client on any device. Intended for workflows where the download folder is synced to a hosted location (for example a pCloud Public Folder).
+- `--rss-base-url <URL>` (config key `RSS_BASE_URL`): when set, RSS enclosure
+  URLs use `<base-url>/<program_slug>/<filename>` instead of local `file://`
+  paths, making the feed usable from any podcast client on any device. The
+  configured base must be a direct file-serving URL, not a browser share page.
 - M3U playlist generation (`download --playlist`, config key `PLAYLIST`). After each download run the tool writes `playlist.m3u` to the show's output folder. All locally present audio files are included, sorted oldest-to-newest. Paths are relative to the playlist file so the folder stays portable. Playable in VLC, mpv, and any M3U-compatible media player. Off by default; use `--no-playlist` to override a `PLAYLIST=true` config entry.
 
 ### Fixed
