@@ -28,6 +28,12 @@ All notable changes to this project are documented in this file.
 - Added an explicit README disclaimer clarifying that the project is
   independent from RAI and RaiPlaySound and that station/program names remain
   the property of their respective owners.
+- Avoided creating download directories during list-only commands.
+- Made RSS and playlist generation fall back to filename-derived metadata when
+  multiple cached episodes share the same publication date, avoiding
+  misassigned titles and GUIDs.
+- Expanded the default Markdown lint target so documentation under `docs/` is
+  validated by `make lint`.
 
 ### Added
 

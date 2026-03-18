@@ -105,7 +105,6 @@ def load_show_context(
 ) -> tuple[str, str, list[Any], Any, Path]:
     slug, program_url = detect_slug(input_value)
     target_dir = settings.target_base / slug
-    target_dir.mkdir(parents=True, exist_ok=True)
     metadata_cache_file = target_dir / ".metadata-cache.tsv"
     sources = discover_feed_sources(
         slug,

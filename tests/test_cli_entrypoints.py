@@ -61,3 +61,32 @@ def test_main_list_programs_uses_config_filter_and_json(
     assert '"station_filter": "radio2"' in captured.out
     assert '"slug": "show-a"' in captured.out
     assert '"slug": "show-b"' not in captured.out
+
+
+def test_list_episodes_does_not_create_download_directory(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    settings = Settings()
+    settings.target_base = tmp_path / "Music" / "RaiPlaySound"
+
+    monkeypatch.setattr(cli, "parse_env_file", lambda _path: {"COMMAND": "list"})
+    monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
+    monkeypatch.setattr(
+        cli,
+        "load_show_context",
+        lambda *_args, **_kwargs: (
+            "america7",
+            "https://www.raiplaysound.it/programmi/america7",
+            [],
+            type("Summary", (), {"has_seasons": False})(),
+            settings.target_base / "america7" / ".metadata-cache.tsv",
+        ),
+    )
+    monkeypatch.setattr(cli, "filter_episodes_for_list_or_download", lambda *_args, **_kwargs: [])
+
+    result = cli.main(["--episodes", "america7", "--json"])
+    captured = capsys.readouterr()
+
+    assert result == 0
+    assert '"mode": "episodes"' in captured.out
+    assert not (settings.target_base / "america7").exists()

@@ -43,11 +43,11 @@ def generate_rss_feed(
     metadata_cache_file: Path,
     base_url: str,
 ) -> Path:
-    cache_by_date: dict[str, tuple[str, str]] = {}
+    cache_by_date: dict[str, list[tuple[str, str]]] = {}
     for episode_id, (upload, _season, title) in load_metadata_cache(metadata_cache_file).items():
         if re.fullmatch(r"\d{8}", upload):
-            cache_by_date.setdefault(
-                f"{upload[:4]}-{upload[4:6]}-{upload[6:8]}", (title, episode_id)
+            cache_by_date.setdefault(f"{upload[:4]}-{upload[4:6]}-{upload[6:8]}", []).append(
+                (title, episode_id)
             )
     show_title = fetch_show_title(slug)
     items = []
@@ -58,8 +58,9 @@ def generate_rss_feed(
         if not match:
             continue
         file_date = match.group(1)
-        if file_date in cache_by_date:
-            title, guid = cache_by_date[file_date]
+        dated_entries = cache_by_date.get(file_date, [])
+        if len(dated_entries) == 1:
+            title, guid = dated_entries[0]
         else:
             title = re.sub(r"^.*\d{4}-\d{2}-\d{2}\s+-\s+", "", file_path.stem)
             guid = file_path.stem
@@ -115,10 +116,10 @@ def generate_rss_feed(
 
 
 def generate_playlist(target_dir: Path, metadata_cache_file: Path) -> Path:
-    cache_by_date: dict[str, str] = {}
+    cache_by_date: dict[str, list[str]] = {}
     for _episode_id, (upload, _season, title) in load_metadata_cache(metadata_cache_file).items():
         if re.fullmatch(r"\d{8}", upload):
-            cache_by_date.setdefault(f"{upload[:4]}-{upload[4:6]}-{upload[6:8]}", title)
+            cache_by_date.setdefault(f"{upload[:4]}-{upload[4:6]}-{upload[6:8]}", []).append(title)
     entries: list[tuple[str, Path]] = []
     for file_path in target_dir.iterdir():
         if file_path.is_file():
@@ -128,11 +129,15 @@ def generate_playlist(target_dir: Path, metadata_cache_file: Path) -> Path:
     entries.sort(key=lambda item: item[0])
     lines = ["#EXTM3U"]
     for file_date, file_path in entries:
-        title = cache_by_date.get(file_date) or re.sub(
-            r"^.*\d{4}-\d{2}-\d{2}\s+-\s+",
-            "",
-            file_path.stem,
-        )
+        dated_titles = cache_by_date.get(file_date, [])
+        if len(dated_titles) == 1:
+            title = dated_titles[0]
+        else:
+            title = re.sub(
+                r"^.*\d{4}-\d{2}-\d{2}\s+-\s+",
+                "",
+                file_path.stem,
+            )
         lines.append(f"#EXTINF:-1,{title}")
         lines.append(file_path.name)
     playlist_path = target_dir / "playlist.m3u"

@@ -56,3 +56,36 @@ def test_generate_playlist_sorts_by_date_and_uses_cache_title(tmp_path: Path) ->
         "#EXTINF:-1,Second Episode",
         "Musical Box - 2024-01-02 - two.m4a",
     ]
+
+
+def test_outputs_fall_back_to_filename_when_date_is_ambiguous(tmp_path: Path, monkeypatch) -> None:
+    target_dir = tmp_path / "america7"
+    target_dir.mkdir()
+    metadata_cache_file = target_dir / ".metadata-cache.tsv"
+    metadata_cache_file.write_text(
+        "ep-1\t20240101\t1\tFirst Title\n" "ep-2\t20240101\t1\tSecond Title\n",
+        encoding="utf-8",
+    )
+    first = target_dir / "America7 - 2024-01-01 - file-one.m4a"
+    second = target_dir / "America7 - 2024-01-01 - file-two.m4a"
+    first.write_bytes(b"one")
+    second.write_bytes(b"two")
+    monkeypatch.setattr(outputs, "fetch_show_title", lambda _slug: "America7")
+
+    feed_path = outputs.generate_rss_feed(
+        target_dir,
+        "america7",
+        "https://www.raiplaysound.it/programmi/america7",
+        metadata_cache_file,
+        "",
+    )
+    playlist_path = outputs.generate_playlist(target_dir, metadata_cache_file)
+    feed_content = feed_path.read_text(encoding="utf-8")
+    playlist_content = playlist_path.read_text(encoding="utf-8")
+
+    assert "file-one" in feed_content
+    assert "file-two" in feed_content
+    assert "First Title" not in feed_content
+    assert "Second Title" not in feed_content
+    assert "#EXTINF:-1,file-one" in playlist_content
+    assert "#EXTINF:-1,file-two" in playlist_content

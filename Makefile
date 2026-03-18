@@ -15,7 +15,7 @@ BINDIR ?= $(PREFIX)/bin
 INSTALL_PATH ?= $(BINDIR)/$(INSTALL_NAME)
 
 MARKDOWNLINT ?= markdownlint
-DOCS := README.md AGENTS.md TODO.md CHANGELOG.md
+DOCS := README.md AGENTS.md TODO.md CHANGELOG.md docs/*.md
 
 .PHONY: help check-deps venv dev-deps _install-venv install install-dev uninstall uninstall-dev reinstall test lint lint-docs format run clean
 
