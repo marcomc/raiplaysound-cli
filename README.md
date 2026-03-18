@@ -41,7 +41,7 @@ brew install python yt-dlp ffmpeg
 Standalone user install:
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/marcomc/raiplaysound-cli.git
 cd raiplaysound-cli
 make install
 ```
@@ -57,7 +57,7 @@ and creates the user-facing command at:
 Editable development install:
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/marcomc/raiplaysound-cli.git
 cd raiplaysound-cli
 make install-dev
 ```
@@ -80,9 +80,9 @@ Or run it directly from the project venv:
 Alternative installs from Git:
 
 ```bash
-pip install "git+https://github.com/<owner>/raiplaysound-cli.git"
-pip install --user "git+https://github.com/<owner>/raiplaysound-cli.git"
-pipx install "git+https://github.com/<owner>/raiplaysound-cli.git"
+pip install "git+https://github.com/marcomc/raiplaysound-cli.git"
+pip install --user "git+https://github.com/marcomc/raiplaysound-cli.git"
+pipx install "git+https://github.com/marcomc/raiplaysound-cli.git"
 ```
 
 Uninstalling:
@@ -159,7 +159,7 @@ Supported config keys:
 | `CATALOG_MAX_AGE_HOURS` | `--catalog-max-age-hours` | list `--programs` |
 | `STATIONS_DETAILED` | `--detailed` | list `--stations` |
 | `SHOW_URLS` | `--show-urls` | list `--episodes` |
-| `INPUT` | `<program_slug\|program_url>` | download |
+| `INPUT` | `<program_slug\|program_url>` | download, list `--seasons`, list `--episodes` |
 
 `RSS_BASE_URL` must be a direct file-serving base URL. The CLI builds enclosure
 URLs as:
@@ -220,10 +220,10 @@ Programs grouped alphabetically (107):
 ### Inspect seasons and episodes
 
 ```bash
-raiplaysound-cli list seasons america7
-raiplaysound-cli list episodes america7
-raiplaysound-cli list episodes america7 --show-urls
-raiplaysound-cli list seasons america7 --json
+raiplaysound-cli list --seasons america7
+raiplaysound-cli list --episodes america7
+raiplaysound-cli list --episodes america7 --show-urls
+raiplaysound-cli list --seasons america7 --json
 ```
 
 Example output:
@@ -278,8 +278,8 @@ Command forms:
 
 ```bash
 raiplaysound-cli download [OPTIONS] <program_slug|program_url>
-raiplaysound-cli list [OPTIONS] stations|programs
-raiplaysound-cli list [OPTIONS] seasons|episodes <program_slug|program_url>
+raiplaysound-cli list [--stations|--programs] [OPTIONS]
+raiplaysound-cli list [--seasons|--episodes] [OPTIONS] <program_slug|program_url>
 ```
 
 Output folder contents:
