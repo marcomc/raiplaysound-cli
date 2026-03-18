@@ -226,6 +226,10 @@ raiplaysound-cli list --episodes america7 --show-urls
 raiplaysound-cli list --seasons america7 --json
 ```
 
+Season listing uses a lightweight discovery path, so `list --seasons` avoids
+download-side metadata refreshes and is typically faster than episode
+inspection or download preparation.
+
 Example output:
 
 ```text

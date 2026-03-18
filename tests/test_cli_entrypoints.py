@@ -112,6 +112,58 @@ def test_main_list_seasons_uses_config_input(monkeypatch, capsys) -> None:
     assert "season-input=america7" in captured.out
 
 
+def test_list_seasons_skips_metadata_refresh_and_cache_writes(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    settings = Settings()
+    settings.target_base = tmp_path / "Music" / "RaiPlaySound"
+
+    def fail(*_args, **_kwargs) -> None:
+        raise AssertionError("metadata path should not be used for list seasons")
+
+    monkeypatch.setattr(cli, "parse_env_file", lambda _path: {"COMMAND": "list"})
+    monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
+    monkeypatch.setattr(
+        cli,
+        "discover_season_listing_sources",
+        lambda slug: (
+            f"https://www.raiplaysound.it/programmi/{slug}",
+            [f"https://www.raiplaysound.it/programmi/{slug}/episodi/stagione-1"],
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "collect_season_summary_from_sources",
+        lambda _sources: (
+            [],
+            type(
+                "Summary",
+                (),
+                {
+                    "counts": {"1": 3},
+                    "year_min": {"1": "2024"},
+                    "year_max": {"1": "2024"},
+                    "show_year_min": "2024",
+                    "show_year_max": "2024",
+                    "has_seasons": True,
+                    "latest_season": "1",
+                },
+            )(),
+        ),
+    )
+    monkeypatch.setattr(cli, "load_show_context", fail)
+    monkeypatch.setattr(cli, "collect_metadata", fail)
+    monkeypatch.setattr(cli, "write_metadata_cache", fail)
+
+    result = cli.main(["--seasons", "america7", "--json"])
+    captured = capsys.readouterr()
+
+    assert result == 0
+    assert '"mode": "seasons"' in captured.out
+    assert '"season": "1"' in captured.out
+    assert not (settings.target_base / "america7").exists()
+
+
 def test_main_list_episodes_uses_config_input(monkeypatch, capsys) -> None:
     settings = Settings.from_config(
         {"COMMAND": "list", "LIST_TARGET": "episodes", "INPUT": "america7"}

@@ -38,8 +38,10 @@ from .episodes import (
     cache_entry_is_complete,
     collect_episodes_from_sources,
     collect_metadata,
+    collect_season_summary_from_sources,
     detect_slug,
     discover_feed_sources,
+    discover_season_listing_sources,
     filter_episodes_for_list_or_download,
     load_metadata_cache,
     normalize_episode_metadata,
@@ -190,14 +192,10 @@ def list_programs(settings: Settings, args: argparse.Namespace) -> int:
 
 
 def list_seasons(settings: Settings, args: argparse.Namespace) -> int:
-    selected_seasons, request_all = build_requested_set(args.season or settings.seasons_arg)
-    slug, program_url, episodes, summary, _metadata_cache = load_show_context(
-        settings,
-        args.input,
-        selected_seasons,
-        request_all,
-        for_list_seasons=True,
-    )
+    _selected_seasons, _request_all = build_requested_set(args.season or settings.seasons_arg)
+    slug, program_url = detect_slug(args.input)
+    _, sources = discover_season_listing_sources(slug)
+    episodes, summary = collect_season_summary_from_sources(sources)
     if args.json:
         seasons = []
         if not summary.has_seasons:

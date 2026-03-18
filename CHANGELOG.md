@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- Made `raiplaysound-cli list --seasons <program>` use a lightweight discovery
+  path that skips metadata refreshes and avoids writing per-download metadata
+  cache files during season-only listing.
+- Added developer-facing documentation under `docs/` covering the current
+  RaiPlaySound site structure assumptions, verified season URL patterns, cache
+  behavior, and known discovery gaps for future contributors.
+
 ## [2.0.0] - 2026-03-10 - Python Package Port
 
 ### Changed

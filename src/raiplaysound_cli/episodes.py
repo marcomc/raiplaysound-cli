@@ -11,9 +11,12 @@ from .runtime import http_get, run_yt_dlp
 PROGRAM_URL_RE = re.compile(r"^https?://www\.raiplaysound\.it/programmi/([A-Za-z0-9-]+)/?$")
 PROGRAM_SLUG_RE = re.compile(r"^[A-Za-z0-9-]+$")
 EPISODE_URL_RE = re.compile(r"^https?://www\.raiplaysound\.it/.+")
-SEASON_PAGE_RE = re.compile(r"/programmi/(?P<slug>[A-Za-z0-9-]+)/episodi/stagione-(?P<season>\d+)")
+SEASON_PAGE_RE = re.compile(
+    r"/programmi/(?P<slug>[A-Za-z0-9-]+)/(?P<section>episodi|puntate)/stagione-(?P<season>\d+)"
+)
 EPISODE_ID_FROM_URL_RE = re.compile(r"-([0-9a-fA-F-]{8,})\.(?:html|json)$")
 SEASON_IN_TITLE_RE = re.compile(r"[Ss](\d{1,3})[ _-]*[Ee]\d{1,3}")
+SEASON_LABEL_RE = re.compile(r"\bStagione\s+(\d{1,3})\b", re.IGNORECASE)
 
 
 def detect_slug(input_value: str) -> tuple[str, str]:
@@ -84,6 +87,42 @@ def discover_feed_sources(
     return sorted(set(season_urls + [program_url]))
 
 
+def discover_season_listing_sources(slug: str) -> tuple[str, list[str]]:
+    program_url = f"https://www.raiplaysound.it/programmi/{slug}"
+    html = http_get(program_url)
+    linked_matches = [
+        match
+        for match in SEASON_PAGE_RE.finditer(html)
+        if match.group("slug").lower() == slug.lower()
+    ]
+    season_urls = {f"https://www.raiplaysound.it{match.group(0)}" for match in linked_matches}
+    known_numbers = {int(match.group("season")) for match in linked_matches}
+    known_numbers.update(int(value) for value in SEASON_LABEL_RE.findall(html))
+    sections = {match.group("section") for match in linked_matches}
+    if not sections:
+        sections = {"episodi", "puntate"}
+    for section in sections:
+        for season in sorted(known_numbers):
+            season_urls.add(f"{program_url}/{section}/stagione-{season}")
+    next_number = max(known_numbers) + 1 if known_numbers else 1
+    while True:
+        found_next = False
+        for section in sections:
+            candidate = f"{program_url}/{section}/stagione-{next_number}"
+            try:
+                http_get(candidate)
+            except Exception:
+                continue
+            season_urls.add(candidate)
+            found_next = True
+        if not found_next:
+            break
+        next_number += 1
+    if season_urls:
+        return program_url, sorted(season_urls)
+    return program_url, [program_url]
+
+
 def collect_episodes_from_sources(sources: list[str]) -> list[Episode]:
     seen: set[str] = set()
     episodes: list[Episode] = []
@@ -115,6 +154,46 @@ def collect_episodes_from_sources(sources: list[str]) -> list[Episode]:
     if not episodes:
         raise CLIError("No episodes found.")
     return episodes
+
+
+def collect_season_summary_from_sources(sources: list[str]) -> tuple[list[Episode], SeasonSummary]:
+    episodes = collect_episodes_from_sources(sources)
+    season_counts: dict[str, int] = {}
+    season_year_min: dict[str, str] = {}
+    season_year_max: dict[str, str] = {}
+    show_year_min = ""
+    show_year_max = ""
+    explicit_seasons = any("stagione-" in source for source in sources)
+
+    for episode in episodes:
+        season = episode.season if episode.season.isdigit() else "1"
+        episode.season = season
+        episode.year = extract_year_from_url(episode.url)
+        season_counts[season] = season_counts.get(season, 0) + 1
+        if re.fullmatch(r"\d{4}", episode.year):
+            if not show_year_min or episode.year < show_year_min:
+                show_year_min = episode.year
+            if not show_year_max or episode.year > show_year_max:
+                show_year_max = episode.year
+            current_min = season_year_min.get(season)
+            current_max = season_year_max.get(season)
+            if current_min is None or episode.year < current_min:
+                season_year_min[season] = episode.year
+            if current_max is None or episode.year > current_max:
+                season_year_max[season] = episode.year
+
+    latest_season = (
+        sorted(season_counts, key=lambda value: int(value))[-1] if season_counts else "1"
+    )
+    return episodes, SeasonSummary(
+        counts=season_counts,
+        year_min=season_year_min,
+        year_max=season_year_max,
+        show_year_min=show_year_min,
+        show_year_max=show_year_max,
+        has_seasons=explicit_seasons or len(season_counts) > 1,
+        latest_season=latest_season,
+    )
 
 
 def load_metadata_cache(path: Path) -> dict[str, tuple[str, str, str]]:
