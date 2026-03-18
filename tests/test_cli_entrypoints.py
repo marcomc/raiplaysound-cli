@@ -90,3 +90,43 @@ def test_list_episodes_does_not_create_download_directory(
     assert result == 0
     assert '"mode": "episodes"' in captured.out
     assert not (settings.target_base / "america7").exists()
+
+
+def test_main_list_seasons_uses_config_input(monkeypatch, capsys) -> None:
+    settings = Settings.from_config(
+        {"COMMAND": "list", "LIST_TARGET": "seasons", "INPUT": "america7"}
+    )
+
+    def fake_list_seasons(_settings: Settings, args: object) -> int:
+        cli.console.print(f"season-input={args.input}")  # type: ignore[attr-defined]
+        return 0
+
+    monkeypatch.setattr(cli, "parse_env_file", lambda _path: {"COMMAND": "list"})
+    monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
+    monkeypatch.setattr(cli, "list_seasons", fake_list_seasons)
+
+    result = cli.main([])
+    captured = capsys.readouterr()
+
+    assert result == 0
+    assert "season-input=america7" in captured.out
+
+
+def test_main_list_episodes_uses_config_input(monkeypatch, capsys) -> None:
+    settings = Settings.from_config(
+        {"COMMAND": "list", "LIST_TARGET": "episodes", "INPUT": "america7"}
+    )
+
+    def fake_list_episodes(_settings: Settings, args: object) -> int:
+        cli.console.print(f"episode-input={args.input}")  # type: ignore[attr-defined]
+        return 0
+
+    monkeypatch.setattr(cli, "parse_env_file", lambda _path: {"COMMAND": "list"})
+    monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
+    monkeypatch.setattr(cli, "list_episodes", fake_list_episodes)
+
+    result = cli.main([])
+    captured = capsys.readouterr()
+
+    assert result == 0
+    assert "episode-input=america7" in captured.out

@@ -48,18 +48,11 @@ CHECK_JOBS=8
 # Optional alias with same behavior:
 # DOWNLOAD_MISSING=0
 
-# Legacy list defaults (still supported):
-# LIST_SEASONS_ONLY=0
-# LIST_EPISODES_ONLY=0
-# LIST_STATIONS_ONLY=0
-# LIST_PROGRAMS_ONLY=0
-# LIST_PODCASTS_ONLY=0
-
 # Optional default: include episode URLs in list episodes output.
 # SHOW_URLS=0
 
 # Optional default: show detailed station listing with URLs.
-# Requires LIST_TARGET="stations" or LIST_STATIONS_ONLY=1.
+# Requires LIST_TARGET="stations".
 # STATIONS_DETAILED=0
 
 # Optional program listing grouping mode.
@@ -108,6 +101,7 @@ CHECK_JOBS=8
 # CLEAR_METADATA_CACHE=0
 
 # Optional default input when you do not pass program_slug/program_url on CLI.
+# Also used for list mode when LIST_TARGET is "seasons" or "episodes".
 # INPUT="musicalbox"
 
 # Optional: generate an M3U playlist (playlist.m3u) in the show's download folder

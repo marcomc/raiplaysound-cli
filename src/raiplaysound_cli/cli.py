@@ -656,7 +656,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.seasons = True
             elif target == "episodes":
                 args.episodes = True
-            args.input = input_value
+            args.input = input_value or settings.input_value
             targets = sum([args.stations, args.programs, args.seasons, args.episodes])
             if targets != 1:
                 raise CLIError(

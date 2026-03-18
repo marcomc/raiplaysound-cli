@@ -183,6 +183,30 @@ raiplaysound-cli list --programs --filter radio2
 raiplaysound-cli list --stations --detailed
 ```
 
+Example output:
+
+```text
+Available RaiPlaySound radio stations (station slug -> name):
+  - radio1           Rai Radio 1
+  - radio2           Rai Radio 2
+  - radio3           Rai Radio 3
+  - isoradio         Rai Isoradio
+  - nonameradio      No Name Radio
+  - radio1sport      Rai Radio 1 Sport
+  - radio3classica   Rai Radio 3 Classica
+```
+
+```text
+Programs grouped alphabetically (107):
+
+  - 1 M Next (1mnext) [Rai Radio 2:radio2 | 2025]
+  - 100 Volte Alberto Sordi (100voltealbertosordi) [Rai Radio 2:radio2 | 2020-2025]
+  - 5 in condotta (5incondotta) [Rai Radio 2:radio2 | 2024-2025]
+
+[A]
+  - A qualcuno piace Radio2 (aqualcunopiaceradio2) [Rai Radio 2:radio2 | 2025-2026]
+```
+
 ### Inspect seasons and episodes
 
 ```bash
@@ -190,6 +214,25 @@ raiplaysound-cli list seasons america7
 raiplaysound-cli list episodes america7
 raiplaysound-cli list episodes america7 --show-urls
 raiplaysound-cli list seasons america7 --json
+```
+
+Example output:
+
+```text
+Available seasons for america7 (https://www.raiplaysound.it/programmi/america7):
+  - Season 1: 71 episodes (published: 2023-2025)
+  - Season 2: 17 episodes (published: 2025-2026)
+```
+
+```text
+Episodes for america7 (https://www.raiplaysound.it/programmi/america7):
+┏━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┓
+┃ Season ┃ Date       ┃ Episode          ┃ ID               ┃ URL              ┃
+┡━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━┩
+│ S2     │ 2026-03-13 │ America7 S2E17   │ 692674e0-ceb7-4… │ https://www.rai… │
+│        │            │ La prima guerra  │                  │                  │
+│        │            │ A.I.             │                  │                  │
+│ S2     │ 2026-03-06 │ America7 S2E16   │ 7e2a8652-b220-4… │ https://www.rai… │
 ```
 
 ### Download episodes
@@ -200,6 +243,12 @@ raiplaysound-cli download musicalbox
 raiplaysound-cli download --format mp3 --jobs 5 musicalbox
 raiplaysound-cli download --season 1,2 america7
 raiplaysound-cli download --missing america7
+```
+
+Example completion summary:
+
+```text
+Completed: done=1, skipped=0, errors=0
 ```
 
 ### Download specific episode selections
