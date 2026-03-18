@@ -12,3 +12,10 @@ logs/
 
 # macOS metadata
 .DS_Store
+.venv/
+__pycache__/
+.pytest_cache/
+.coverage
+dist/
+build/
+*.egg-info/

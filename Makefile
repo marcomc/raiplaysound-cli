@@ -1,41 +1,39 @@
-SHELL := /bin/bash
-
-PREFIX ?= $(HOME)/.local
-BINDIR ?= $(PREFIX)/bin
-INSTALL_NAME ?= raiplaysound-cli
-SCRIPT ?= raiplaysound-cli.sh
-DEST ?= $(BINDIR)/$(INSTALL_NAME)
-
-SHELLCHECK ?= shellcheck
+PYTHON ?= python3
+VENV ?= .venv
+VENV_PYTHON := $(VENV)/bin/python
 MARKDOWNLINT ?= markdownlint
-DOCS ?= README.md AGENTS.md TODO.md CHANGELOG.md
+DOCS := README.md AGENTS.md TODO.md CHANGELOG.md
 
-.PHONY: help install uninstall reinstall lint lint-shell lint-docs
+.PHONY: help venv install install-dev test lint lint-docs clean
 
 help:
 	@echo "Targets:"
-	@echo "  make install     # Install CLI to $(DEST)"
-	@echo "  make uninstall   # Remove installed CLI from $(DEST)"
-	@echo "  make reinstall   # Reinstall CLI"
-	@echo "  make lint        # Run shellcheck + markdownlint"
-	@echo "  make lint-shell  # Run shellcheck"
+	@echo "  make venv        # Create project virtualenv"
+	@echo "  make install     # Install package into project virtualenv"
+	@echo "  make install-dev # Install package + test deps into project virtualenv"
+	@echo "  make test        # Run unit tests"
+	@echo "  make lint        # Run compile check + tests + markdownlint"
 	@echo "  make lint-docs   # Run markdownlint"
+	@echo "  make clean       # Remove build/test artifacts"
 
-install: lint-shell
-	@mkdir -p "$(BINDIR)"
-	@cp "$(SCRIPT)" "$(DEST)"
-	@chmod +x "$(DEST)"
-	@echo "Installed $(DEST)"
+venv:
+	@$(PYTHON) -m venv "$(VENV)"
 
-uninstall:
-	@if [[ -f "$(DEST)" ]]; then rm -f "$(DEST)"; echo "Removed $(DEST)"; else echo "Nothing to remove at $(DEST)"; fi
+install: venv
+	@"$(VENV_PYTHON)" -m pip install --no-build-isolation .
 
-reinstall: uninstall install
+install-dev: venv
+	@"$(VENV_PYTHON)" -m pip install setuptools wheel rich pytest pytest-cov
+	@"$(VENV_PYTHON)" -m pip install --no-build-isolation -e .
 
-lint: lint-shell lint-docs
+test: install-dev
+	@PYTHONPATH=src "$(VENV_PYTHON)" -m pytest -q
 
-lint-shell:
-	@$(SHELLCHECK) --enable=all "$(SCRIPT)"
+lint: test lint-docs
+	@"$(VENV_PYTHON)" -m py_compile src/raiplaysound_cli/*.py
 
 lint-docs:
 	@$(MARKDOWNLINT) $(DOCS)
+
+clean:
+	@rm -rf "$(VENV)" .pytest_cache .coverage __pycache__ src/*.egg-info dist build

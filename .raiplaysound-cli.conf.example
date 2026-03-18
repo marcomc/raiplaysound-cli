@@ -1,9 +1,9 @@
-# RaiPlaySound downloader user defaults
+# RaiPlaySound CLI user defaults
 #
 # Install for current user:
 #   cp .raiplaysound-cli.conf.example ~/.raiplaysound-cli.conf
 #
-# Format is simple KEY=VALUE (bash-style env file, no sections).
+# Format is simple KEY=VALUE (env-style file, no sections).
 # Empty/commented keys are ignored.
 
 # Base folder for all program downloads.

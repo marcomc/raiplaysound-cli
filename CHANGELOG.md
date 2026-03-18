@@ -4,6 +4,27 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Ported the project from a single Bash script to a Python package with the
+  `raiplaysound-cli` entry point, preserving the `list` and `download`
+  workflows, the existing dot-config file format, and the same download/output
+  directories.
+- Replaced the custom ANSI progress renderer with a Rich-based live transfer
+  display for episode downloads.
+- Updated the repository workflow, Makefile, and agent guidance for a
+  Python-only architecture.
+
+### Added
+
+- Added a packaged Python CLI implementation under `src/raiplaysound_cli/`.
+- Added a Python test suite covering config parsing and core selection and
+  normalization helpers.
+
+### Removed
+
+- Removed the legacy Bash entrypoint and the old Bash-only project constraints.
+
 ## [1.2.0] - 2026-03-03
 
 ### Added
