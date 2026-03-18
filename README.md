@@ -20,7 +20,23 @@ System dependencies:
 brew install python yt-dlp ffmpeg
 ```
 
-Project-local install:
+Standalone user install:
+
+```bash
+git clone <repo-url>
+cd raiplaysound-cli
+make install
+```
+
+This installs the package into:
+
+- `~/.local/share/raiplaysound-cli/venv`
+
+and creates the user-facing command at:
+
+- `~/.local/bin/raiplaysound-cli`
+
+Editable development install:
 
 ```bash
 git clone <repo-url>
@@ -28,16 +44,19 @@ cd raiplaysound-cli
 make install-dev
 ```
 
-Run the CLI from the project venv:
+`make install-dev` keeps the command in `~/.local/bin/raiplaysound-cli`, but
+points it at the project-local `.venv` so source edits take effect immediately.
+
+Run the CLI from the user install:
+
+```bash
+~/.local/bin/raiplaysound-cli --version
+```
+
+Or run it directly from the project venv:
 
 ```bash
 .venv/bin/python -m raiplaysound_cli --version
-```
-
-Or install the package into the venv and use the entry point:
-
-```bash
-.venv/bin/raiplaysound-cli --version
 ```
 
 ## Capabilities
@@ -112,34 +131,34 @@ Supported config keys:
 Quick start:
 
 ```bash
-.venv/bin/raiplaysound-cli list --stations
-.venv/bin/raiplaysound-cli list --programs
-.venv/bin/raiplaysound-cli list --episodes america7
-.venv/bin/raiplaysound-cli download america7
+raiplaysound-cli list --stations
+raiplaysound-cli list --programs
+raiplaysound-cli list --episodes america7
+raiplaysound-cli download america7
 ```
 
 Command forms:
 
 ```bash
-.venv/bin/raiplaysound-cli download [OPTIONS] <program_slug|program_url>
-.venv/bin/raiplaysound-cli list [OPTIONS] stations|programs
-.venv/bin/raiplaysound-cli list [OPTIONS] seasons|episodes <program_slug|program_url>
+raiplaysound-cli download [OPTIONS] <program_slug|program_url>
+raiplaysound-cli list [OPTIONS] stations|programs
+raiplaysound-cli list [OPTIONS] seasons|episodes <program_slug|program_url>
 ```
 
 Examples:
 
 ```bash
-.venv/bin/raiplaysound-cli download musicalbox
-.venv/bin/raiplaysound-cli download --format mp3 --jobs 5 musicalbox
-.venv/bin/raiplaysound-cli download --season 1,2 america7
-.venv/bin/raiplaysound-cli download --missing america7
-.venv/bin/raiplaysound-cli download --episode-ids <id1,id2> america7
-.venv/bin/raiplaysound-cli download --episode-url <episode-url> america7
-.venv/bin/raiplaysound-cli download --rss --playlist musicalbox
-.venv/bin/raiplaysound-cli list --stations --detailed
-.venv/bin/raiplaysound-cli list --programs --filter radio2
-.venv/bin/raiplaysound-cli list episodes america7 --show-urls
-.venv/bin/raiplaysound-cli list seasons america7 --json
+raiplaysound-cli download musicalbox
+raiplaysound-cli download --format mp3 --jobs 5 musicalbox
+raiplaysound-cli download --season 1,2 america7
+raiplaysound-cli download --missing america7
+raiplaysound-cli download --episode-ids <id1,id2> america7
+raiplaysound-cli download --episode-url <episode-url> america7
+raiplaysound-cli download --rss --playlist musicalbox
+raiplaysound-cli list --stations --detailed
+raiplaysound-cli list --programs --filter radio2
+raiplaysound-cli list episodes america7 --show-urls
+raiplaysound-cli list seasons america7 --json
 ```
 
 Output folder contents:
@@ -158,7 +177,9 @@ Output folder contents:
 Common commands:
 
 ```bash
+make install
 make install-dev
+make uninstall
 make test
 make lint
 make lint-docs
@@ -166,6 +187,9 @@ make lint-docs
 
 Validation currently includes:
 
+- `ruff check src tests`
+- `mypy src tests`
+- `black --check src tests`
 - `python -m py_compile src/raiplaysound_cli/*.py`
 - `pytest`
 - `markdownlint`

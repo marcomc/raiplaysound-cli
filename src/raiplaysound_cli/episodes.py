@@ -1,0 +1,307 @@
+from __future__ import annotations
+
+import re
+import urllib.parse
+from pathlib import Path
+
+from .errors import CLIError
+from .models import Episode, SeasonSummary
+from .runtime import http_get, run_yt_dlp
+
+PROGRAM_URL_RE = re.compile(r"^https?://www\.raiplaysound\.it/programmi/([A-Za-z0-9-]+)/?$")
+PROGRAM_SLUG_RE = re.compile(r"^[A-Za-z0-9-]+$")
+EPISODE_URL_RE = re.compile(r"^https?://www\.raiplaysound\.it/.+")
+SEASON_PAGE_RE = re.compile(r"/programmi/(?P<slug>[A-Za-z0-9-]+)/episodi/stagione-(?P<season>\d+)")
+EPISODE_ID_FROM_URL_RE = re.compile(r"-([0-9a-fA-F-]{8,})\.(?:html|json)$")
+SEASON_IN_TITLE_RE = re.compile(r"[Ss](\d{1,3})[ _-]*[Ee]\d{1,3}")
+
+
+def detect_slug(input_value: str) -> tuple[str, str]:
+    match = PROGRAM_URL_RE.match(input_value)
+    if match:
+        slug = match.group(1).lower()
+        return slug, f"https://www.raiplaysound.it/programmi/{slug}"
+    if PROGRAM_SLUG_RE.match(input_value):
+        slug = input_value.lower()
+        return slug, f"https://www.raiplaysound.it/programmi/{slug}"
+    raise CLIError(
+        "input must be a RaiPlaySound program slug (for example musicalbox) or a full program URL."
+    )
+
+
+def build_requested_set(raw: str) -> tuple[set[str], bool]:
+    selected: set[str] = set()
+    request_all = False
+    if not raw:
+        return selected, request_all
+    for part in [item.strip() for item in raw.split(",") if item.strip()]:
+        if part.lower() == "all":
+            return set(), True
+        if not part.isdigit() or not 1 <= int(part) <= 100:
+            raise CLIError(f"invalid season '{part}'. Allowed values are 1-100 or 'all'.")
+        selected.add(part)
+    return selected, request_all
+
+
+def build_requested_episode_filters(ids_raw: str, urls_raw: str) -> tuple[set[str], dict[str, str]]:
+    ids: set[str] = set()
+    urls: dict[str, str] = {}
+    if ids_raw:
+        for part in [item.strip() for item in ids_raw.split(",") if item.strip()]:
+            if not re.fullmatch(r"[A-Za-z0-9_-]+", part):
+                raise CLIError(f"invalid episode ID '{part}'.")
+            ids.add(part)
+    if urls_raw:
+        for part in [item.strip() for item in urls_raw.split(",") if item.strip()]:
+            if not EPISODE_URL_RE.match(part):
+                raise CLIError(f"invalid episode URL '{part}'.")
+            normalized = part.rstrip("/")
+            match = EPISODE_ID_FROM_URL_RE.search(normalized)
+            urls[normalized] = match.group(1) if match else ""
+    return ids, urls
+
+
+def discover_feed_sources(
+    slug: str,
+    selected_seasons: set[str],
+    include_all_seasons: bool,
+    for_list_seasons: bool,
+) -> list[str]:
+    program_url = f"https://www.raiplaysound.it/programmi/{slug}"
+    html = http_get(program_url)
+    season_urls = sorted(
+        {
+            f"https://www.raiplaysound.it{match.group(0)}"
+            for match in SEASON_PAGE_RE.finditer(html)
+            if match.group("slug").lower() == slug.lower()
+        }
+    )
+    if not season_urls:
+        return [program_url]
+    if selected_seasons and not include_all_seasons and not for_list_seasons:
+        filtered = [url for url in season_urls if url.rsplit("-", 1)[-1] in selected_seasons]
+        return sorted(set(filtered + [program_url]))
+    return sorted(set(season_urls + [program_url]))
+
+
+def collect_episodes_from_sources(sources: list[str]) -> list[Episode]:
+    seen: set[str] = set()
+    episodes: list[Episode] = []
+    for source in sources:
+        season_hint = ""
+        match = re.search(r"stagione-(\d+)$", source)
+        if match:
+            season_hint = match.group(1)
+        result = run_yt_dlp(["--flat-playlist", "--print", "%(id)s\t%(webpage_url)s", source])
+        for line in result.stdout.splitlines():
+            parts = line.split("\t")
+            if len(parts) < 2:
+                continue
+            episode_id = parts[0].strip()
+            episode_url = parts[1].strip().rstrip("/")
+            if not episode_id or not episode_url or episode_id in seen:
+                continue
+            seen.add(episode_id)
+            base_name = Path(urllib.parse.urlparse(episode_url).path).stem
+            label = re.sub(rf"-{re.escape(episode_id)}$", "", base_name) or episode_id
+            episodes.append(
+                Episode(
+                    episode_id=episode_id,
+                    url=episode_url,
+                    label=label,
+                    season=season_hint or "1",
+                )
+            )
+    if not episodes:
+        raise CLIError("No episodes found.")
+    return episodes
+
+
+def load_metadata_cache(path: Path) -> dict[str, tuple[str, str, str]]:
+    cache: dict[str, tuple[str, str, str]] = {}
+    if not path.exists():
+        return cache
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        episode_id, upload, season, title = line.split("\t", 3)
+        cache[episode_id] = (upload, season, title)
+    return cache
+
+
+def write_metadata_cache(path: Path, cache: dict[str, tuple[str, str, str]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = []
+    for episode_id in sorted(cache):
+        upload, season, title = cache[episode_id]
+        safe_title = title.replace("\t", " ").replace("\n", " ")
+        lines.append(f"{episode_id}\t{upload}\t{season}\t{safe_title}\n")
+    path.write_text("".join(lines), encoding="utf-8")
+
+
+def collect_metadata(sources: list[str]) -> dict[str, tuple[str, str, str]]:
+    result: dict[str, tuple[str, str, str]] = {}
+    for source in sources:
+        metadata = run_yt_dlp(
+            [
+                "--skip-download",
+                "--ignore-errors",
+                "--print",
+                "%(id)s\t%(upload_date|NA)s\t%(title|NA)s\t%(season_number|NA)s",
+                source,
+            ]
+        )
+        for line in metadata.stdout.splitlines():
+            parts = line.split("\t")
+            if len(parts) < 4:
+                continue
+            episode_id, upload_date, title, season = parts[0], parts[1], parts[2], parts[3]
+            result.setdefault(episode_id, (upload_date, season, title))
+    return result
+
+
+def infer_season_from_text(text: str) -> str | None:
+    match = SEASON_IN_TITLE_RE.search(text)
+    if match:
+        return match.group(1)
+    return None
+
+
+def extract_year_from_url(url: str) -> str:
+    match = re.search(r"/(\d{4})/(\d{2})/", url)
+    return match.group(1) if match else "NA"
+
+
+def cache_entry_is_complete(entry: tuple[str, str, str] | None) -> bool:
+    if entry is None:
+        return False
+    upload, _season, title = entry
+    return bool(upload and upload != "NA" and title and title != "NA")
+
+
+def normalize_episode_metadata(
+    episodes: list[Episode],
+    metadata: dict[str, tuple[str, str, str]],
+) -> SeasonSummary:
+    season_counts: dict[str, int] = {}
+    season_year_min: dict[str, str] = {}
+    season_year_max: dict[str, str] = {}
+    show_year_min = ""
+    show_year_max = ""
+    detected_season_evidence = False
+    for episode in episodes:
+        upload_date, meta_season, title = metadata.get(
+            episode.episode_id,
+            ("NA", "NA", episode.label.replace("-", " ")),
+        )
+        episode.title = title if title and title != "NA" else episode.label.replace("-", " ")
+        episode.upload_date = upload_date or "NA"
+        season_candidate = "NA"
+        if meta_season.isdigit():
+            season_candidate = meta_season
+            detected_season_evidence = True
+        elif episode.season.isdigit():
+            season_candidate = episode.season
+            detected_season_evidence = True
+        else:
+            inferred = infer_season_from_text(episode.title)
+            if inferred:
+                season_candidate = inferred
+                detected_season_evidence = True
+        if not season_candidate.isdigit():
+            season_candidate = "1"
+        episode.season = season_candidate
+        if re.fullmatch(r"\d{8}", episode.upload_date):
+            episode.year = episode.upload_date[:4]
+        else:
+            episode.year = extract_year_from_url(episode.url)
+        season_counts[season_candidate] = season_counts.get(season_candidate, 0) + 1
+        if re.fullmatch(r"\d{4}", episode.year):
+            if not show_year_min or episode.year < show_year_min:
+                show_year_min = episode.year
+            if not show_year_max or episode.year > show_year_max:
+                show_year_max = episode.year
+            current_min = season_year_min.get(season_candidate)
+            current_max = season_year_max.get(season_candidate)
+            if current_min is None or episode.year < current_min:
+                season_year_min[season_candidate] = episode.year
+            if current_max is None or episode.year > current_max:
+                season_year_max[season_candidate] = episode.year
+    latest_season = (
+        sorted(season_counts, key=lambda value: int(value))[-1] if season_counts else "1"
+    )
+    has_seasons = detected_season_evidence or len(season_counts) > 1
+    return SeasonSummary(
+        counts=season_counts,
+        year_min=season_year_min,
+        year_max=season_year_max,
+        show_year_min=show_year_min,
+        show_year_max=show_year_max,
+        has_seasons=has_seasons,
+        latest_season=latest_season,
+    )
+
+
+def year_span(min_year: str, max_year: str) -> str:
+    if re.fullmatch(r"\d{4}", min_year) and re.fullmatch(r"\d{4}", max_year):
+        return min_year if min_year == max_year else f"{min_year}-{max_year}"
+    if re.fullmatch(r"\d{4}", min_year):
+        return min_year
+    if re.fullmatch(r"\d{4}", max_year):
+        return max_year
+    return "unknown year"
+
+
+def filter_episodes_for_list_or_download(
+    episodes: list[Episode],
+    summary: SeasonSummary,
+    selected_seasons: set[str],
+    request_all_seasons: bool,
+    requested_episode_ids: set[str],
+    requested_episode_urls: dict[str, str],
+    latest_by_default: bool,
+) -> list[Episode]:
+    selected = episodes
+    if summary.has_seasons:
+        if request_all_seasons:
+            pass
+        elif selected_seasons:
+            available = {episode.season for episode in episodes}
+            missing = sorted(selected_seasons - available, key=int)
+            if missing:
+                raise CLIError(f"season {missing[0]} is not available.")
+            selected = [episode for episode in selected if episode.season in selected_seasons]
+        elif latest_by_default and not requested_episode_ids and not requested_episode_urls:
+            selected = [episode for episode in selected if episode.season == summary.latest_season]
+    elif selected_seasons:
+        raise CLIError("this program does not expose seasons, so --season cannot be used.")
+
+    if requested_episode_ids or requested_episode_urls:
+        matched_ids: set[str] = set()
+        matched_urls: set[str] = set()
+        filtered: list[Episode] = []
+        requested_url_ids = {value for value in requested_episode_urls.values() if value}
+        for episode in selected:
+            include = False
+            normalized = episode.url.rstrip("/")
+            if episode.episode_id in requested_episode_ids:
+                include = True
+                matched_ids.add(episode.episode_id)
+            if normalized in requested_episode_urls:
+                include = True
+                matched_urls.add(normalized)
+            if episode.episode_id in requested_url_ids:
+                include = True
+                for requested_url, extracted_id in requested_episode_urls.items():
+                    if extracted_id == episode.episode_id:
+                        matched_urls.add(requested_url)
+            if include:
+                filtered.append(episode)
+        missing_ids = sorted(requested_episode_ids - matched_ids)
+        if missing_ids:
+            raise CLIError(f"episode ID '{missing_ids[0]}' not found.")
+        missing_urls = sorted(set(requested_episode_urls) - matched_urls)
+        if missing_urls:
+            raise CLIError(f"episode URL not found: {missing_urls[0]}")
+        selected = filtered
+    return selected

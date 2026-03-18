@@ -1,19 +1,23 @@
 from pathlib import Path
 
-from raiplaysound_cli.cli import (
+from raiplaysound_cli.catalog import cache_file_is_fresh, program_cache_format_is_current
+from raiplaysound_cli.config import (
     Settings,
+    expand_config_path,
+    normalize_bool,
+    parse_env_file,
+)
+from raiplaysound_cli.episodes import (
     build_requested_episode_filters,
     build_requested_set,
-    cache_file_is_fresh,
-    expand_config_path,
+    cache_entry_is_complete,
     infer_season_from_text,
-    normalize_bool,
     normalize_episode_metadata,
-    parse_env_file,
-    program_cache_format_is_current,
     year_span,
-    Episode,
 )
+from raiplaysound_cli.errors import CLIError
+from raiplaysound_cli.models import Episode
+from raiplaysound_cli.runtime import acquire_lock, release_lock
 
 
 def test_expand_config_path_home() -> None:
@@ -92,3 +96,30 @@ def test_cache_file_is_fresh(tmp_path: Path) -> None:
     cache = tmp_path / "cache.tsv"
     cache.write_text("x\n", encoding="utf-8")
     assert cache_file_is_fresh(cache, 1) is True
+
+
+def test_cache_entry_is_complete() -> None:
+    assert cache_entry_is_complete(("20240101", "1", "Episode A")) is True
+    assert cache_entry_is_complete(("NA", "1", "Episode A")) is False
+    assert cache_entry_is_complete(("20240101", "1", "NA")) is False
+    assert cache_entry_is_complete(None) is False
+
+
+def test_invalid_integer_setting_raises_cli_error() -> None:
+    try:
+        Settings.from_config({"JOBS": "abc"})
+    except CLIError as exc:
+        assert "invalid integer value for JOBS" in str(exc)
+    else:
+        raise AssertionError("expected CLIError")
+
+
+def test_acquire_lock_recovers_stale_lock(tmp_path: Path) -> None:
+    lock_dir = tmp_path / ".run-lock"
+    lock_dir.mkdir()
+    (lock_dir / "pid").write_text("999999\n", encoding="utf-8")
+    acquire_lock(lock_dir, "america7")
+    try:
+        assert (lock_dir / "pid").read_text(encoding="utf-8").strip().isdigit()
+    finally:
+        release_lock(lock_dir)

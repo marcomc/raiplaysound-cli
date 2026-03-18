@@ -14,6 +14,14 @@ All notable changes to this project are documented in this file.
   display for episode downloads.
 - Updated the repository workflow, Makefile, and agent guidance for a
   Python-only architecture.
+- Split the Python implementation into focused modules, added stale-lock
+  recovery for interrupted download runs, corrected metadata cache validation,
+  and aligned the overall Rich progress bar with episode-count semantics.
+- Standardized Python development checks around `ruff`, `black`, and `mypy`.
+- Changed the Makefile install workflow to match `cligoo`: standalone installs
+  now live under `~/.local/share/raiplaysound-cli/venv` with the CLI exposed at
+  `~/.local/bin/raiplaysound-cli`, while `install-dev` points that same command
+  at the project `.venv` for editable development.
 
 ### Added
 
