@@ -107,6 +107,7 @@ class Downloader:
                     description=f"skip {task.episode_label}",
                     completed=100,
                     total=100,
+                    size_text="",
                 )
                 continue
             if line.startswith("ERROR:"):
@@ -117,6 +118,7 @@ class Downloader:
                     description=f"error {task.episode_label}",
                     completed=100,
                     total=100,
+                    size_text="",
                 )
                 continue
             if not line.startswith("progress:"):
@@ -126,16 +128,31 @@ class Downloader:
             total = int(total_s) if total_s.isdigit() else 0
             estimate = int(estimate_s) if estimate_s.isdigit() else 0
             if total > 0:
-                self.progress.update(task.task_id, total=total, completed=downloaded)
+                self.progress.update(
+                    task.task_id,
+                    total=total,
+                    completed=downloaded,
+                    size_text=_format_megabyte_progress(downloaded, total),
+                )
             elif estimate > 0:
-                self.progress.update(task.task_id, total=estimate, completed=downloaded)
+                self.progress.update(
+                    task.task_id,
+                    total=estimate,
+                    completed=downloaded,
+                    size_text=_format_megabyte_progress(downloaded, estimate),
+                )
             else:
                 percent_text = raw_percent.strip().replace("%", "")
                 try:
                     percent = min(int(float(percent_text)), 100)
                 except ValueError:
                     continue
-                self.progress.update(task.task_id, completed=percent, total=100)
+                self.progress.update(
+                    task.task_id,
+                    completed=percent,
+                    total=100,
+                    size_text=_format_megabyte_progress(downloaded, 0),
+                )
         process.wait()
         with self.lock:
             self.processes.discard(process)
@@ -144,6 +161,14 @@ class Downloader:
             detail = f"yt-dlp exit code {process.returncode}"
         self.progress.remove_task(task.task_id)
         return state, detail
+
+
+def _format_megabyte_progress(downloaded_bytes: int, total_bytes: int) -> str:
+    downloaded_mb = downloaded_bytes / 1_000_000
+    if total_bytes > 0:
+        total_mb = total_bytes / 1_000_000
+        return f"{downloaded_mb:.1f}/{total_mb:.1f} MB"
+    return f"{downloaded_mb:.1f} MB"
 
 
 def resolve_log_file(

@@ -1256,6 +1256,7 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
         TextColumn("[bold]{task.description}"),
         BarColumn(bar_width=None),
         TaskProgressColumn(),
+        TextColumn("{task.fields[size_text]}"),
         MofNCompleteColumn(),
         TimeRemainingColumn(),
         console=console,
@@ -1266,7 +1267,7 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
     try:
         with progress:
             overall_label = f"[bold]Total ({len(filtered)} episode(s))[/bold]"
-            overall = progress.add_task(overall_label, total=len(filtered))
+            overall = progress.add_task(overall_label, total=len(filtered), size_text="")
             downloader = Downloader(
                 archive_file=archive_file,
                 output_template=output_template,
@@ -1288,7 +1289,11 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
                     episode_id=episode.episode_id,
                     episode_url=episode.url,
                     episode_label=episode.label,
-                    task_id=progress.add_task(f"download {episode.label}", total=100),
+                    task_id=progress.add_task(
+                        f"download {episode.label}",
+                        total=100,
+                        size_text="0.0 MB",
+                    ),
                 )
                 for episode in filtered
             ]
