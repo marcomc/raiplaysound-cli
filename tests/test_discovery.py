@@ -3,7 +3,7 @@ from __future__ import annotations
 import subprocess
 
 from raiplaysound_cli import catalog, episodes
-from raiplaysound_cli.models import Program
+from raiplaysound_cli.models import Episode, GroupSource, Program
 
 
 def test_fetch_program_metadata_parses_station_and_year(monkeypatch) -> None:
@@ -431,4 +431,56 @@ def test_discover_season_listing_sources_supports_caret_current_labels(monkeypat
     assert sources == [
         "https://www.raiplaysound.it/programmi/afroamerica-blackmusicrevolution/episodi/stagione-1",
         "https://www.raiplaysound.it/programmi/afroamerica-blackmusicrevolution/episodi/stagione-2",
+    ]
+
+
+def test_collect_group_summaries_preserves_input_order(monkeypatch) -> None:
+    groups = [
+        GroupSource(
+            key="b",
+            label="Second",
+            url="https://www.raiplaysound.it/programmi/show/puntate/second",
+            kind="bucket",
+        ),
+        GroupSource(
+            key="a",
+            label="First",
+            url="https://www.raiplaysound.it/programmi/show/puntate/first",
+            kind="bucket",
+        ),
+    ]
+
+    def fake_collect_episodes_from_sources(sources: list[str]) -> list[Episode]:
+        source = sources[0]
+        if source.endswith("/second"):
+            return [
+                Episode(
+                    episode_id="ep-2",
+                    url="https://www.raiplaysound.it/audio/2025/02/ep-2.html",
+                    label="ep-2",
+                )
+            ]
+        return [
+            Episode(
+                episode_id="ep-1",
+                url="https://www.raiplaysound.it/audio/2024/01/ep-1.html",
+                label="ep-1",
+            )
+        ]
+
+    monkeypatch.setattr(
+        episodes,
+        "collect_episodes_from_sources",
+        fake_collect_episodes_from_sources,
+    )
+
+    summaries = episodes.collect_group_summaries(groups)
+
+    assert [(summary.key, summary.label, summary.episodes) for summary in summaries] == [
+        ("b", "Second", 1),
+        ("a", "First", 1),
+    ]
+    assert [(summary.year_min, summary.year_max) for summary in summaries] == [
+        ("2025", "2025"),
+        ("2024", "2024"),
     ]

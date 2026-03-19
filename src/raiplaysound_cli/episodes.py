@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import concurrent.futures
 import html
 import json
 import re
@@ -414,31 +415,41 @@ def collect_season_summary_from_sources(sources: list[str]) -> tuple[list[Episod
     )
 
 
+def _collect_group_summary(group: GroupSource) -> GroupSummary:
+    episodes = collect_episodes_from_sources([group.url])
+    year_min = ""
+    year_max = ""
+    for episode in episodes:
+        episode.year = extract_year_from_url(episode.url)
+        if re.fullmatch(r"\d{4}", episode.year):
+            if not year_min or episode.year < year_min:
+                year_min = episode.year
+            if not year_max or episode.year > year_max:
+                year_max = episode.year
+    return GroupSummary(
+        key=group.key,
+        label=group.label,
+        url=group.url,
+        kind=group.kind,
+        episodes=len(episodes),
+        year_min=year_min,
+        year_max=year_max,
+    )
+
+
 def collect_group_summaries(groups: list[GroupSource]) -> list[GroupSummary]:
-    summaries: list[GroupSummary] = []
-    for group in groups:
-        episodes = collect_episodes_from_sources([group.url])
-        year_min = ""
-        year_max = ""
-        for episode in episodes:
-            episode.year = extract_year_from_url(episode.url)
-            if re.fullmatch(r"\d{4}", episode.year):
-                if not year_min or episode.year < year_min:
-                    year_min = episode.year
-                if not year_max or episode.year > year_max:
-                    year_max = episode.year
-        summaries.append(
-            GroupSummary(
-                key=group.key,
-                label=group.label,
-                url=group.url,
-                kind=group.kind,
-                episodes=len(episodes),
-                year_min=year_min,
-                year_max=year_max,
-            )
-        )
-    return summaries
+    if not groups:
+        return []
+    max_workers = min(len(groups), 8)
+    results: dict[int, GroupSummary] = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_map = {
+            executor.submit(_collect_group_summary, group): index
+            for index, group in enumerate(groups)
+        }
+        for future in concurrent.futures.as_completed(future_map):
+            results[future_map[future]] = future.result()
+    return [results[index] for index in range(len(groups))]
 
 
 def load_metadata_cache(path: Path) -> dict[str, tuple[str, str, str]]:
