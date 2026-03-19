@@ -205,6 +205,7 @@ def test_list_episodes_does_not_create_download_directory(
     monkeypatch, tmp_path: Path, capsys
 ) -> None:
     settings = Settings()
+    settings.catalog_cache_file = tmp_path / "state" / "program-catalog.tsv"
     settings.target_base = tmp_path / "Music" / "RaiPlaySound"
 
     monkeypatch.setattr(cli, "parse_env_file", lambda _path: {"COMMAND": "list"})
@@ -239,6 +240,7 @@ def test_list_episodes_skips_metadata_refresh_and_cache_writes(
     monkeypatch, tmp_path: Path, capsys
 ) -> None:
     settings = Settings()
+    settings.catalog_cache_file = tmp_path / "state" / "program-catalog.tsv"
     settings.target_base = tmp_path / "Music" / "RaiPlaySound"
 
     def fail(*_args, **_kwargs) -> None:
@@ -301,7 +303,7 @@ def test_list_episodes_uses_cached_payload(monkeypatch, tmp_path: Path, capsys) 
     cache_file.write_text(
         """
 {
-  "version": 1,
+  "version": 2,
   "slug": "profili",
   "program_url": "https://www.raiplaysound.it/programmi/profili",
   "summary": {
@@ -439,8 +441,9 @@ def test_list_episodes_cache_key_uses_resolved_season_sources(
     ]
 
 
-def test_list_episodes_aggregates_discovered_groupings(monkeypatch, capsys) -> None:
+def test_list_episodes_aggregates_discovered_groupings(monkeypatch, tmp_path: Path, capsys) -> None:
     settings = Settings()
+    settings.catalog_cache_file = tmp_path / "state" / "program-catalog.tsv"
 
     monkeypatch.setattr(cli, "parse_env_file", lambda _path: {"COMMAND": "list"})
     monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
@@ -539,8 +542,9 @@ def test_list_episodes_aggregates_discovered_groupings(monkeypatch, capsys) -> N
     assert '"title": "Intervista di Maurizio Federaro a Lucio Dalla"' in captured.out
 
 
-def test_list_episodes_filters_by_group(monkeypatch, capsys) -> None:
+def test_list_episodes_filters_by_group(monkeypatch, tmp_path: Path, capsys) -> None:
     settings = Settings()
+    settings.catalog_cache_file = tmp_path / "state" / "program-catalog.tsv"
 
     monkeypatch.setattr(cli, "parse_env_file", lambda _path: {"COMMAND": "list"})
     monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
@@ -637,6 +641,7 @@ def test_list_seasons_skips_metadata_refresh_and_cache_writes(
     monkeypatch, tmp_path: Path, capsys
 ) -> None:
     settings = Settings()
+    settings.catalog_cache_file = tmp_path / "state" / "program-catalog.tsv"
     settings.target_base = tmp_path / "Music" / "RaiPlaySound"
 
     def fail(*_args, **_kwargs) -> None:
@@ -698,7 +703,7 @@ def test_list_seasons_uses_cached_summary_payload(monkeypatch, tmp_path: Path, c
     cache_file.write_text(
         """
 {
-  "version": 1,
+  "version": 2,
   "slug": "america7",
   "program_url": "https://www.raiplaysound.it/programmi/america7",
   "has_seasons": true,
@@ -786,8 +791,11 @@ def test_list_seasons_json_uses_real_discovered_season_urls(
     )
 
 
-def test_list_seasons_prints_groupings_for_special_collections(monkeypatch, capsys) -> None:
+def test_list_seasons_prints_groupings_for_special_collections(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
     settings = Settings()
+    settings.catalog_cache_file = tmp_path / "state" / "program-catalog.tsv"
 
     monkeypatch.setattr(cli, "parse_env_file", lambda _path: {"COMMAND": "list"})
     monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
@@ -1040,8 +1048,9 @@ def test_list_episodes_text_prints_download_suggestions(
     )
 
 
-def test_flat_program_outputs_do_not_invent_season_one(monkeypatch, capsys) -> None:
+def test_flat_program_outputs_do_not_invent_season_one(monkeypatch, tmp_path: Path, capsys) -> None:
     settings = Settings()
+    settings.catalog_cache_file = tmp_path / "state" / "program-catalog.tsv"
 
     monkeypatch.setattr(cli, "parse_env_file", lambda _path: {"COMMAND": "list"})
     monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
@@ -1099,8 +1108,11 @@ def test_flat_program_outputs_do_not_invent_season_one(monkeypatch, capsys) -> N
     assert '"label": "Season 1"' not in captured.out
 
 
-def test_flat_program_episode_listing_omits_season_column(monkeypatch, capsys) -> None:
+def test_flat_program_episode_listing_omits_season_column(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
     settings = Settings()
+    settings.catalog_cache_file = tmp_path / "state" / "program-catalog.tsv"
 
     monkeypatch.setattr(cli, "parse_env_file", lambda _path: {"COMMAND": "list"})
     monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
@@ -1262,8 +1274,11 @@ def test_list_seasons_honors_season_filter_for_real_seasons(
     assert "Season 1: 71 episodes" not in captured.out
 
 
-def test_list_seasons_rejects_season_filter_for_non_season_groupings(monkeypatch, capsys) -> None:
+def test_list_seasons_rejects_season_filter_for_non_season_groupings(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
     settings = Settings()
+    settings.catalog_cache_file = tmp_path / "state" / "program-catalog.tsv"
 
     monkeypatch.setattr(cli, "parse_env_file", lambda _path: {"COMMAND": "list"})
     monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
