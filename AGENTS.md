@@ -49,6 +49,11 @@ or URL into `~/Music/RaiPlaySound/<slug>/`, with idempotent repeat runs using
 
 - All documentation files must pass Markdown linting.
 - The line-length rule may be ignored.
+- For every new release, update the version consistently in:
+  - `pyproject.toml`
+  - `src/raiplaysound_cli/__init__.py`
+  - the versioned release section in `CHANGELOG.md`
+  - the `--version` expectation in `tests/test_cli_entrypoints.py`
 - For every new CLI/config option, update Python parsing support for
   `~/.raiplaysound-cli.conf`.
 - For every new CLI/config option, update `.raiplaysound-cli.conf.example` in
