@@ -81,6 +81,7 @@ raiplaysound-cli list episodes america7
   - `Slug`
   - `Page`
   - optional `Feed` with `--detailed`
+- `--pager` can route text output through a pager without changing JSON output
 - station program counts are taken from the locally cached program catalog when
   available; when no compatible local catalog exists yet, the count column may
   be unknown
@@ -111,6 +112,8 @@ raiplaysound-cli list episodes america7
   - `Groupings`
   - `Description`
   - `Page`
+- `--refresh-catalog` and `--catalog-max-age-hours` apply only to `list programs`
+- `--pager` can route text output through a pager without changing JSON output
 - the `Page` column is a clickable terminal link in Rich-capable terminals
 - the footer prints concrete follow-up commands for:
   - listing programs for one station
@@ -241,8 +244,8 @@ Relevant config behavior:
   target was passed
 - `GROUPS_ARG` acts as the default `--group` value for `download` and
   `list episodes`
-- `STATION_FILTER`, `GROUP_BY`, `PODCASTS_SORTED`, `SHOW_URLS`, and
-  `STATIONS_DETAILED` act as list defaults
+- `STATION_FILTER`, `GROUP_BY`, `PODCASTS_SORTED`, `SHOW_URLS`,
+  `STATIONS_DETAILED`, and `PAGER` act as list defaults
 - `CHECK_JOBS`, `TARGET_BASE`, and `CATALOG_CACHE_FILE` are config-only knobs
 
 ## Grouping and Season Behavior

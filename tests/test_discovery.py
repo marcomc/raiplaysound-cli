@@ -30,6 +30,32 @@ def test_fetch_program_metadata_parses_station_and_year(monkeypatch) -> None:
     )
 
 
+def test_fetch_program_metadata_prefers_podcast_info(monkeypatch) -> None:
+    monkeypatch.setattr(
+        catalog,
+        "http_get",
+        lambda _url, timeout=20.0: (
+            '{"title":"Fallback Title","podcast_info":{"title":"Show B",'
+            '"description":"Long description for the show",'
+            '"year":"2023","create_date":"01-01-2023",'
+            '"channel":{"name":"Rai Radio Techete","category_path":"radiotechete"}}}'
+        ),
+    )
+
+    program = catalog.fetch_program_metadata("show-b", "2025")
+
+    assert program == Program(
+        slug="show-b",
+        title="Show B",
+        station_name="Rai Radio Techete",
+        station_short="radiotechete",
+        years="2023-2025",
+        page_url="https://www.raiplaysound.it/programmi/show-b",
+        description_excerpt="Long description for the show",
+        grouping_count=0,
+    )
+
+
 def test_discover_feed_sources_extracts_program_and_selected_season(monkeypatch) -> None:
     monkeypatch.setattr(
         episodes,

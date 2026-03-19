@@ -93,16 +93,25 @@ def fetch_program_metadata(slug: str, last_year: str = "") -> Program | None:
         payload = json.loads(raw)
     except json.JSONDecodeError:
         return None
-    title = payload.get("title") or slug
-    channel = payload.get("channel") or {}
+    info = payload.get("podcast_info") if isinstance(payload.get("podcast_info"), dict) else {}
+    title = info.get("title") or payload.get("title") or slug
+    channel = info.get("channel") if isinstance(info.get("channel"), dict) else {}
+    if not channel:
+        channel = payload.get("channel") if isinstance(payload.get("channel"), dict) else {}
     station_name = channel.get("name") or "No station"
     station_short = (channel.get("category_path") or "none").lower()
     description_excerpt = _normalize_program_excerpt(
-        str(payload.get("description") or payload.get("subtitle") or "")
+        str(
+            info.get("description")
+            or info.get("vanity")
+            or payload.get("description")
+            or payload.get("subtitle")
+            or ""
+        )
     )
     filters = payload.get("filters") if isinstance(payload.get("filters"), list) else []
-    year = str(payload.get("year") or "")
-    create_date = str(payload.get("create_date") or "")
+    year = str(info.get("year") or payload.get("year") or "")
+    create_date = str(info.get("create_date") or payload.get("create_date") or "")
     if not re.fullmatch(r"\d{4}", year):
         match = re.search(r"(\d{4})", create_date)
         year = match.group(1) if match else ""

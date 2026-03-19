@@ -190,6 +190,7 @@ Supported config keys:
 | `CATALOG_MAX_AGE_HOURS` | `--catalog-max-age-hours` | list `programs` |
 | `STATIONS_DETAILED` | `--detailed` | list `stations` |
 | `SHOW_URLS` | `--show-urls` | list `episodes` |
+| `PAGER` | `--pager` | list |
 | `INPUT` | `<program_slug\|program_url>` | download, list `seasons`, list `episodes` |
 
 `FORCE_REFRESH_CATALOG` and `CATALOG_MAX_AGE_HOURS` affect only `list programs`.
@@ -263,9 +264,9 @@ Next:
 ```
 
 `list programs` intentionally prints the full table by default so the output is
-pipe-friendly and easy to capture. For large catalogs, the most practical way
-to narrow the output is still `--filter`, `--sorted`, or a future opt-in pager
-rather than auto-paging by default.
+pipe-friendly and easy to capture. For large catalogs, the most practical ways
+to narrow or browse the output are `--filter`, `--sorted`, or the opt-in
+`--pager` flag rather than auto-paging by default.
 
 ### Inspect seasons and episodes
 

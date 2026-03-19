@@ -59,6 +59,10 @@ CHECK_JOBS=8
 # Optional default: include episode URLs in list episodes output.
 # SHOW_URLS=0
 
+# Optional default: show list output through a pager.
+# Applies to text output for stations, programs, seasons, and episodes.
+# PAGER=0
+
 # Optional default: show detailed station listing with URLs.
 # Requires LIST_TARGET="stations".
 # STATIONS_DETAILED=0

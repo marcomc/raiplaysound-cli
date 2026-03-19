@@ -71,8 +71,10 @@ def test_list_help_prints_command_specific_help(capsys) -> None:
     assert "Episodes:" in captured.out
     assert "options:" not in captured.out
     assert "Examples:" in captured.out
+    assert "--pager" in captured.out
     assert "raiplaysound-cli list seasons PROGRAM" in captured.out
     assert "raiplaysound-cli list programs --filter STATION" in captured.out
+    assert "Only for `list programs`. Refresh the cached program catalog." in captured.out
     assert "--show-urls" in captured.out
 
 

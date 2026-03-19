@@ -29,6 +29,12 @@ All notable changes to this project are documented in this file.
 - Changed `list stations` and `list programs` text output from ad-hoc line
   listings to Rich tables with clearer columns and compact next-step command
   suggestions below the table.
+- Added `list --pager` (and config key `PAGER`) as an opt-in pager for text
+  listing output, and clarified in help that `--refresh-catalog` applies only
+  to `list programs`.
+- Fixed program-catalog station enrichment to prefer Rai's `podcast_info`
+  metadata, so station slugs and `list stations` program counts populate again
+  after a catalog refresh.
 
 ## [2.1.1] - 2026-03-19 - download progress and startup visibility improvements
 
