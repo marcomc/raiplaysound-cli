@@ -188,3 +188,30 @@ def test_collect_season_summary_from_sources_uses_url_years_without_metadata(mon
     assert summary.year_max == {"1": "2024", "2": "2026"}
     assert summary.show_year_min == "2024"
     assert summary.show_year_max == "2026"
+
+
+def test_discover_group_listing_sources_supports_speciali(monkeypatch) -> None:
+    monkeypatch.setattr(
+        episodes,
+        "http_get",
+        lambda _url: (
+            "<button data-filters-current><span>Speciale Pino Daniele</span></button>"
+            '<a href="/programmi/profili/speciali/speciale-lucio-dalla">Speciale Lucio Dalla</a>'
+        ),
+    )
+
+    program_url, groups = episodes.discover_group_listing_sources("profili")
+
+    assert program_url == "https://www.raiplaysound.it/programmi/profili"
+    assert [(group.label, group.kind, group.url) for group in groups] == [
+        (
+            "Speciale Pino Daniele",
+            "special",
+            "https://www.raiplaysound.it/programmi/profili",
+        ),
+        (
+            "Speciale Lucio Dalla",
+            "special",
+            "https://www.raiplaysound.it/programmi/profili/speciali/speciale-lucio-dalla",
+        ),
+    ]

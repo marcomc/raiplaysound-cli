@@ -236,6 +236,15 @@ Season listing uses a lightweight discovery path, so `list --seasons` avoids
 download-side metadata refreshes and is typically faster than episode
 inspection or download preparation.
 
+For programs that use non-season groupings on RaiPlaySound, `list --seasons`
+also reports those groupings instead of incorrectly collapsing everything into a
+flat episode list. For example, programs may expose specials or named
+collections instead of numbered seasons.
+
+`list --episodes <program>` also aggregates episodes across discovered
+groupings for grouped programs, instead of only listing the currently selected
+subpage.
+
 Example output:
 
 ```text

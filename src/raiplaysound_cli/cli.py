@@ -37,10 +37,12 @@ from .episodes import (
     build_requested_set,
     cache_entry_is_complete,
     collect_episodes_from_sources,
+    collect_group_summaries,
     collect_metadata,
     collect_season_summary_from_sources,
     detect_slug,
     discover_feed_sources,
+    discover_group_listing_sources,
     discover_season_listing_sources,
     filter_episodes_for_list_or_download,
     load_metadata_cache,
@@ -49,7 +51,7 @@ from .episodes import (
     year_span,
 )
 from .errors import CLIError
-from .models import Episode
+from .models import Episode, GroupSource
 from .outputs import generate_playlist, generate_rss_feed
 from .runtime import acquire_lock, http_get, release_lock, run_yt_dlp
 
@@ -123,6 +125,83 @@ def print_programs_text(programs: list[Any], mode: str) -> None:
         console.print(f"  - {program.title} ({program.slug}) [{program.years}]")
 
 
+def print_program_download_suggestion() -> None:
+    console.print("")
+    console.print("Download:")
+    console.print("  raiplaysound-cli download <program_slug>", soft_wrap=True)
+
+
+def print_season_download_suggestions(slug: str, season_keys: list[str]) -> None:
+    console.print("")
+    console.print("Download:")
+    console.print(f"  all episodes:  raiplaysound-cli download {slug}", soft_wrap=True)
+    console.print(
+        f"  all seasons:   raiplaysound-cli download {slug} --season all",
+        soft_wrap=True,
+    )
+    if season_keys:
+        console.print(
+            f"  one season:    raiplaysound-cli download {slug} --season {season_keys[0]}",
+            soft_wrap=True,
+        )
+    if len(season_keys) >= 2:
+        console.print(
+            f"  some seasons:  raiplaysound-cli download {slug} --season "
+            f"{','.join(season_keys[:2])}",
+            soft_wrap=True,
+        )
+
+
+def print_episode_download_suggestions(
+    slug: str,
+    filtered: list[Episode],
+    selected_seasons: set[str],
+    request_all: bool,
+    has_seasons: bool,
+) -> None:
+    console.print("")
+    console.print("Download:")
+    if has_seasons:
+        if request_all:
+            console.print(
+                f"  all seasons:   raiplaysound-cli download {slug} --season all",
+                soft_wrap=True,
+            )
+        elif selected_seasons:
+            ordered = sorted(selected_seasons, key=int)
+            console.print(
+                f"  listed season(s): raiplaysound-cli download {slug} --season "
+                f"{','.join(ordered)}",
+                soft_wrap=True,
+            )
+        else:
+            console.print(
+                f"  current/default season: raiplaysound-cli download {slug}",
+                soft_wrap=True,
+            )
+        console.print(
+            f"  all program episodes:   raiplaysound-cli download {slug} --season all",
+            soft_wrap=True,
+        )
+    else:
+        console.print(
+            f"  all program episodes:   raiplaysound-cli download {slug}",
+            soft_wrap=True,
+        )
+    if filtered:
+        console.print(
+            f"  one episode:    raiplaysound-cli download {slug} --episode-ids "
+            f"{filtered[0].episode_id}",
+            soft_wrap=True,
+        )
+    if len(filtered) >= 2:
+        console.print(
+            f"  some episodes:  raiplaysound-cli download {slug} --episode-ids "
+            f"{filtered[0].episode_id},{filtered[1].episode_id}",
+            soft_wrap=True,
+        )
+
+
 def load_show_context(
     settings: Settings,
     input_value: str,
@@ -130,17 +209,27 @@ def load_show_context(
     request_all_seasons: bool,
     *,
     for_list_seasons: bool = False,
+    sources_override: list[str] | None = None,
+    source_groups_override: list[GroupSource] | None = None,
 ) -> tuple[str, str, list[Any], Any, Path]:
     slug, program_url = detect_slug(input_value)
     target_dir = settings.target_base / slug
     metadata_cache_file = target_dir / ".metadata-cache.tsv"
-    sources = discover_feed_sources(
-        slug,
-        selected_seasons,
-        request_all_seasons,
-        for_list_seasons,
+    if sources_override is None:
+        sources = discover_feed_sources(
+            slug,
+            selected_seasons,
+            request_all_seasons,
+            for_list_seasons,
+        )
+    else:
+        sources = sources_override
+    source_groups = (
+        {group.url: group for group in source_groups_override}
+        if source_groups_override is not None
+        else None
     )
-    episodes = collect_episodes_from_sources(sources)
+    episodes = collect_episodes_from_sources(sources, source_groups=source_groups)
     cache: dict[str, tuple[str, str, str]] = {}
     if not settings.force_refresh_metadata and cache_file_is_fresh(
         metadata_cache_file, settings.metadata_max_age_hours
@@ -214,47 +303,101 @@ def list_programs(settings: Settings, args: argparse.Namespace) -> int:
         )
         return 0
     print_programs_text(programs, mode)
+    print_program_download_suggestion()
     return 0
 
 
 def list_seasons(settings: Settings, args: argparse.Namespace) -> int:
     _selected_seasons, _request_all = build_requested_set(args.season or settings.seasons_arg)
     slug, program_url = detect_slug(args.input)
-    _, sources = discover_season_listing_sources(slug)
-    episodes, summary = collect_season_summary_from_sources(sources)
+    _, groups = discover_group_listing_sources(slug)
+    if groups:
+        group_summaries = collect_group_summaries(groups)
+        all_seasons = all(group.kind == "season" for group in group_summaries)
+    else:
+        group_summaries = []
+        all_seasons = False
     if args.json:
-        seasons = []
-        if not summary.has_seasons:
-            seasons.append(
-                {
-                    "season": "1",
-                    "episodes": len(episodes),
-                    "published": year_span(summary.show_year_min, summary.show_year_max),
-                }
-            )
-        else:
-            for season in sorted(summary.counts, key=lambda item: int(item)):
-                seasons.append(
+        items = []
+        has_seasons = all_seasons
+        if group_summaries:
+            for group in group_summaries:
+                items.append(
                     {
-                        "season": season,
-                        "episodes": summary.counts[season],
-                        "published": year_span(
-                            summary.year_min.get(season, ""),
-                            summary.year_max.get(season, ""),
-                        ),
+                        "key": group.key,
+                        "label": group.label,
+                        "kind": group.kind,
+                        "episodes": group.episodes,
+                        "published": year_span(group.year_min, group.year_max),
+                        "url": group.url,
                     }
                 )
+        else:
+            _, sources = discover_season_listing_sources(slug)
+            episodes, summary = collect_season_summary_from_sources(sources)
+            has_seasons = summary.has_seasons
+            if not summary.has_seasons:
+                items.append(
+                    {
+                        "key": "1",
+                        "label": "Season 1",
+                        "kind": "flat",
+                        "episodes": len(episodes),
+                        "published": year_span(summary.show_year_min, summary.show_year_max),
+                        "url": program_url,
+                    }
+                )
+            else:
+                for season in sorted(summary.counts, key=lambda item: int(item)):
+                    items.append(
+                        {
+                            "key": season,
+                            "label": f"Season {season}",
+                            "kind": "season",
+                            "episodes": summary.counts[season],
+                            "published": year_span(
+                                summary.year_min.get(season, ""),
+                                summary.year_max.get(season, ""),
+                            ),
+                            "url": f"{program_url}/stagione-{season}",
+                        }
+                    )
         json_dump(
             {
                 "mode": "seasons",
                 "slug": slug,
                 "program_url": program_url,
-                "has_seasons": summary.has_seasons,
-                "total_episodes": len(episodes),
-                "seasons": seasons,
+                "has_seasons": has_seasons,
+                "has_groups": bool(group_summaries),
+                "items": items,
             }
         )
         return 0
+    if group_summaries:
+        if all_seasons:
+            console.print(f"Available seasons for {slug} ({program_url}):")
+            sorted_groups = sorted(group_summaries, key=lambda item: int(item.key))
+            for group in sorted_groups:
+                published = year_span(group.year_min, group.year_max)
+                console.print(
+                    f"  - Season {group.key}: {group.episodes} episodes "
+                    f"(published: {published})"
+                )
+            print_season_download_suggestions(slug, [group.key for group in sorted_groups])
+            return 0
+        console.print(f"Available groupings for {slug} ({program_url}):")
+        for group in group_summaries:
+            published = year_span(group.year_min, group.year_max)
+            console.print(
+                f"  - {group.label}: {group.episodes} episodes "
+                f"({group.kind}; published: {published})"
+            )
+        console.print("")
+        console.print("Download:")
+        console.print(f"  all program episodes: raiplaysound-cli download {slug}")
+        return 0
+    _, sources = discover_season_listing_sources(slug)
+    episodes, summary = collect_season_summary_from_sources(sources)
     if not summary.has_seasons:
         console.print(f"No seasons detected for {slug} ({program_url}).")
         console.print(
@@ -263,7 +406,8 @@ def list_seasons(settings: Settings, args: argparse.Namespace) -> int:
         )
         return 0
     console.print(f"Available seasons for {slug} ({program_url}):")
-    for season in sorted(summary.counts, key=lambda item: int(item)):
+    sorted_seasons = sorted(summary.counts, key=lambda item: int(item))
+    for season in sorted_seasons:
         published = year_span(
             summary.year_min.get(season, ""),
             summary.year_max.get(season, ""),
@@ -271,17 +415,27 @@ def list_seasons(settings: Settings, args: argparse.Namespace) -> int:
         console.print(
             f"  - Season {season}: {summary.counts[season]} episodes " f"(published: {published})"
         )
+    print_season_download_suggestions(slug, sorted_seasons)
     return 0
 
 
 def list_episodes(settings: Settings, args: argparse.Namespace) -> int:
     selected_seasons, request_all = build_requested_set(args.season or settings.seasons_arg)
+    input_value = args.input
+    slug, _program_url = detect_slug(input_value)
+    _, groups = discover_group_listing_sources(slug)
+    sources_override = [group.url for group in groups] if groups else None
+    non_season_groups = bool(groups) and any(group.kind != "season" for group in groups)
     slug, program_url, episodes, summary, _metadata_cache = load_show_context(
         settings,
-        args.input,
+        input_value,
         selected_seasons,
         request_all,
+        sources_override=sources_override,
+        source_groups_override=groups if groups else None,
     )
+    if non_season_groups:
+        summary.has_seasons = False
     filtered = filter_episodes_for_list_or_download(
         episodes,
         summary,
@@ -301,6 +455,8 @@ def list_episodes(settings: Settings, args: argparse.Namespace) -> int:
                 "show_urls": args.show_urls,
                 "episodes": [
                     {
+                        "group": episode.group_label,
+                        "group_kind": episode.group_kind,
                         "season": episode.season,
                         "date": episode.pretty_date,
                         "title": episode.title,
@@ -315,6 +471,8 @@ def list_episodes(settings: Settings, args: argparse.Namespace) -> int:
     table = Table(show_header=True)
     if summary.has_seasons:
         table.add_column("Season")
+    elif non_season_groups:
+        table.add_column("Group")
     table.add_column("Date")
     table.add_column("Episode")
     table.add_column("ID")
@@ -324,12 +482,21 @@ def list_episodes(settings: Settings, args: argparse.Namespace) -> int:
         row = []
         if summary.has_seasons:
             row.append(f"S{episode.season}")
+        elif non_season_groups:
+            row.append(episode.group_label or episode.group_kind or "default")
         row.extend([episode.pretty_date, episode.title, episode.episode_id])
         if args.show_urls:
             row.append(episode.url)
         table.add_row(*row)
     console.print(f"Episodes for {slug} ({program_url}):")
     console.print(table)
+    print_episode_download_suggestions(
+        slug,
+        filtered,
+        selected_seasons,
+        request_all,
+        summary.has_seasons,
+    )
     return 0
 
 

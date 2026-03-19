@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import html
 import re
 import urllib.parse
 from pathlib import Path
 
 from .errors import CLIError
-from .models import Episode, SeasonSummary
+from .models import Episode, GroupSource, GroupSummary, SeasonSummary
 from .runtime import http_get, run_yt_dlp
 
 PROGRAM_URL_RE = re.compile(r"^https?://www\.raiplaysound\.it/programmi/([A-Za-z0-9-]+)/?$")
@@ -14,9 +15,19 @@ EPISODE_URL_RE = re.compile(r"^https?://www\.raiplaysound\.it/.+")
 SEASON_PAGE_RE = re.compile(
     r"/programmi/(?P<slug>[A-Za-z0-9-]+)/(?P<section>episodi|puntate)/stagione-(?P<season>\d+)"
 )
+GROUP_LINK_RE = re.compile(
+    r'<a href="(?P<href>/programmi/(?P<slug>[A-Za-z0-9-]+)/'
+    r'(?P<section>[^"/]+)/(?P<tail>[^"]+))"[^>]*>'
+    r"(?P<label>[^<]+)</a>"
+)
 EPISODE_ID_FROM_URL_RE = re.compile(r"-([0-9a-fA-F-]{8,})\.(?:html|json)$")
 SEASON_IN_TITLE_RE = re.compile(r"[Ss](\d{1,3})[ _-]*[Ee]\d{1,3}")
 SEASON_LABEL_RE = re.compile(r"\bStagione\s+(\d{1,3})\b", re.IGNORECASE)
+CURRENT_FILTER_LABEL_RE = re.compile(
+    r"data-filters-current[^>]*>.*?<span[^>]*>(?P<label>[^<]+)</span>",
+    re.IGNORECASE | re.DOTALL,
+)
+SKIP_GROUP_SECTIONS = {"clip", "extra", "playlist", "novita"}
 
 
 def detect_slug(input_value: str) -> tuple[str, str]:
@@ -123,7 +134,106 @@ def discover_season_listing_sources(slug: str) -> tuple[str, list[str]]:
     return program_url, [program_url]
 
 
-def collect_episodes_from_sources(sources: list[str]) -> list[Episode]:
+def _normalize_group_label(raw: str) -> str:
+    return re.sub(r"\s+", " ", html.unescape(raw)).strip()
+
+
+def _classify_group(section: str, tail: str, label: str) -> tuple[str, str] | None:
+    normalized_section = section.lower()
+    normalized_tail = tail.strip("/").lower()
+    normalized_label = label.lower()
+    if normalized_section in SKIP_GROUP_SECTIONS:
+        return None
+    if normalized_section == "speciali":
+        return "special", tail
+    if normalized_section == "puntate-e-podcast":
+        return "series", tail
+    if normalized_section.startswith("episodi") or normalized_section.startswith("puntate"):
+        if normalized_tail.startswith("stagione-"):
+            return "season", normalized_tail.removeprefix("stagione-")
+        if normalized_tail in {"episodi", "puntate"}:
+            if "stagione" in normalized_label:
+                return "season", normalized_label
+            return None
+        return "bucket", tail
+    return None
+
+
+def discover_group_listing_sources(slug: str) -> tuple[str, list[GroupSource]]:
+    program_url = f"https://www.raiplaysound.it/programmi/{slug}"
+    html_text = http_get(program_url)
+    groups: list[GroupSource] = []
+    seen_urls: set[str] = set()
+    linked_groups: list[GroupSource] = []
+
+    for match in GROUP_LINK_RE.finditer(html_text):
+        if match.group("slug").lower() != slug.lower():
+            continue
+        label = _normalize_group_label(match.group("label"))
+        href = f"https://www.raiplaysound.it{match.group('href').rstrip('/')}"
+        classified = _classify_group(match.group("section"), match.group("tail"), label)
+        if classified is None or href in seen_urls:
+            continue
+        kind, key = classified
+        linked_groups.append(
+            GroupSource(
+                key=key,
+                label=label,
+                url=href,
+                kind=kind,
+            )
+        )
+        seen_urls.add(href)
+
+    current_match = CURRENT_FILTER_LABEL_RE.search(html_text)
+    current_label = _normalize_group_label(current_match.group("label")) if current_match else ""
+    if current_label and linked_groups:
+        first_group = linked_groups[0]
+        current_kind = first_group.kind
+        current_key = current_label
+        if current_kind == "season":
+            season_match = re.search(r"(\d{1,3})", current_label)
+            if season_match:
+                current_key = season_match.group(1)
+        current_group = GroupSource(
+            key=current_key,
+            label=current_label,
+            url=program_url,
+            kind=current_kind,
+        )
+        if all(group.label != current_group.label for group in linked_groups):
+            groups.append(current_group)
+
+    groups.extend(linked_groups)
+    if groups:
+        return program_url, groups
+
+    season_url_program, season_urls = discover_season_listing_sources(slug)
+    if season_urls != [program_url]:
+        season_groups: list[GroupSource] = []
+        for url in season_urls:
+            season_match = re.search(r"stagione-(\d+)$", url)
+            if season_match:
+                season_number = season_match.group(1)
+                season_groups.append(
+                    GroupSource(
+                        key=season_number,
+                        label=f"Stagione {season_number}",
+                        url=url,
+                        kind="season",
+                    )
+                )
+        if season_groups:
+            season_groups.sort(key=lambda group: int(group.key))
+            return season_url_program, season_groups
+
+    return program_url, []
+
+
+def collect_episodes_from_sources(
+    sources: list[str],
+    source_groups: dict[str, GroupSource] | None = None,
+) -> list[Episode]:
     seen: set[str] = set()
     episodes: list[Episode] = []
     for source in sources:
@@ -131,6 +241,7 @@ def collect_episodes_from_sources(sources: list[str]) -> list[Episode]:
         match = re.search(r"stagione-(\d+)$", source)
         if match:
             season_hint = match.group(1)
+        group_source = source_groups.get(source) if source_groups is not None else None
         result = run_yt_dlp(["--flat-playlist", "--print", "%(id)s\t%(webpage_url)s", source])
         for line in result.stdout.splitlines():
             parts = line.split("\t")
@@ -149,6 +260,8 @@ def collect_episodes_from_sources(sources: list[str]) -> list[Episode]:
                     url=episode_url,
                     label=label,
                     season=season_hint or "1",
+                    group_label=group_source.label if group_source is not None else "",
+                    group_kind=group_source.kind if group_source is not None else "",
                 )
             )
     if not episodes:
@@ -194,6 +307,33 @@ def collect_season_summary_from_sources(sources: list[str]) -> tuple[list[Episod
         has_seasons=explicit_seasons or len(season_counts) > 1,
         latest_season=latest_season,
     )
+
+
+def collect_group_summaries(groups: list[GroupSource]) -> list[GroupSummary]:
+    summaries: list[GroupSummary] = []
+    for group in groups:
+        episodes = collect_episodes_from_sources([group.url])
+        year_min = ""
+        year_max = ""
+        for episode in episodes:
+            episode.year = extract_year_from_url(episode.url)
+            if re.fullmatch(r"\d{4}", episode.year):
+                if not year_min or episode.year < year_min:
+                    year_min = episode.year
+                if not year_max or episode.year > year_max:
+                    year_max = episode.year
+        summaries.append(
+            GroupSummary(
+                key=group.key,
+                label=group.label,
+                url=group.url,
+                kind=group.kind,
+                episodes=len(episodes),
+                year_min=year_min,
+                year_max=year_max,
+            )
+        )
+    return summaries
 
 
 def load_metadata_cache(path: Path) -> dict[str, tuple[str, str, str]]:

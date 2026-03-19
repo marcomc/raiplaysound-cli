@@ -9,9 +9,18 @@ All notable changes to this project are documented in this file.
 - Made `raiplaysound-cli list --seasons <program>` use a lightweight discovery
   path that skips metadata refreshes and avoids writing per-download metadata
   cache files during season-only listing.
+- Expanded `raiplaysound-cli list --seasons <program>` so it can also surface
+  non-season RaiPlaySound groupings such as `speciali`, instead of always
+  falling back to a flat episode list.
+- Updated `raiplaysound-cli list --episodes <program>` so grouped programs are
+  listed across all discovered groupings, rather than only the currently
+  selected subpage.
 - Added developer-facing documentation under `docs/` covering the current
   RaiPlaySound site structure assumptions, verified season URL patterns, cache
   behavior, and known discovery gaps for future contributors.
+- Added `docs/COMMAND_BEHAVIOR.md` to document the expected behavior of the
+  top-level CLI, `list` targets, `download`, config interaction, grouping
+  behavior, and known gaps.
 - Changed the empty CLI invocation and top-level help path so
   `raiplaysound-cli` now prints an extensive help message listing both commands
   and their available options.

@@ -169,14 +169,15 @@ This command was optimized during this session to avoid the heavy metadata path.
 Current approach:
 
 - resolve the slug
-- discover season listing sources with
-  `discover_season_listing_sources()`
-- enumerate episodes from the discovered season pages
+- discover group listing sources with `discover_group_listing_sources()`
+- treat numbered seasons as one grouping family, but also surface non-season
+  collections when the site exposes them
+- enumerate episodes from the discovered grouping pages
 - compute counts and year spans directly from episode URLs
 - do not refresh metadata
 - do not write `.metadata-cache.tsv`
 
-This is faster than the full download-oriented context loader, but season
+This is faster than the full download-oriented context loader, but grouping
 discovery still depends on the site exposing enough information in the HTML or
 in probeable URLs.
 
@@ -237,6 +238,41 @@ Implication:
   numbered season paths in the initial HTML
 - current discovery still under-detects seasons for this class of page
 
+### Pattern 4: special collections instead of seasons
+
+Example:
+
+- `profili`
+
+Observed behavior:
+
+- the page exposes a selector for special collections such as
+  `Speciale Pino Daniele` and `Speciale Lucio Dalla`
+- collection URLs use `/programmi/<slug>/speciali/<speciale-slug>`
+- the selected collection can map to the root program page, while alternates are
+  exposed as links
+
+Implication:
+
+- not all grouped programs use seasons
+- the CLI needs a grouping abstraction wider than numbered seasons
+
+### Pattern 5: broader grouping families from live survey
+
+The parallel survey also identified these families:
+
+- year or period buckets under `puntate`, for example
+  `/puntate/puntate-2025`
+- hybrid season-year bucket slugs, for example
+  `/puntate/stagione-2024-25`
+- named subseries under `puntate-e-podcast`
+- auxiliary content tabs such as `clip`, `extra`, `playlist`, and `novita`
+
+Important distinction:
+
+- auxiliary tabs are navigation surfaces, not season/group selectors
+- named buckets and subseries are real groupings
+
 ## Season Detection Strategy
 
 Current implementation in
@@ -247,14 +283,19 @@ Current implementation in
    - `/programmi/<slug>/puntate/stagione-N`
 2. Parse visible season labels such as `Stagione 5` to recover the currently
    selected season when it is text-only.
-3. Build candidate URLs for known season numbers under the detected section.
-4. Probe consecutive season URLs above the highest known season number until no
+3. Parse broader grouping links for families such as:
+   - `speciali`
+   - `puntate-e-podcast`
+   - named or year-based `puntate` buckets
+4. Build candidate URLs for known season numbers under the detected section.
+5. Probe consecutive season URLs above the highest known season number until no
    more pages are found.
 
 This works for:
 
 - `america7`
 - `leripetizioni`
+- `profili`
 
 It does not yet fully work for:
 
@@ -288,8 +329,10 @@ The site uses both:
 
 - `episodi`
 - `puntate`
+- `speciali`
+- `puntate-e-podcast`
 
-Do not hardcode only one.
+Do not hardcode only one or assume only seasons exist.
 
 ### Some pages expose season UI without numbered season URLs
 
@@ -299,6 +342,21 @@ Example:
 
 The page shows a season selector, but the initial HTML does not expose any
 `.../stagione-N` link. This likely requires a different discovery strategy.
+
+### Some grouped pages are not seasons at all
+
+Examples:
+
+- `profili` uses `speciali`
+- `3sullaluna` uses named thematic subseries
+- some news and talk programs use year or period buckets
+
+Implication:
+
+- the internal discovery abstraction should be `groupings` or `collections`
+  rather than only `seasons`
+- the user-facing `list --seasons` command currently acts as the grouping
+  inspector for backwards compatibility
 
 ### Year span does not guarantee seasons
 
@@ -376,6 +434,7 @@ Useful live smoke tests for discovery:
 ```bash
 PYTHONPATH=src .venv/bin/python -m raiplaysound_cli list seasons america7
 PYTHONPATH=src .venv/bin/python -m raiplaysound_cli list seasons leripetizioni
+PYTHONPATH=src .venv/bin/python -m raiplaysound_cli list seasons profili
 PYTHONPATH=src .venv/bin/python -m raiplaysound_cli list seasons afroamerica-blackmusicrevolution
 ```
 
@@ -383,6 +442,7 @@ Expected current status as of March 19, 2026:
 
 - `america7` should show seasons 1 and 2
 - `leripetizioni` should show seasons 1 through 5
+- `profili` should show available `speciali`
 - `afroamerica-blackmusicrevolution` is still a known gap
 
 ## Suggested Next Work
