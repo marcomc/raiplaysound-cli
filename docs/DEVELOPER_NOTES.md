@@ -408,6 +408,25 @@ Contains tab-separated rows with:
 - station short slug
 - year span
 
+### List-only summary caches
+
+Default directory:
+
+- `~/.local/state/raiplaysound-cli/`
+
+Current list-only caches:
+
+- `list-seasons/<slug>.json`
+- `list-episodes/<slug>-<scope-hash>.json`
+
+These caches are:
+
+- separate from download-side `.metadata-cache.tsv`
+- used only to speed up repeated `list seasons` and `list episodes` calls
+- keyed by program slug for season summaries and by resolved source scope for
+  episode listings
+- treated as short-lived list caches rather than durable download metadata
+
 ### Per-show metadata cache
 
 Location:
@@ -425,6 +444,7 @@ Important note:
 
 - after the optimization in this session, `list seasons` should not write this
   file
+- `list episodes` should not rewrite this file either
 
 ### Download archive
 
@@ -433,6 +453,11 @@ Location:
 - `~/Music/RaiPlaySound/<slug>/.download-archive.txt`
 
 Used by `yt-dlp --download-archive` for idempotent runs.
+
+Important note:
+
+- archive/file existence scans now happen only when missing-file recovery is
+  enabled
 
 ## Key Commands for Contributors
 

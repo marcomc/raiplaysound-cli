@@ -95,6 +95,8 @@ raiplaysound-cli list episodes america7
 - when the program exposes real seasons, it prints seasons
 - when the program exposes other grouping families, it prints groupings instead
   of incorrectly collapsing to a flat list
+- repeated runs can reuse a dedicated state-dir summary cache instead of
+  re-enumerating every grouping every time
 - non-season grouping output includes the exact `--group` selector token for
   each grouping and matching `download --group ...` suggestions
 - `--season` narrows the output only for real seasonal programs
@@ -110,6 +112,7 @@ raiplaysound-cli list episodes america7
 - aggregates episodes across discovered group pages when the program is grouped
 - uses a read-only listing path: it reuses any existing `.metadata-cache.tsv`
   for enrichment, but it should not refresh or rewrite that cache
+- repeated runs can reuse a list-only cache keyed by the resolved source set
 - `--group` narrows grouped programs to one or more discovered grouping keys or
   labels
 - `--group` cannot be combined with `--season`
@@ -157,6 +160,8 @@ raiplaysound-cli list episodes america7
   rebuilding it
 - if archive-marked files are missing locally and `AUTO_REDOWNLOAD_MISSING` is
   enabled, the CLI removes those IDs from the archive and re-downloads them
+- if `AUTO_REDOWNLOAD_MISSING` is not enabled, it skips the archive/file
+  existence scan entirely
 - uses `JOBS` workers for downloads and `CHECK_JOBS` workers for archive/file
   checks
 - uses a recoverable `.run-lock` directory

@@ -255,6 +255,10 @@ Season listing uses a lightweight discovery path, so `list seasons` avoids
 download-side metadata refreshes and is typically faster than episode
 inspection or download preparation.
 
+Repeated `list seasons <program>` runs now also use a dedicated list-summary
+cache under the state directory, separate from download-side metadata, so
+grouped programs do not need to re-enumerate every grouping on every call.
+
 For programs that use non-season groupings on RaiPlaySound, `list seasons`
 also reports those groupings instead of incorrectly collapsing everything into a
 flat episode list. For example, programs may expose specials, named thematic
@@ -271,6 +275,10 @@ subpage.
 Episode listing now uses a read-only path: it can reuse an existing
 `.metadata-cache.tsv` to improve titles and dates, but it does not refresh or
 rewrite that cache during `list episodes`.
+
+Repeated `list episodes` runs also use a list-only cache keyed by the resolved
+source scope, so repeated calls for the same program or grouping can reuse the
+previous listing without touching download artifacts.
 
 When a program uses non-season groupings, `list episodes <program> --group <key>`
 narrows the output to one or more discovered grouping keys or labels. For
@@ -300,6 +308,9 @@ the selected program or grouping, but metadata refresh is deferred until after
 episode filtering. When you use selectors like `--group`, `--episode-ids`, or
 `--episode-urls`, the CLI refreshes metadata only for the episodes that will
 actually be downloaded.
+
+When `--missing` is not enabled, the CLI now skips the archive/file existence
+scan entirely instead of paying that startup cost on every download.
 
 Example output:
 

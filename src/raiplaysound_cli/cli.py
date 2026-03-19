@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import dataclasses
+import hashlib
 import json
 import signal
 import sys
@@ -58,16 +59,195 @@ from .episodes import (
     year_span,
 )
 from .errors import CLIError
-from .models import Episode, GroupSource
+from .models import Episode, GroupSource, SeasonSummary
 from .outputs import generate_playlist, generate_rss_feed
 from .runtime import acquire_lock, http_get, release_lock, run_yt_dlp
 
 console = Console()
 err_console = Console(stderr=True)
+LIST_CACHE_MAX_AGE_HOURS = 24
+LIST_CACHE_VERSION = 1
 
 
 def json_dump(data: Any) -> None:
     console.print(json.dumps(data, indent=2, ensure_ascii=False))
+
+
+def _state_cache_dir(settings: Settings) -> Path:
+    return settings.catalog_cache_file.parent
+
+
+def _write_json_cache(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _load_json_cache(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _season_summary_cache_file(settings: Settings, slug: str) -> Path:
+    return _state_cache_dir(settings) / "list-seasons" / f"{slug}.json"
+
+
+def _episode_list_cache_file(settings: Settings, slug: str, sources: list[str]) -> Path:
+    digest = hashlib.sha1("\n".join(sorted(sources)).encode("utf-8")).hexdigest()[:12]
+    return _state_cache_dir(settings) / "list-episodes" / f"{slug}-{digest}.json"
+
+
+def _season_summary_items_to_payload(
+    *,
+    slug: str,
+    program_url: str,
+    has_seasons: bool,
+    has_groups: bool,
+    items: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "version": LIST_CACHE_VERSION,
+        "slug": slug,
+        "program_url": program_url,
+        "has_seasons": has_seasons,
+        "has_groups": has_groups,
+        "items": items,
+    }
+
+
+def _build_season_listing_payload(settings: Settings, slug: str) -> dict[str, Any]:
+    program_url, groups = discover_group_listing_sources(slug)
+    if groups:
+        group_summaries = collect_group_summaries(groups)
+        all_seasons = all(group.kind == "season" for group in group_summaries)
+        items = [
+            {
+                "key": group.key,
+                "label": group.label if not all_seasons else f"Season {group.key}",
+                "kind": group.kind,
+                "episodes": group.episodes,
+                "published": year_span(group.year_min, group.year_max),
+                "url": group.url,
+            }
+            for group in group_summaries
+        ]
+        return _season_summary_items_to_payload(
+            slug=slug,
+            program_url=program_url,
+            has_seasons=all_seasons,
+            has_groups=True,
+            items=items,
+        )
+    _, sources = discover_season_listing_sources(slug)
+    episodes, summary = collect_season_summary_from_sources(sources)
+    if not summary.has_seasons:
+        items = [
+            {
+                "key": "default",
+                "label": "All episodes",
+                "kind": "flat",
+                "episodes": len(episodes),
+                "published": year_span(summary.show_year_min, summary.show_year_max),
+                "url": program_url,
+            }
+        ]
+    else:
+        items = [
+            {
+                "key": season,
+                "label": f"Season {season}",
+                "kind": "season",
+                "episodes": summary.counts[season],
+                "published": year_span(
+                    summary.year_min.get(season, ""),
+                    summary.year_max.get(season, ""),
+                ),
+                "url": f"{program_url}/stagione-{season}",
+            }
+            for season in sorted(summary.counts, key=lambda item: int(item))
+        ]
+    return _season_summary_items_to_payload(
+        slug=slug,
+        program_url=program_url,
+        has_seasons=summary.has_seasons,
+        has_groups=False,
+        items=items,
+    )
+
+
+def load_season_listing_payload(settings: Settings, slug: str) -> dict[str, Any]:
+    cache_file = _season_summary_cache_file(settings, slug)
+    if cache_file_is_fresh(cache_file, LIST_CACHE_MAX_AGE_HOURS):
+        payload = _load_json_cache(cache_file)
+        if payload.get("version") == LIST_CACHE_VERSION:
+            return payload
+    payload = _build_season_listing_payload(settings, slug)
+    _write_json_cache(cache_file, payload)
+    return payload
+
+
+def _episode_payload_from_context(
+    slug: str,
+    program_url: str,
+    summary: SeasonSummary,
+    episodes: list[Episode],
+) -> dict[str, Any]:
+    return {
+        "version": LIST_CACHE_VERSION,
+        "slug": slug,
+        "program_url": program_url,
+        "summary": {
+            "has_seasons": summary.has_seasons,
+            "latest_season": getattr(summary, "latest_season", "1"),
+            "show_year_min": getattr(summary, "show_year_min", ""),
+            "show_year_max": getattr(summary, "show_year_max", ""),
+            "counts": getattr(summary, "counts", {}),
+            "year_min": getattr(summary, "year_min", {}),
+            "year_max": getattr(summary, "year_max", {}),
+        },
+        "episodes": [
+            {
+                "episode_id": episode.episode_id,
+                "url": episode.url,
+                "label": getattr(episode, "label", getattr(episode, "episode_id", "")),
+                "title": getattr(episode, "title", ""),
+                "upload_date": getattr(episode, "upload_date", "NA"),
+                "season": getattr(episode, "season", "1"),
+                "year": getattr(episode, "year", "NA"),
+                "group_label": getattr(episode, "group_label", ""),
+                "group_kind": getattr(episode, "group_kind", ""),
+            }
+            for episode in episodes
+        ],
+    }
+
+
+def _context_from_episode_payload(
+    payload: dict[str, Any],
+) -> tuple[str, str, list[Episode], SeasonSummary]:
+    episodes = [
+        Episode(
+            episode_id=item["episode_id"],
+            url=item["url"],
+            label=item["label"],
+            title=item.get("title", ""),
+            upload_date=item.get("upload_date", "NA"),
+            season=item.get("season", "1"),
+            year=item.get("year", "NA"),
+            group_label=item.get("group_label", ""),
+            group_kind=item.get("group_kind", ""),
+        )
+        for item in payload["episodes"]
+    ]
+    raw_summary = payload["summary"]
+    summary = SeasonSummary(
+        counts={str(key): int(value) for key, value in raw_summary["counts"].items()},
+        year_min={str(key): str(value) for key, value in raw_summary["year_min"].items()},
+        year_max={str(key): str(value) for key, value in raw_summary["year_max"].items()},
+        show_year_min=str(raw_summary["show_year_min"]),
+        show_year_max=str(raw_summary["show_year_max"]),
+        has_seasons=bool(raw_summary["has_seasons"]),
+        latest_season=str(raw_summary["latest_season"]),
+    )
+    return str(payload["slug"]), str(payload["program_url"]), episodes, summary
 
 
 def make_argument_parser(**kwargs: Any) -> argparse.ArgumentParser:
@@ -400,140 +580,104 @@ def list_programs(settings: Settings, args: argparse.Namespace) -> int:
 def list_seasons(settings: Settings, args: argparse.Namespace) -> int:
     selected_seasons, request_all = build_requested_set(args.season or settings.seasons_arg)
     slug, program_url = detect_slug(args.input)
-    _, groups = discover_group_listing_sources(slug)
-    if groups:
-        group_summaries = collect_group_summaries(groups)
-        all_seasons = all(group.kind == "season" for group in group_summaries)
+    payload = load_season_listing_payload(settings, slug)
+    program_url = str(payload["program_url"])
+    items = [dict(item) for item in payload["items"]]
+    has_groups = bool(payload["has_groups"])
+    all_seasons = bool(payload["has_seasons"]) and all(
+        str(item["kind"]) == "season" for item in items
+    )
+    if has_groups:
         if not all_seasons and (selected_seasons or request_all):
             raise CLIError("this program does not expose seasons, so --season cannot be used.")
         if all_seasons and selected_seasons and not request_all:
-            available = {group.key for group in group_summaries}
+            available = {str(item["key"]) for item in items}
             missing = sorted(selected_seasons - available, key=int)
             if missing:
                 raise CLIError(f"season {missing[0]} is not available.")
-            group_summaries = [group for group in group_summaries if group.key in selected_seasons]
-    else:
-        group_summaries = []
-        all_seasons = False
+            items = [item for item in items if str(item["key"]) in selected_seasons]
     if args.json:
-        items = []
-        has_seasons = all_seasons
-        if group_summaries:
-            for group in group_summaries:
-                items.append(
-                    {
-                        "key": group.key,
-                        "label": group.label,
-                        "kind": group.kind,
-                        "episodes": group.episodes,
-                        "published": year_span(group.year_min, group.year_max),
-                        "url": group.url,
-                    }
-                )
-        else:
-            _, sources = discover_season_listing_sources(slug)
-            episodes, summary = collect_season_summary_from_sources(sources)
-            has_seasons = summary.has_seasons
-            if not summary.has_seasons:
-                if selected_seasons or request_all:
-                    raise CLIError(
-                        "this program does not expose seasons, so --season cannot be used."
-                    )
-                items.append(
-                    {
-                        "key": "default",
-                        "label": "All episodes",
-                        "kind": "flat",
-                        "episodes": len(episodes),
-                        "published": year_span(summary.show_year_min, summary.show_year_max),
-                        "url": program_url,
-                    }
-                )
-            else:
-                available = set(summary.counts)
-                if selected_seasons and not request_all:
-                    missing = sorted(selected_seasons - available, key=int)
-                    if missing:
-                        raise CLIError(f"season {missing[0]} is not available.")
-                for season in sorted(summary.counts, key=lambda item: int(item)):
-                    if selected_seasons and not request_all and season not in selected_seasons:
-                        continue
-                    items.append(
-                        {
-                            "key": season,
-                            "label": f"Season {season}",
-                            "kind": "season",
-                            "episodes": summary.counts[season],
-                            "published": year_span(
-                                summary.year_min.get(season, ""),
-                                summary.year_max.get(season, ""),
-                            ),
-                            "url": f"{program_url}/stagione-{season}",
-                        }
-                    )
+        has_seasons = bool(payload["has_seasons"])
+        if not has_groups and not has_seasons and (selected_seasons or request_all):
+            raise CLIError("this program does not expose seasons, so --season cannot be used.")
+        if not has_groups and has_seasons and selected_seasons and not request_all:
+            available = {str(item["key"]) for item in items}
+            missing = sorted(selected_seasons - available, key=int)
+            if missing:
+                raise CLIError(f"season {missing[0]} is not available.")
+            items = [item for item in items if str(item["key"]) in selected_seasons]
         json_dump(
             {
                 "mode": "seasons",
                 "slug": slug,
                 "program_url": program_url,
                 "has_seasons": has_seasons,
-                "has_groups": bool(group_summaries),
+                "has_groups": has_groups,
                 "items": items,
             }
         )
         return 0
-    if group_summaries:
+    if has_groups:
         if all_seasons:
             console.print(f"Available seasons for {slug} ({program_url}):")
-            sorted_groups = sorted(group_summaries, key=lambda item: int(item.key))
-            for group in sorted_groups:
-                published = year_span(group.year_min, group.year_max)
+            sorted_items = sorted(items, key=lambda item: int(str(item["key"])))
+            for item in sorted_items:
                 console.print(
-                    f"  - Season {group.key}: {group.episodes} episodes "
-                    f"(published: {published})"
+                    f"  - Season {item['key']}: {item['episodes']} episodes "
+                    f"(published: {item['published']})"
                 )
-            print_season_download_suggestions(slug, [group.key for group in sorted_groups])
+            print_season_download_suggestions(slug, [str(item["key"]) for item in sorted_items])
             return 0
         console.print(f"Available groupings for {slug} ({program_url}):")
-        for group in group_summaries:
-            published = year_span(group.year_min, group.year_max)
+        for item in items:
             console.print(
-                f"  - {group.label}: {group.episodes} episodes "
-                f"({group.kind}; select with --group {group.key}; published: {published})"
+                f"  - {item['label']}: {item['episodes']} episodes "
+                f"({item['kind']}; select with --group {item['key']}; "
+                f"published: {item['published']})"
             )
-        print_group_download_suggestions(slug, group_summaries)
+        print_group_download_suggestions(
+            slug,
+            [
+                type(
+                    "GroupSummaryProxy",
+                    (),
+                    {
+                        "key": item["key"],
+                        "label": item["label"],
+                        "url": item["url"],
+                        "kind": item["kind"],
+                    },
+                )()
+                for item in items
+            ],
+        )
         return 0
-    _, sources = discover_season_listing_sources(slug)
-    episodes, summary = collect_season_summary_from_sources(sources)
-    if not summary.has_seasons:
+    has_seasons = bool(payload["has_seasons"])
+    if not has_seasons:
         if selected_seasons or request_all:
             raise CLIError("this program does not expose seasons, so --season cannot be used.")
         console.print(f"No seasons detected for {slug} ({program_url}).")
         console.print(
-            f"  - Episodes: {len(episodes)} "
-            f"(published: {year_span(summary.show_year_min, summary.show_year_max)})"
+            f"  - Episodes: {items[0]['episodes']} " f"(published: {items[0]['published']})"
         )
         return 0
     console.print(f"Available seasons for {slug} ({program_url}):")
-    available = set(summary.counts)
+    available = {str(item["key"]) for item in items}
     if selected_seasons and not request_all:
         missing = sorted(selected_seasons - available, key=int)
         if missing:
             raise CLIError(f"season {missing[0]} is not available.")
-    sorted_seasons = [
-        season
-        for season in sorted(summary.counts, key=lambda item: int(item))
-        if not selected_seasons or request_all or season in selected_seasons
+    sorted_items = [
+        item
+        for item in sorted(items, key=lambda entry: int(str(entry["key"])))
+        if not selected_seasons or request_all or str(item["key"]) in selected_seasons
     ]
-    for season in sorted_seasons:
-        published = year_span(
-            summary.year_min.get(season, ""),
-            summary.year_max.get(season, ""),
-        )
+    for item in sorted_items:
         console.print(
-            f"  - Season {season}: {summary.counts[season]} episodes " f"(published: {published})"
+            f"  - Season {item['key']}: {item['episodes']} episodes "
+            f"(published: {item['published']})"
         )
-    print_season_download_suggestions(slug, sorted_seasons)
+    print_season_download_suggestions(slug, [str(item["key"]) for item in sorted_items])
     return 0
 
 
@@ -541,21 +685,44 @@ def list_episodes(settings: Settings, args: argparse.Namespace) -> int:
     selected_seasons, request_all = build_requested_set(args.season or settings.seasons_arg)
     selected_groups = build_requested_groups(args.group or settings.groups_arg)
     input_value = args.input
-    slug, _program_url = detect_slug(input_value)
+    slug, program_url = detect_slug(input_value)
     sources_override, groups, non_season_groups = discover_grouped_episode_sources(
         slug,
         selected_seasons,
         request_all,
         selected_groups,
     )
-    slug, program_url, episodes, summary = load_list_episode_context(
-        settings,
-        input_value,
-        selected_seasons,
-        request_all,
-        sources_override=sources_override,
-        source_groups_override=groups,
-    )
+    cache_sources = sources_override or [program_url]
+    cache_file = _episode_list_cache_file(settings, slug, cache_sources)
+    if cache_file_is_fresh(cache_file, LIST_CACHE_MAX_AGE_HOURS):
+        payload = _load_json_cache(cache_file)
+        if payload.get("version") == LIST_CACHE_VERSION:
+            slug, program_url, episodes, summary = _context_from_episode_payload(payload)
+        else:
+            slug, program_url, episodes, summary = load_list_episode_context(
+                settings,
+                input_value,
+                selected_seasons,
+                request_all,
+                sources_override=sources_override,
+                source_groups_override=groups,
+            )
+            _write_json_cache(
+                cache_file, _episode_payload_from_context(slug, program_url, summary, episodes)
+            )
+    else:
+        slug, program_url, episodes, summary = load_list_episode_context(
+            settings,
+            input_value,
+            selected_seasons,
+            request_all,
+            sources_override=sources_override,
+            source_groups_override=groups,
+        )
+        _write_json_cache(
+            cache_file,
+            _episode_payload_from_context(slug, program_url, summary, episodes),
+        )
     if non_season_groups:
         summary.has_seasons = False
     filtered = filter_episodes_for_list_or_download(
@@ -994,7 +1161,7 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
             if len(parts) >= 2
         }
     missing_archived_ids: set[str] = set()
-    if archived_ids:
+    if archived_ids and settings.auto_redownload_missing:
         with concurrent.futures.ThreadPoolExecutor(max_workers=settings.check_jobs) as executor:
             check_futures: dict[
                 concurrent.futures.Future[bool],
@@ -1012,7 +1179,7 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
             for check_future in concurrent.futures.as_completed(check_futures):
                 if not check_future.result():
                     missing_archived_ids.add(check_futures[check_future].episode_id)
-        if missing_archived_ids and settings.auto_redownload_missing:
+        if missing_archived_ids:
             remove_missing_ids_from_archive(archive_file, missing_archived_ids)
     log_file = resolve_log_file(
         enable_log=settings.enable_log,

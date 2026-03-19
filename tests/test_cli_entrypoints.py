@@ -293,6 +293,84 @@ def test_list_episodes_skips_metadata_refresh_and_cache_writes(
     assert not (settings.target_base / "musicalbox").exists()
 
 
+def test_list_episodes_uses_cached_payload(monkeypatch, tmp_path: Path, capsys) -> None:
+    settings = Settings()
+    settings.catalog_cache_file = tmp_path / "state" / "program-catalog.tsv"
+    cache_file = settings.catalog_cache_file.parent / "list-episodes" / "profili-cache.json"
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    cache_file.write_text(
+        """
+{
+  "version": 1,
+  "slug": "profili",
+  "program_url": "https://www.raiplaysound.it/programmi/profili",
+  "summary": {
+    "has_seasons": false,
+    "latest_season": "1",
+    "show_year_min": "2018",
+    "show_year_max": "2018",
+    "counts": {"1": 2},
+    "year_min": {"1": "2018"},
+    "year_max": {"1": "2018"}
+  },
+  "episodes": [
+    {
+      "episode_id": "ep-1",
+      "url": "https://www.raiplaysound.it/audio/ep-1.html",
+      "label": "ep-1",
+      "title": "Intervista a Lucio Dalla",
+      "upload_date": "20180302",
+      "season": "1",
+      "year": "2018",
+      "group_label": "Speciale Lucio Dalla",
+      "group_kind": "special"
+    }
+  ]
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(cli, "parse_env_file", lambda _path: {"COMMAND": "list"})
+    monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
+    monkeypatch.setattr(
+        cli,
+        "discover_grouped_episode_sources",
+        lambda _slug, _selected_seasons, _request_all, _selected_groups: (
+            ["https://www.raiplaysound.it/programmi/profili/speciali/speciale-lucio-dalla"],
+            [
+                GroupSource(
+                    key="speciale-lucio-dalla",
+                    label="Speciale Lucio Dalla",
+                    url="https://www.raiplaysound.it/programmi/profili/speciali/speciale-lucio-dalla",
+                    kind="special",
+                )
+            ],
+            True,
+        ),
+    )
+    monkeypatch.setattr(cli, "_episode_list_cache_file", lambda *_args, **_kwargs: cache_file)
+    monkeypatch.setattr(
+        cli,
+        "load_list_episode_context",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("fresh episode cache should avoid live recomputation")
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "filter_episodes_for_list_or_download",
+        lambda episodes, *_args, **_kwargs: episodes,
+    )
+
+    result = cli.main(["list", "episodes", "profili"])
+    captured = capsys.readouterr()
+
+    assert result == 0
+    assert "Speciale Lucio Dalla" in captured.out
+    assert "Intervista a Lucio Dalla" in captured.out
+
+
 def test_list_episodes_aggregates_discovered_groupings(monkeypatch, capsys) -> None:
     settings = Settings()
 
@@ -544,6 +622,51 @@ def test_list_seasons_skips_metadata_refresh_and_cache_writes(
     assert not (settings.target_base / "america7").exists()
 
 
+def test_list_seasons_uses_cached_summary_payload(monkeypatch, tmp_path: Path, capsys) -> None:
+    settings = Settings()
+    settings.catalog_cache_file = tmp_path / "state" / "program-catalog.tsv"
+    cache_file = settings.catalog_cache_file.parent / "list-seasons" / "america7.json"
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    cache_file.write_text(
+        """
+{
+  "version": 1,
+  "slug": "america7",
+  "program_url": "https://www.raiplaysound.it/programmi/america7",
+  "has_seasons": true,
+  "has_groups": false,
+  "items": [
+    {
+      "key": "2",
+      "label": "Season 2",
+      "kind": "season",
+      "episodes": 17,
+      "published": "2025-2026",
+      "url": "https://www.raiplaysound.it/programmi/america7/stagione-2"
+    }
+  ]
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(cli, "parse_env_file", lambda _path: {"COMMAND": "list"})
+    monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
+    monkeypatch.setattr(
+        cli,
+        "_build_season_listing_payload",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("fresh season cache should avoid live recomputation")
+        ),
+    )
+
+    result = cli.main(["list", "seasons", "america7"])
+    captured = capsys.readouterr()
+
+    assert result == 0
+    assert "Season 2: 17 episodes" in captured.out
+
+
 def test_list_seasons_prints_groupings_for_special_collections(monkeypatch, capsys) -> None:
     settings = Settings()
 
@@ -624,8 +747,11 @@ def test_list_seasons_prints_groupings_for_special_collections(monkeypatch, caps
     )
 
 
-def test_list_seasons_prints_download_suggestions_for_real_seasons(monkeypatch, capsys) -> None:
+def test_list_seasons_prints_download_suggestions_for_real_seasons(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
     settings = Settings()
+    settings.catalog_cache_file = tmp_path / "state" / "program-catalog.tsv"
 
     monkeypatch.setattr(cli, "parse_env_file", lambda _path: {"COMMAND": "list"})
     monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
@@ -713,8 +839,11 @@ def test_main_without_args_ignores_configured_list_episodes(monkeypatch, capsys)
     assert "usage: raiplaysound-cli download" in captured.out
 
 
-def test_list_episodes_text_prints_download_suggestions(monkeypatch, capsys) -> None:
+def test_list_episodes_text_prints_download_suggestions(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
     settings = Settings()
+    settings.catalog_cache_file = tmp_path / "state" / "program-catalog.tsv"
 
     monkeypatch.setattr(cli, "parse_env_file", lambda _path: {"COMMAND": "list"})
     monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
@@ -937,8 +1066,11 @@ def test_collect_episodes_from_flat_source_does_not_mark_real_season(monkeypatch
     assert episodes[0].season == ""
 
 
-def test_list_seasons_honors_season_filter_for_real_seasons(monkeypatch, capsys) -> None:
+def test_list_seasons_honors_season_filter_for_real_seasons(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
     settings = Settings()
+    settings.catalog_cache_file = tmp_path / "state" / "program-catalog.tsv"
 
     monkeypatch.setattr(cli, "parse_env_file", lambda _path: {"COMMAND": "list"})
     monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
@@ -1286,4 +1418,98 @@ def test_download_refreshes_metadata_only_for_filtered_episodes(
     assert result == 0
     assert captured_targets == [["https://www.raiplaysound.it/audio/ep-2.html"]]
     assert written_cache == {"ep-2": ("20260306", "2", "Episode Two")}
+    assert "Completed: done=1, skipped=0, errors=0" in captured.out
+
+
+def test_download_skips_missing_scan_when_missing_not_enabled(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    settings = Settings()
+    settings.target_base = tmp_path / "Music" / "RaiPlaySound"
+    settings.jobs = 1
+    settings.check_jobs = 1
+    target_dir = settings.target_base / "america7"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    (target_dir / ".download-archive.txt").write_text("raiplaysound ep-1\n", encoding="utf-8")
+
+    monkeypatch.setattr(cli, "parse_env_file", lambda _path: {})
+    monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
+    monkeypatch.setattr(
+        cli,
+        "discover_grouped_episode_sources",
+        lambda _slug, _selected_seasons, _request_all, _selected_groups: (None, None, False),
+    )
+    monkeypatch.setattr(
+        cli,
+        "load_cached_show_context",
+        lambda *_args, **_kwargs: (
+            "america7",
+            "https://www.raiplaysound.it/programmi/america7",
+            [
+                type(
+                    "Episode",
+                    (),
+                    {
+                        "season": "2",
+                        "group_label": "",
+                        "group_kind": "",
+                        "pretty_date": "2026-03-06",
+                        "title": "Episode Two",
+                        "label": "episode-two",
+                        "episode_id": "ep-1",
+                        "url": "https://www.raiplaysound.it/audio/ep-1.html",
+                        "upload_date": "20260306",
+                        "year": "2026",
+                    },
+                )()
+            ],
+            type(
+                "Summary",
+                (),
+                {
+                    "has_seasons": True,
+                    "latest_season": "2",
+                    "counts": {"2": 1},
+                    "year_min": {"2": "2026"},
+                    "year_max": {"2": "2026"},
+                    "show_year_min": "2026",
+                    "show_year_max": "2026",
+                },
+            )(),
+            target_dir / ".metadata-cache.tsv",
+            {"ep-1": ("20260306", "2", "Episode Two")},
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "filter_episodes_for_list_or_download",
+        lambda episodes, *_args, **_kwargs: episodes,
+    )
+    monkeypatch.setattr(
+        cli,
+        "predicted_media_exists",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("missing scan should be skipped unless --missing is enabled")
+        ),
+    )
+    monkeypatch.setattr(cli, "acquire_lock", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(cli, "release_lock", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(cli, "resolve_log_file", lambda **_kwargs: None)
+
+    class FakeDownloader:
+        def __init__(self, **_kwargs) -> None:
+            return None
+
+        def download_one(self, task: object) -> tuple[str, str]:
+            return "DONE", "done"
+
+        def terminate_all(self) -> None:
+            return None
+
+    monkeypatch.setattr(cli, "Downloader", FakeDownloader)
+
+    result = cli.main(["download", "america7"])
+    captured = capsys.readouterr()
+
+    assert result == 0
     assert "Completed: done=1, skipped=0, errors=0" in captured.out

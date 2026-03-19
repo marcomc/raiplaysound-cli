@@ -55,6 +55,11 @@ All notable changes to this project are documented in this file.
   metadata refresh until after episode filtering, so `--group`,
   `--episode-ids`, and `--episode-urls` only refresh metadata for the episodes
   that will actually be downloaded.
+- Added dedicated state-dir caches for repeated `list seasons` and
+  scope-specific `list episodes` calls, so list commands can reuse prior
+  summaries without touching download-side metadata.
+- Reduced download startup overhead further by skipping archive/file existence
+  scans unless missing-file recovery is actually enabled.
 
 ## [2.0.0] - 2026-03-10 - Python Package Port
 
