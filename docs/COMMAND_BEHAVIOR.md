@@ -29,7 +29,8 @@ It is intended as a command contract reference for contributors and AI agents.
 - `raiplaysound-cli list --help` prints list-specific help with a compact usage
   line, grouped option sections, and short examples.
 - `raiplaysound-cli download --help` prints download-specific help with grouped
-  option sections, an explicit `PROGRAM` positional name, and short examples.
+  option sections, an explicit `PROGRAM_SLUG_OR_URL` positional name, and
+  short examples.
 - Compatibility aliases remain accepted where supported, but should be hidden
   from normal help output so the documented surface stays focused on the
   preferred flags.

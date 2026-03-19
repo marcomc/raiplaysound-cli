@@ -59,21 +59,21 @@ def test_list_help_prints_command_specific_help(capsys) -> None:
 
     assert result == 0
     assert (
-        "usage: raiplaysound-cli list <stations|programs|seasons|episodes> [PROGRAM] [options]"
-        in captured.out
+        "usage: raiplaysound-cli list <stations|programs|seasons|episodes> "
+        "[PROGRAM_SLUG_OR_URL] [options]" in captured.out
     )
     assert "Targets:" not in captured.out
     assert "What to list. One of:" not in captured.out
     assert "For `seasons` and `episodes`: a program slug or full URL." in captured.out
-    assert "`PROGRAM`" in captured.out
+    assert "`PROGRAM_SLUG`" in captured.out
     assert "General:" in captured.out
     assert "Programs:" in captured.out
     assert "Episodes:" in captured.out
     assert "options:" not in captured.out
     assert "Examples:" in captured.out
     assert "--pager" in captured.out
-    assert "raiplaysound-cli list seasons PROGRAM" in captured.out
-    assert "raiplaysound-cli list programs --filter STATION" in captured.out
+    assert "raiplaysound-cli list seasons PROGRAM_SLUG" in captured.out
+    assert "raiplaysound-cli list programs --filter STATION_SLUG" in captured.out
     assert "Only for `list programs`. Refresh the cached program catalog." in captured.out
     assert "--show-urls" in captured.out
 
@@ -91,11 +91,11 @@ def test_download_help_prints_command_specific_help(capsys) -> None:
     assert "Outputs:" in captured.out
     assert "options:" not in captured.out
     assert "Examples:" in captured.out
-    assert "raiplaysound-cli download PROGRAM --season SEASON" in captured.out
-    assert "raiplaysound-cli download PROGRAM --group GROUP" in captured.out
+    assert "raiplaysound-cli download PROGRAM_SLUG --season SEASON_NUMBER" in captured.out
+    assert "raiplaysound-cli download PROGRAM_SLUG --group GROUP_SLUG" in captured.out
     assert "--episode-ids" in captured.out
     assert "--group" in captured.out
-    assert "For grouped programs. Use selector keys shown by `list seasons`." in captured.out
+    assert "For grouped programs. Use grouping slugs shown by `list seasons`." in captured.out
     assert "--seasons" not in captured.out
     assert "--episodes" not in captured.out
 
@@ -263,9 +263,9 @@ def test_list_programs_text_prints_table_and_navigation_suggestions(
     assert "show-a" in captured.out
     assert "Excerpt A" in captured.out
     assert "Next:" in captured.out
-    assert "raiplaysound-cli list programs --filter STATION" in captured.out
-    assert "raiplaysound-cli list episodes PROGRAM" in captured.out
-    assert "raiplaysound-cli download PROGRAM" in captured.out
+    assert "raiplaysound-cli list programs --filter STATION_SLUG" in captured.out
+    assert "raiplaysound-cli list episodes PROGRAM_SLUG" in captured.out
+    assert "raiplaysound-cli download PROGRAM_SLUG" in captured.out
 
 
 def test_list_stations_text_prints_table_and_program_suggestion(
@@ -308,7 +308,7 @@ def test_list_stations_text_prints_table_and_program_suggestion(
     assert "123" in captured.out
     assert "radio2" in captured.out
     assert "Next:" in captured.out
-    assert "raiplaysound-cli list programs --filter STATION" in captured.out
+    assert "raiplaysound-cli list programs --filter STATION_SLUG" in captured.out
 
 
 def test_list_episodes_does_not_create_download_directory(
