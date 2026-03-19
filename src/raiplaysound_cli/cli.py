@@ -95,6 +95,25 @@ def _episode_list_cache_file(settings: Settings, slug: str, sources: list[str]) 
     return _state_cache_dir(settings) / "list-episodes" / f"{slug}-{digest}.json"
 
 
+def _episode_listing_cache_sources(
+    input_value: str,
+    selected_seasons: set[str],
+    request_all_seasons: bool,
+    *,
+    sources_override: list[str] | None,
+    source_groups_override: list[GroupSource] | None,
+) -> tuple[str, str, list[str]]:
+    slug, program_url, sources, _source_groups = _resolve_episode_sources(
+        input_value,
+        selected_seasons,
+        request_all_seasons,
+        for_list_seasons=False,
+        sources_override=sources_override,
+        source_groups_override=source_groups_override,
+    )
+    return slug, program_url, sources
+
+
 def _season_summary_items_to_payload(
     *,
     slug: str,
@@ -138,6 +157,11 @@ def _build_season_listing_payload(settings: Settings, slug: str) -> dict[str, An
         )
     _, sources = discover_season_listing_sources(slug)
     episodes, summary = collect_season_summary_from_sources(sources)
+    season_urls = {
+        source.rsplit("-", 1)[-1]: source
+        for source in sources
+        if "/stagione-" in source and source.rsplit("-", 1)[-1].isdigit()
+    }
     if not summary.has_seasons:
         items = [
             {
@@ -160,7 +184,7 @@ def _build_season_listing_payload(settings: Settings, slug: str) -> dict[str, An
                     summary.year_min.get(season, ""),
                     summary.year_max.get(season, ""),
                 ),
-                "url": f"{program_url}/stagione-{season}",
+                "url": season_urls.get(season, f"{program_url}/stagione-{season}"),
             }
             for season in sorted(summary.counts, key=lambda item: int(item))
         ]
@@ -720,7 +744,13 @@ def list_episodes(settings: Settings, args: argparse.Namespace) -> int:
         request_all,
         selected_groups,
     )
-    cache_sources = sources_override or [program_url]
+    slug, program_url, cache_sources = _episode_listing_cache_sources(
+        input_value,
+        selected_seasons,
+        request_all,
+        sources_override=sources_override,
+        source_groups_override=groups,
+    )
     cache_file = _episode_list_cache_file(settings, slug, cache_sources)
     if cache_file_is_fresh(cache_file, LIST_CACHE_MAX_AGE_HOURS):
         try:

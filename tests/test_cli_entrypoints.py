@@ -371,6 +371,74 @@ def test_list_episodes_uses_cached_payload(monkeypatch, tmp_path: Path, capsys) 
     assert "Intervista a Lucio Dalla" in captured.out
 
 
+def test_list_episodes_cache_key_uses_resolved_season_sources(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    settings = Settings()
+    settings.catalog_cache_file = tmp_path / "state" / "program-catalog.tsv"
+
+    monkeypatch.setattr(cli, "parse_env_file", lambda _path: {"COMMAND": "list"})
+    monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
+    monkeypatch.setattr(
+        cli,
+        "discover_grouped_episode_sources",
+        lambda _slug, _selected_seasons, _request_all, _selected_groups: (None, None, False),
+    )
+
+    captured_sources: list[list[str]] = []
+
+    def fake_episode_list_cache_file(_settings: Settings, _slug: str, sources: list[str]) -> Path:
+        captured_sources.append(sources)
+        return tmp_path / "state" / "list-episodes" / "america7.json"
+
+    monkeypatch.setattr(cli, "_episode_list_cache_file", fake_episode_list_cache_file)
+    monkeypatch.setattr(
+        cli,
+        "discover_feed_sources",
+        lambda slug, selected_seasons, _request_all, _for_list: (
+            [f"https://www.raiplaysound.it/programmi/{slug}/episodi/stagione-2"]
+            if selected_seasons == {"2"}
+            else [f"https://www.raiplaysound.it/programmi/{slug}"]
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "load_list_episode_context",
+        lambda *_args, **_kwargs: (
+            "america7",
+            "https://www.raiplaysound.it/programmi/america7",
+            [],
+            type(
+                "Summary",
+                (),
+                {
+                    "has_seasons": True,
+                    "latest_season": "2",
+                    "show_year_min": "2025",
+                    "show_year_max": "2026",
+                    "counts": {"2": 0},
+                    "year_min": {"2": "2025"},
+                    "year_max": {"2": "2026"},
+                },
+            )(),
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "filter_episodes_for_list_or_download",
+        lambda episodes, *_args, **_kwargs: episodes,
+    )
+
+    result = cli.main(["list", "episodes", "america7", "--season", "2", "--json"])
+    captured = capsys.readouterr()
+
+    assert result == 0
+    assert '"mode": "episodes"' in captured.out
+    assert captured_sources == [
+        ["https://www.raiplaysound.it/programmi/america7/episodi/stagione-2"]
+    ]
+
+
 def test_list_episodes_aggregates_discovered_groupings(monkeypatch, capsys) -> None:
     settings = Settings()
 
@@ -665,6 +733,57 @@ def test_list_seasons_uses_cached_summary_payload(monkeypatch, tmp_path: Path, c
 
     assert result == 0
     assert "Season 2: 17 episodes" in captured.out
+
+
+def test_list_seasons_json_uses_real_discovered_season_urls(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    settings = Settings()
+    settings.catalog_cache_file = tmp_path / "state" / "program-catalog.tsv"
+
+    monkeypatch.setattr(cli, "parse_env_file", lambda _path: {"COMMAND": "list"})
+    monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
+    monkeypatch.setattr(
+        cli,
+        "discover_group_listing_sources",
+        lambda slug: (f"https://www.raiplaysound.it/programmi/{slug}", []),
+    )
+    monkeypatch.setattr(
+        cli,
+        "discover_season_listing_sources",
+        lambda slug: (
+            f"https://www.raiplaysound.it/programmi/{slug}",
+            [f"https://www.raiplaysound.it/programmi/{slug}/puntate/stagione-1"],
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "collect_season_summary_from_sources",
+        lambda _sources: (
+            [],
+            type(
+                "Summary",
+                (),
+                {
+                    "counts": {"1": 3},
+                    "year_min": {"1": "2024"},
+                    "year_max": {"1": "2024"},
+                    "show_year_min": "2024",
+                    "show_year_max": "2024",
+                    "has_seasons": True,
+                    "latest_season": "1",
+                },
+            )(),
+        ),
+    )
+
+    result = cli.main(["list", "seasons", "america7", "--json"])
+    captured = capsys.readouterr()
+
+    assert result == 0
+    assert (
+        '"url": "https://www.raiplaysound.it/programmi/america7/puntate/stagione-1"' in captured.out
+    )
 
 
 def test_list_seasons_prints_groupings_for_special_collections(monkeypatch, capsys) -> None:
@@ -989,6 +1108,13 @@ def test_flat_program_episode_listing_omits_season_column(monkeypatch, capsys) -
         cli,
         "discover_grouped_episode_sources",
         lambda _slug, _selected_seasons, _request_all, _selected_groups: (None, None, False),
+    )
+    monkeypatch.setattr(
+        cli,
+        "discover_feed_sources",
+        lambda slug, _selected_seasons, _request_all, _for_list: [
+            f"https://www.raiplaysound.it/programmi/{slug}"
+        ],
     )
 
     def fake_load_list_episode_context(
