@@ -15,6 +15,14 @@ All notable changes to this project are documented in this file.
 - Simplified grouped download hints below `list seasons` so they show generic
   `--group` usage patterns instead of repeating one command per discovered
   grouping.
+- Focused top-level help output on command discovery only, leaving detailed
+  options to `raiplaysound-cli list --help` and
+  `raiplaysound-cli download --help`.
+- Simplified top-level help further by removing embedded list-form examples so
+  `raiplaysound-cli --help` stays symmetric across commands.
+- Reworked `list --help` and `download --help` into clearer, sectioned help
+  screens with a compact usage line, user-facing argument descriptions, grouped
+  options, and short practical examples.
 
 ## [2.1.1] - 2026-03-19 - download progress and startup visibility improvements
 

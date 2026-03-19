@@ -71,11 +71,21 @@ Run the CLI from the user install:
 ~/.local/bin/raiplaysound-cli --version
 ```
 
-Print the full command overview, including both `list` and `download` options:
+Print the focused top-level command overview:
 
 ```bash
 ~/.local/bin/raiplaysound-cli
 ```
+
+Use command-specific help for detailed options:
+
+```bash
+~/.local/bin/raiplaysound-cli list --help
+~/.local/bin/raiplaysound-cli download --help
+```
+
+The subcommand help screens are organized by topic and include short examples,
+so they are the best place to discover the supported flags in practice.
 
 Or run it directly from the project venv:
 

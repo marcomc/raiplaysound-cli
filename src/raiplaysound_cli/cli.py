@@ -328,33 +328,22 @@ def _collect_episode_context(
 
 
 def make_argument_parser(**kwargs: Any) -> argparse.ArgumentParser:
+    kwargs.setdefault("formatter_class", argparse.RawTextHelpFormatter)
     return argparse.ArgumentParser(**kwargs)
 
 
 def format_main_help() -> str:
-    return "\n\n".join(
+    return "\n".join(
         [
-            "\n".join(
-                [
-                    "usage: raiplaysound-cli [--version] <command> [options]",
-                    "",
-                    "Python CLI for RaiPlaySound discovery and downloads.",
-                    "",
-                    "Commands:",
-                    "  list      Inspect stations, programs, seasons, or episodes",
-                    "  download  Download one program into the local music library",
-                    "",
-                    "Preferred list forms:",
-                    "  raiplaysound-cli list stations",
-                    "  raiplaysound-cli list programs",
-                    "  raiplaysound-cli list seasons <program_slug|program_url>",
-                    "  raiplaysound-cli list episodes <program_slug|program_url>",
-                    "",
-                    "Run `raiplaysound-cli <command> --help` for command-specific help.",
-                ]
-            ),
-            build_list_parser().format_help().rstrip(),
-            build_download_parser().format_help().rstrip(),
+            "usage: raiplaysound-cli [--version] <command>",
+            "",
+            "Python CLI for RaiPlaySound discovery and downloads.",
+            "",
+            "Commands:",
+            "  list      Inspect stations, programs, seasons, or episodes",
+            "  download  Download one program into the local music library",
+            "",
+            "Run `raiplaysound-cli <command> --help` for command-specific help.",
         ]
     )
 
@@ -889,76 +878,88 @@ def list_episodes(settings: Settings, args: argparse.Namespace) -> int:
 def build_list_parser() -> argparse.ArgumentParser:
     parser = make_argument_parser(
         prog="raiplaysound-cli list",
-        usage="raiplaysound-cli list <stations|programs|seasons|episodes> [INPUT] [options]",
+        usage="raiplaysound-cli list <stations|programs|seasons|episodes> [PROGRAM] [options]",
         description="Inspect RaiPlaySound stations, programs, seasons, or episodes.",
+        epilog=(
+            "Examples:\n"
+            "  raiplaysound-cli list stations\n"
+            "  raiplaysound-cli list programs --filter STATION\n"
+            "  raiplaysound-cli list seasons PROGRAM\n"
+            "  raiplaysound-cli list episodes PROGRAM --group GROUP\n"
+            "  raiplaysound-cli list episodes PROGRAM --season SEASON --show-urls"
+        ),
         color=False,
     )
     parser.add_argument(
         "positional_a",
         nargs="?",
-        metavar="TARGET_OR_INPUT",
-        help=(
-            "Preferred positional target (`stations`, `programs`, `seasons`, `episodes`) "
-            "or program input."
-        ),
+        metavar="TARGET",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "positional_b",
         nargs="?",
-        metavar="INPUT",
-        help="Optional program slug or program URL when the target is given positionally.",
+        metavar="PROGRAM",
+        help=(
+            "Program slug or full URL for `seasons` and `episodes`. Examples: "
+            "`PROGRAM`, `https://www.raiplaysound.it/programmi/PROGRAM`."
+        ),
     )
-    parser.add_argument(
+    output_group = parser.add_argument_group("Output")
+    output_group.add_argument(
         "--json",
         action="store_true",
         help="Print machine-readable JSON output.",
     )
-    parser.add_argument(
+    output_group.add_argument(
+        "--show-urls",
+        action="store_true",
+        help="Add source URLs to `list episodes` output.",
+    )
+    station_group = parser.add_argument_group("Station Listing")
+    station_group.add_argument(
         "--detailed",
         action="store_true",
         help="Show extra station details with `list stations`.",
     )
-    parser.add_argument(
+    program_group = parser.add_argument_group("Program Listing")
+    program_group.add_argument(
         "--group-by",
         choices=["auto", "alpha", "station"],
         default="auto",
         help="Program grouping mode for `list programs`.",
     )
-    parser.add_argument(
+    program_group.add_argument(
         "--filter",
         default="",
         help="Filter programs by station slug.",
     )
-    parser.add_argument(
+    program_group.add_argument(
         "--sorted",
         action="store_true",
         help="Sort program output alphabetically.",
     )
-    parser.add_argument(
+    program_group.add_argument(
         "--refresh-catalog",
         action="store_true",
         help="Refresh the cached program catalog.",
     )
-    parser.add_argument(
+    program_group.add_argument(
         "--catalog-max-age-hours",
         type=int,
         default=2160,
         help="Maximum catalog cache age in hours before refresh.",
     )
-    parser.add_argument(
-        "--show-urls",
-        action="store_true",
-        help="Show episode URLs in `list episodes` output.",
-    )
-    parser.add_argument(
+    episode_group = parser.add_argument_group("Filtering and Selection")
+    episode_group.add_argument(
         "--season",
         default="",
-        help="Restrict listing to one or more seasons.",
+        help="Only for seasonal programs. Accepts one season or a comma-separated list.",
     )
-    parser.add_argument(
+    episode_group.add_argument(
         "--group",
         default="",
-        help="Restrict `list episodes` to one or more discovered grouping keys or labels.",
+        help="Only for `list episodes`. Accepts selector keys shown by `list seasons`.",
     )
     return parser
 
@@ -966,127 +967,144 @@ def build_list_parser() -> argparse.ArgumentParser:
 def build_download_parser() -> argparse.ArgumentParser:
     parser = make_argument_parser(
         prog="raiplaysound-cli download",
-        usage="raiplaysound-cli download [options] <program_slug|program_url>",
-        description="Download RaiPlaySound episodes into the local music library.",
+        usage="raiplaysound-cli download PROGRAM [options]",
+        description=(
+            "Download RaiPlaySound episodes into the local music library.\n\n"
+            "The command downloads into TARGET_BASE/<slug>/ and keeps runs idempotent\n"
+            "with .download-archive.txt."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  raiplaysound-cli download PROGRAM\n"
+            "  raiplaysound-cli download PROGRAM --season SEASON\n"
+            "  raiplaysound-cli download PROGRAM --group GROUP\n"
+            "  raiplaysound-cli download PROGRAM --episode-ids "
+            "EPISODE_ID_1,EPISODE_ID_2\n"
+            "  raiplaysound-cli download PROGRAM --rss --playlist"
+        ),
         color=False,
     )
     parser.add_argument(
         "input",
         nargs="?",
-        metavar="INPUT",
+        metavar="PROGRAM",
         help="Program slug or full program URL.",
     )
-    parser.add_argument(
+    selection_group = parser.add_argument_group("Episode Selection")
+    selection_group.add_argument(
         "-f",
         "--format",
         default=None,
         help="Target audio format.",
     )
-    parser.add_argument(
+    selection_group.add_argument(
+        "-s",
+        "--season",
+        default="",
+        help="Only for seasonal programs. Accepts one season or a comma-separated list.",
+    )
+    selection_group.add_argument(
+        "--group",
+        default="",
+        help="Accepts selector keys shown by `raiplaysound-cli list seasons <program>`.",
+    )
+    selection_group.add_argument(
+        "--seasons",
+        dest="season_alias",
+        default="",
+        help="Legacy alias for `--season`.",
+    )
+    selection_group.add_argument(
+        "--episode-ids",
+        default="",
+        help="Comma-separated episode IDs to download.",
+    )
+    selection_group.add_argument(
+        "--episodes",
+        dest="episodes_legacy",
+        default="",
+        help="Legacy alias for `--episode-ids`.",
+    )
+    selection_group.add_argument(
+        "--episode-url",
+        action="append",
+        default=[],
+        help="Download a specific episode URL.",
+    )
+    selection_group.add_argument(
+        "--episode-urls",
+        default="",
+        help="Comma-separated episode URLs to download.",
+    )
+    execution_group = parser.add_argument_group("Execution")
+    execution_group.add_argument(
         "-j",
         "--jobs",
         type=int,
         default=None,
         help="Number of concurrent download jobs.",
     )
-    parser.add_argument(
-        "-s",
-        "--season",
-        default="",
-        help="Restrict downloads to one or more seasons.",
-    )
-    parser.add_argument(
-        "--group",
-        default="",
-        help="Restrict downloads to one or more discovered grouping keys or labels.",
-    )
-    parser.add_argument(
-        "--seasons",
-        dest="season_alias",
-        default="",
-        help="Legacy alias for `--season`.",
-    )
-    parser.add_argument(
-        "--episode-ids",
-        default="",
-        help="Comma-separated episode IDs to download.",
-    )
-    parser.add_argument(
-        "--episodes",
-        dest="episodes_legacy",
-        default="",
-        help="Legacy alias for `--episode-ids`.",
-    )
-    parser.add_argument(
-        "--episode-url",
-        action="append",
-        default=[],
-        help="Download a specific episode URL.",
-    )
-    parser.add_argument(
-        "--episode-urls",
-        default="",
-        help="Comma-separated episode URLs to download.",
-    )
-    parser.add_argument(
+    execution_group.add_argument(
         "-m",
         "--missing",
         action="store_true",
         help="Re-download archive-marked files missing locally.",
     )
-    parser.add_argument(
+    execution_group.add_argument(
         "--log",
         nargs="?",
         const="__enable__",
         default=None,
         help="Enable run logging, optionally to a specific path.",
     )
-    parser.add_argument(
+    execution_group.add_argument(
         "--debug-pids",
         action="store_true",
         help="Log worker and yt-dlp PID transitions.",
     )
-    parser.add_argument(
+    metadata_group = parser.add_argument_group("Metadata and Cache")
+    metadata_group.add_argument(
         "--refresh-metadata",
         action="store_true",
         help="Refresh the per-show metadata cache.",
     )
-    parser.add_argument(
+    metadata_group.add_argument(
         "--clear-metadata-cache",
         action="store_true",
         help="Delete the per-show metadata cache before refresh.",
     )
-    parser.add_argument(
+    metadata_group.add_argument(
         "--metadata-max-age-hours",
         type=int,
         default=None,
         help="Maximum metadata cache age in hours.",
     )
-    parser.add_argument(
+    output_group = parser.add_argument_group("Outputs")
+    output_group.add_argument(
         "--rss",
         dest="rss",
         action="store_true",
         help="Generate `feed.xml` after the download run.",
     )
-    parser.add_argument(
+    output_group.add_argument(
         "--no-rss",
         dest="rss",
         action="store_false",
         help="Disable RSS generation.",
     )
     parser.set_defaults(rss=None)
-    parser.add_argument(
+    output_group.add_argument(
         "--rss-base-url",
         default=None,
         help="Public base URL used for RSS enclosure links.",
     )
-    parser.add_argument(
+    output_group.add_argument(
         "--playlist",
         dest="playlist",
         action="store_true",
         help="Generate `playlist.m3u` after the download run.",
     )
-    parser.add_argument(
+    output_group.add_argument(
         "--no-playlist",
         dest="playlist",
         action="store_false",
@@ -1429,10 +1447,10 @@ def main(argv: list[str] | None = None) -> int:
     if not argv:
         console.print(format_main_help())
         return 0
-    if "--version" in argv:
+    if len(argv) == 1 and argv[0] == "--version":
         console.print(f"raiplaysound-cli {__version__}")
         return 0
-    if "-h" in argv or "--help" in argv:
+    if len(argv) == 1 and argv[0] in {"-h", "--help"}:
         console.print(format_main_help())
         return 0
     config = parse_env_file(Path.home() / ".raiplaysound-cli.conf")

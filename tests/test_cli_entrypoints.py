@@ -25,7 +25,7 @@ def test_main_version_prints_cli_version() -> None:
     assert "raiplaysound-cli 2.1.1" in result.stdout
 
 
-def test_main_without_args_prints_extensive_help(capsys) -> None:
+def test_main_without_args_prints_focused_help(capsys) -> None:
     result = cli.main([])
     captured = capsys.readouterr()
 
@@ -34,24 +34,63 @@ def test_main_without_args_prints_extensive_help(capsys) -> None:
     assert "Commands:" in captured.out
     assert "list      Inspect stations, programs, seasons, or episodes" in captured.out
     assert "download  Download one program into the local music library" in captured.out
-    assert "raiplaysound-cli list seasons <program_slug|program_url>" in captured.out
-    assert "raiplaysound-cli list episodes <program_slug|program_url>" in captured.out
-    assert "usage: raiplaysound-cli list" in captured.out
-    assert "usage: raiplaysound-cli download" in captured.out
-    assert "TARGET_OR_INPUT" in captured.out
-    assert "Preferred positional target" in captured.out
-    assert "--episode-ids" in captured.out
+    assert "Run `raiplaysound-cli <command> --help` for command-specific help." in captured.out
+    assert "usage: raiplaysound-cli list" not in captured.out
+    assert "usage: raiplaysound-cli download" not in captured.out
+    assert "--episode-ids" not in captured.out
     assert "\x1b[" not in captured.out
 
 
-def test_main_help_prints_extensive_help(capsys) -> None:
+def test_main_help_prints_focused_help(capsys) -> None:
     result = cli.main(["--help"])
     captured = capsys.readouterr()
 
     assert result == 0
+    assert "usage: raiplaysound-cli [--version] <command>" in captured.out
     assert "Commands:" in captured.out
-    assert "usage: raiplaysound-cli list" in captured.out
+    assert "raiplaysound-cli list stations" not in captured.out
+    assert "usage: raiplaysound-cli list" not in captured.out
+    assert "usage: raiplaysound-cli download" not in captured.out
+
+
+def test_list_help_prints_command_specific_help(capsys) -> None:
+    result = cli.main(["list", "--help"])
+    captured = capsys.readouterr()
+
+    assert result == 0
+    assert (
+        "usage: raiplaysound-cli list <stations|programs|seasons|episodes> [PROGRAM] [options]"
+        in captured.out
+    )
+    assert "Targets:" not in captured.out
+    assert "What to list. One of:" not in captured.out
+    assert "Program slug or full URL for `seasons` and `episodes`." in captured.out
+    assert "`PROGRAM`" in captured.out
+    assert "Program Listing:" in captured.out
+    assert "Filtering and Selection:" in captured.out
+    assert "Examples:" in captured.out
+    assert "raiplaysound-cli list seasons PROGRAM" in captured.out
+    assert "raiplaysound-cli list programs --filter STATION" in captured.out
+    assert "--show-urls" in captured.out
+
+
+def test_download_help_prints_command_specific_help(capsys) -> None:
+    result = cli.main(["download", "--help"])
+    captured = capsys.readouterr()
+
+    assert result == 0
     assert "usage: raiplaysound-cli download" in captured.out
+    assert "Episode Selection:" in captured.out
+    assert "Execution:" in captured.out
+    assert "Metadata and Cache:" in captured.out
+    assert "Outputs:" in captured.out
+    assert "Examples:" in captured.out
+    assert "raiplaysound-cli download PROGRAM --season SEASON" in captured.out
+    assert "raiplaysound-cli download PROGRAM --group GROUP" in captured.out
+    assert "--episode-ids" in captured.out
+    assert "--group" in captured.out
+    assert "Accepts selector keys shown by" in captured.out
+    assert "`raiplaysound-cli list seasons <program>`" in captured.out
 
 
 def test_main_list_requires_exactly_one_target(capsys) -> None:
@@ -634,7 +673,8 @@ def test_main_without_args_ignores_configured_list_seasons(monkeypatch, capsys) 
 
     assert result == 0
     assert "Commands:" in captured.out
-    assert "usage: raiplaysound-cli list" in captured.out
+    assert "usage: raiplaysound-cli [--version] <command>" in captured.out
+    assert "usage: raiplaysound-cli list" not in captured.out
 
 
 def test_list_seasons_skips_metadata_refresh_and_cache_writes(
@@ -982,7 +1022,8 @@ def test_main_without_args_ignores_configured_list_episodes(monkeypatch, capsys)
 
     assert result == 0
     assert "Commands:" in captured.out
-    assert "usage: raiplaysound-cli download" in captured.out
+    assert "usage: raiplaysound-cli [--version] <command>" in captured.out
+    assert "usage: raiplaysound-cli download" not in captured.out
 
 
 def test_list_episodes_text_prints_download_suggestions(

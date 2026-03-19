@@ -17,14 +17,19 @@ It is intended as a command contract reference for contributors and AI agents.
 
 ## Top-Level Invocation
 
-- `raiplaysound-cli` with no arguments prints the combined help text and exits
-  with status `0`.
-- `raiplaysound-cli --help` prints the same combined help text and exits with
-  status `0`.
+- `raiplaysound-cli` with no arguments prints the focused top-level help text
+  and exits with status `0`.
+- `raiplaysound-cli --help` prints the same focused top-level help text and
+  exits with status `0`.
 - `raiplaysound-cli --version` prints the CLI version and exits with status
   `0`.
-- Top-level help should list the available commands and the supported options
-  for both `list` and `download`.
+- Top-level help should list only the available commands and the pointer to
+  command-specific help; it should not inline command examples or the full
+  option sets for `list` and `download`.
+- `raiplaysound-cli list --help` prints list-specific help with a compact usage
+  line, grouped option sections, and short examples.
+- `raiplaysound-cli download --help` prints download-specific help with grouped
+  option sections, an explicit `PROGRAM` positional name, and short examples.
 - Empty invocation does not dispatch any config-selected command.
 
 ## Command Selection
