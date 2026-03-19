@@ -97,6 +97,8 @@ raiplaysound-cli list episodes america7
   of incorrectly collapsing to a flat list
 - repeated runs can reuse a dedicated state-dir summary cache instead of
   re-enumerating every grouping every time
+- cached list payloads are short-lived and versioned, and stale or incompatible
+  payloads must be rebuilt automatically rather than reused
 - non-season grouping output includes the exact `--group` selector token for
   each grouping and matching `download --group ...` suggestions
 - `--season` narrows the output only for real seasonal programs
@@ -113,6 +115,8 @@ raiplaysound-cli list episodes america7
 - uses a read-only listing path: it reuses any existing `.metadata-cache.tsv`
   for enrichment, but it should not refresh or rewrite that cache
 - repeated runs can reuse a list-only cache keyed by the resolved source set
+- cached list payloads are short-lived and versioned, and stale or incompatible
+  payloads must be rebuilt automatically rather than reused
 - `--group` narrows grouped programs to one or more discovered grouping keys or
   labels
 - `--group` cannot be combined with `--season`
@@ -216,11 +220,13 @@ Relevant config behavior:
   - named thematic buckets
   - year or period buckets
 - `list seasons` currently acts as the grouping inspector for backwards
-  compatibility
+  compatibility, and it should remain the stable long-term grouping inspector
+  command name
 
 ## Known Gaps
 
 - some program pages expose grouped UI state without directly exposing the full
-  grouping set in the initial HTML
+  grouping set in the initial HTML, so discovery may need to rely on embedded
+  program JSON filter definitions instead of only anchor tags
 - some grouped pages can still fail downstream in `yt-dlp` extraction even when
   the HTML discovery layer finds the right season or grouping URLs

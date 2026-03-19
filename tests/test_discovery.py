@@ -188,6 +188,39 @@ def test_collect_episodes_from_sources_uses_ignore_errors_for_broken_items(monke
     ]
 
 
+def test_collect_episodes_from_sources_uses_season_group_key_for_numbered_stagione_paths(
+    monkeypatch,
+) -> None:
+    def fake_run_yt_dlp(
+        args: list[str], *, allow_partial_failure: bool = False
+    ) -> subprocess.CompletedProcess[str]:
+        assert allow_partial_failure is True
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=0,
+            stdout="ep-2\thttps://www.raiplaysound.it/audio/show-ep-2.json\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(episodes, "run_yt_dlp", fake_run_yt_dlp)
+
+    source = "https://www.raiplaysound.it/programmi/show/episodi/2-stagione"
+    result = episodes.collect_episodes_from_sources(
+        [source],
+        source_groups={
+            source: GroupSource(
+                key="2",
+                label="2^ Stagione",
+                url=source,
+                kind="season",
+            )
+        },
+    )
+
+    assert [episode.episode_id for episode in result] == ["ep-2"]
+    assert result[0].season == "2"
+
+
 def test_collect_metadata_accepts_partial_failure_output(monkeypatch) -> None:
     def fake_run_yt_dlp(
         args: list[str], *, allow_partial_failure: bool = False
@@ -431,6 +464,51 @@ def test_discover_season_listing_sources_supports_caret_current_labels(monkeypat
     assert sources == [
         "https://www.raiplaysound.it/programmi/afroamerica-blackmusicrevolution/episodi/stagione-1",
         "https://www.raiplaysound.it/programmi/afroamerica-blackmusicrevolution/episodi/stagione-2",
+    ]
+
+
+def test_discover_group_listing_sources_uses_program_json_filters(monkeypatch) -> None:
+    def fake_http_get(url: str) -> str:
+        if url == "https://www.raiplaysound.it/programmi/afroamerica-blackmusicrevolution":
+            return (
+                "<button data-filters-current><span>Episodi</span></button>"
+                '<a href="/programmi/afroamerica-blackmusicrevolution/episodi/episodi">Episodi</a>'
+            )
+        if url == "https://www.raiplaysound.it/programmi/afroamerica-blackmusicrevolution.json":
+            return """
+            {
+              "filters": [
+                {
+                  "active": true,
+                  "path": "2-stagione",
+                  "label": "2^ Stagione",
+                  "weblink": "/programmi/afroamerica-blackmusicrevolution/episodi/2-stagione"
+                },
+                {
+                  "active": false,
+                  "path": "episodi",
+                  "label": "Episodi",
+                  "weblink": "/programmi/afroamerica-blackmusicrevolution/episodi/episodi"
+                }
+              ]
+            }
+            """
+        raise RuntimeError("not found")
+
+    monkeypatch.setattr(episodes, "http_get", fake_http_get)
+
+    program_url, groups = episodes.discover_group_listing_sources(
+        "afroamerica-blackmusicrevolution"
+    )
+
+    assert program_url == "https://www.raiplaysound.it/programmi/afroamerica-blackmusicrevolution"
+    assert [(group.key, group.label, group.kind, group.url) for group in groups] == [
+        (
+            "2",
+            "2^ Stagione",
+            "season",
+            "https://www.raiplaysound.it/programmi/afroamerica-blackmusicrevolution/episodi/2-stagione",
+        )
     ]
 
 

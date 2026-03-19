@@ -179,12 +179,25 @@ def _normalize_group_label(raw: str) -> str:
     return re.sub(r"\s+", " ", html.unescape(raw)).strip()
 
 
+def _season_key_from_label(label: str) -> str | None:
+    label_match = SEASON_LABEL_RE.search(label)
+    if not label_match:
+        return None
+    for value in label_match.groups():
+        if value:
+            return value
+    return None
+
+
 def _classify_group(section: str, tail: str, label: str) -> tuple[str, str] | None:
     normalized_section = section.lower()
     normalized_tail = tail.strip("/").lower()
     normalized_label = label.lower()
     if normalized_section in SKIP_GROUP_SECTIONS:
         return None
+    season_key = _season_key_from_label(label)
+    if season_key is not None:
+        return "season", season_key
     if normalized_section == "speciali":
         return "special", tail
     if normalized_section == "puntate-e-podcast":
@@ -198,6 +211,63 @@ def _classify_group(section: str, tail: str, label: str) -> tuple[str, str] | No
             return None
         return "bucket", tail
     return None
+
+
+def _program_json_url(slug: str) -> str:
+    return f"https://www.raiplaysound.it/programmi/{slug}.json"
+
+
+def _discover_groups_from_program_json(slug: str) -> list[GroupSource]:
+    try:
+        payload = json.loads(http_get(_program_json_url(slug)))
+    except Exception:
+        return []
+    if not isinstance(payload, dict):
+        return []
+    raw_filters = payload.get("filters")
+    if not isinstance(raw_filters, list):
+        return []
+
+    filter_entries: list[tuple[str, str, str]] = []
+    for item in raw_filters:
+        if not isinstance(item, dict):
+            continue
+        label = _normalize_group_label(str(item.get("label") or ""))
+        weblink = str(item.get("weblink") or "").strip()
+        path = str(item.get("path") or "").strip()
+        if not label or not weblink.startswith("/programmi/"):
+            continue
+        filter_entries.append((label, weblink.rstrip("/"), path))
+
+    has_season_filters = any(
+        _season_key_from_label(label) for label, _weblink, _path in filter_entries
+    )
+    groups: list[GroupSource] = []
+    seen_urls: set[str] = set()
+    for label, weblink, path in filter_entries:
+        href = f"https://www.raiplaysound.it{weblink}"
+        if href in seen_urls:
+            continue
+        match = re.match(
+            r"^/programmi/(?P<slug>[A-Za-z0-9-]+)/(?P<section>[^/]+)/(?P<tail>.+)$", weblink
+        )
+        classified: tuple[str, str] | None = None
+        if match and match.group("slug").lower() == slug.lower():
+            section = match.group("section")
+            tail = match.group("tail")
+            if has_season_filters and path.lower() in {"episodi", "puntate"}:
+                continue
+            classified = _classify_group(section, tail, label)
+        elif has_season_filters and _season_key_from_label(label):
+            season_key = _season_key_from_label(label)
+            if season_key is not None:
+                classified = ("season", season_key)
+        if classified is None:
+            continue
+        kind, key = classified
+        groups.append(GroupSource(key=key, label=label, url=href, kind=kind))
+        seen_urls.add(href)
+    return groups
 
 
 def discover_group_listing_sources(slug: str) -> tuple[str, list[GroupSource]]:
@@ -233,9 +303,9 @@ def discover_group_listing_sources(slug: str) -> tuple[str, list[GroupSource]]:
         current_kind = first_group.kind
         current_key = _normalize_group_token(current_label)
         if current_kind == "season":
-            season_match = re.search(r"(\d{1,3})", current_label)
-            if season_match:
-                current_key = season_match.group(1)
+            season_key = _season_key_from_label(current_label)
+            if season_key is not None:
+                current_key = season_key
         current_group = GroupSource(
             key=current_key,
             label=current_label,
@@ -246,6 +316,11 @@ def discover_group_listing_sources(slug: str) -> tuple[str, list[GroupSource]]:
             groups.append(current_group)
 
     groups.extend(linked_groups)
+    for group in _discover_groups_from_program_json(slug):
+        if group.url in seen_urls:
+            continue
+        groups.append(group)
+        seen_urls.add(group.url)
     if groups:
         return program_url, groups
 
@@ -327,11 +402,15 @@ def collect_episodes_from_sources(
     seen: dict[str, Episode] = {}
     episodes: list[Episode] = []
     for source in sources:
-        season_hint = ""
-        match = re.search(r"stagione-(\d+)$", source)
-        if match:
-            season_hint = match.group(1)
         group_source = source_groups.get(source) if source_groups is not None else None
+        season_hint = ""
+        for pattern in (r"stagione-(\d+)$", r"(\d+)-stagione$"):
+            match = re.search(pattern, source)
+            if match:
+                season_hint = match.group(1)
+                break
+        if not season_hint and group_source is not None and group_source.kind == "season":
+            season_hint = group_source.key
         result = run_yt_dlp(
             [
                 "--flat-playlist",

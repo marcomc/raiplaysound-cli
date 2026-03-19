@@ -264,6 +264,9 @@ also reports those groupings instead of incorrectly collapsing everything into a
 flat episode list. For example, programs may expose specials, named thematic
 collections, or year and period buckets instead of numbered seasons.
 
+`list seasons` is also the long-term grouping inspector name for the CLI, even
+when the discovered program structure uses non-season collections.
+
 When a program exposes real seasons, `list seasons <program> --season <n>` narrows the
 output to the requested season. For non-season groupings or flat programs,
 `--season` is rejected instead of being silently ignored.
@@ -279,6 +282,9 @@ rewrite that cache during `list episodes`.
 Repeated `list episodes` runs also use a list-only cache keyed by the resolved
 source scope, so repeated calls for the same program or grouping can reuse the
 previous listing without touching download artifacts.
+
+Those list-only caches are versioned, and stale or incompatible cached payloads
+are rebuilt automatically instead of being reused indefinitely.
 
 When a program uses non-season groupings, `list episodes <program> --group <key>`
 narrows the output to one or more discovered grouping keys or labels. For

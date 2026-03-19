@@ -251,12 +251,16 @@ Observed behavior:
 - the initial HTML did not expose `.../stagione-N` links
 - the visible link in the selector pointed to
   `/programmi/afroamerica-blackmusicrevolution/episodi/episodi`
+- the program JSON exposed a `filters` array with the real season-like weblink
+  `/programmi/afroamerica-blackmusicrevolution/episodi/2-stagione`
 
 Implication:
 
 - there are programs with season state in the UI but without directly exposed
   numbered season paths in the initial HTML
-- current discovery still under-detects seasons for this class of page
+- discovery cannot rely only on HTML anchors for this class of page
+- the program JSON filter payload is a reliable fallback source for grouping
+  definitions
 
 ### Pattern 4: special collections instead of seasons
 
@@ -307,10 +311,12 @@ Current implementation in
    - `speciali`
    - `puntate-e-podcast`
    - named or year-based `puntate` buckets
-4. Build candidate URLs for known season numbers under the detected section.
-5. When only season labels are visible, probe verified candidate season URLs
+4. Read program JSON filter definitions when the HTML selector does not expose
+   enough grouping URLs directly.
+5. Build candidate URLs for known season numbers under the detected section.
+6. When only season labels are visible, probe verified candidate season URLs
    rather than assuming both `episodi` and `puntate` exist.
-6. Probe consecutive season URLs above the highest known season number until no
+7. Probe consecutive season URLs above the highest known season number until no
    more pages are found.
 
 This works for:
@@ -318,13 +324,7 @@ This works for:
 - `america7`
 - `leripetizioni`
 - `profili`
-
-It does not yet fully work for:
-
 - `afroamerica-blackmusicrevolution`
-
-The discovery layer now finds more of the right URLs for this class of page,
-but some of those pages can still fail later in `yt-dlp` extraction.
 
 ## Known Failure Modes
 
@@ -366,8 +366,9 @@ Example:
 - `afroamerica-blackmusicrevolution`
 
 The page shows a season selector, but the initial HTML does not expose any
-`.../stagione-N` link. The CLI now probes verified season candidates for this
-shape, but downstream extraction may still fail in `yt-dlp`.
+`.../stagione-N` link. For this shape, the CLI should now fall back to the
+program JSON `filters` payload to discover season-like selector URLs such as
+`/episodi/2-stagione`.
 
 ### Some grouped pages are not seasons at all
 
@@ -381,8 +382,8 @@ Implication:
 
 - the internal discovery abstraction should be `groupings` or `collections`
   rather than only `seasons`
-- the user-facing `list seasons` command currently acts as the grouping
-  inspector for backwards compatibility
+- the user-facing `list seasons` command is the stable long-term grouping
+  inspector name, even when the program structure is not literally seasons
 
 ### Year span does not guarantee seasons
 
@@ -426,6 +427,8 @@ These caches are:
 - keyed by program slug for season summaries and by resolved source scope for
   episode listings
 - treated as short-lived list caches rather than durable download metadata
+- versioned so incompatible payloads are rebuilt automatically after discovery
+  changes
 
 ### Per-show metadata cache
 
@@ -494,15 +497,13 @@ Expected current status as of March 19, 2026:
 - `america7` should show seasons 1 and 2
 - `leripetizioni` should show seasons 1 through 5
 - `profili` should show available `speciali`
-- `afroamerica-blackmusicrevolution` is still a known gap
+- `afroamerica-blackmusicrevolution` should show season 2 via JSON-backed
+  filter discovery
 
 ## Suggested Next Work
 
-1. Handle program pages that expose season state but only link to generic pages
-   such as `/episodi/episodi`.
-2. Consider a dedicated cached season-summary artifact under the state
+1. Consider a dedicated cached season-summary artifact under the state
    directory, separate from download-side metadata cache.
-3. Add more live regression examples to tests for season discovery edge cases.
-4. If the site exposes embedded JSON for season selectors, prefer extracting
-   season definitions from that data instead of relying only on links and label
-   text.
+2. Add more live regression examples to tests for season discovery edge cases.
+3. Keep preferring embedded JSON selector/filter data when the HTML surface is
+   incomplete or ambiguous.

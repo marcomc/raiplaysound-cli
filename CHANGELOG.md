@@ -2,17 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
-## [Unreleased]
+## [2.1.0] - 2026-03-19 - speed improvements, grouping enhancements, and documentation additions
 
 ### Changed
 
-- Made `raiplaysound-cli list --seasons <program>` use a lightweight discovery
+- Made `raiplaysound-cli list seasons <program>` use a lightweight discovery
   path that skips metadata refreshes and avoids writing per-download metadata
   cache files during season-only listing.
-- Expanded `raiplaysound-cli list --seasons <program>` so it can also surface
+- Expanded `raiplaysound-cli list seasons <program>` so it can also surface
   non-season RaiPlaySound groupings such as `speciali`, instead of always
   falling back to a flat episode list.
-- Updated `raiplaysound-cli list --episodes <program>` so grouped programs are
+- Updated `raiplaysound-cli list episodes <program>` so grouped programs are
   listed across all discovered groupings, rather than only the currently
   selected subpage.
 - Corrected flat program episode listings so they no longer invent a fake `S1`
@@ -21,10 +21,14 @@ All notable changes to this project are documented in this file.
 - Extended grouping discovery to cover year and period buckets, thematic
   subseries, and thin-HTML season selectors where the current season is visible
   but numbered season links are not.
+- Extended grouping discovery further to read program JSON filter definitions
+  when the HTML selector is incomplete, so programs such as
+  `afroamerica-blackmusicrevolution` now resolve season-like paths such as
+  `/episodi/2-stagione`.
 - Updated `raiplaysound-cli download <program>` to reuse grouped discovery, so
   grouped programs download across their discovered collections instead of only
   the root subpage.
-- Changed `raiplaysound-cli list --seasons --season <n>` so it now narrows
+- Changed `raiplaysound-cli list seasons <program> --season <n>` so it now narrows
   output for real seasonal programs and rejects `--season` for non-season or
   flat programs instead of ignoring it.
 - Removed the legacy list target flags (`--stations`, `--programs`,
@@ -58,6 +62,10 @@ All notable changes to this project are documented in this file.
 - Added dedicated state-dir caches for repeated `list seasons` and
   scope-specific `list episodes` calls, so list commands can reuse prior
   summaries without touching download-side metadata.
+- Hardened list-only caches so stale or incompatible cached payloads are
+  rebuilt automatically instead of leaking bad results into later runs.
+- Bumped the list-only cache schema version again so installed CLIs rebuild old
+  cached listings after the new JSON-backed grouping discovery changes.
 - Reduced download startup overhead further by skipping archive/file existence
   scans unless missing-file recovery is actually enabled.
 
