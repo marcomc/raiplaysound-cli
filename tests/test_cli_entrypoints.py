@@ -212,7 +212,7 @@ def test_list_episodes_does_not_create_download_directory(
     monkeypatch.setattr(
         cli,
         "discover_grouped_episode_sources",
-        lambda _slug, _selected_seasons, _request_all: (None, None, False),
+        lambda _slug, _selected_seasons, _request_all, _selected_groups: (None, None, False),
     )
     monkeypatch.setattr(
         cli,
@@ -243,7 +243,7 @@ def test_list_episodes_aggregates_discovered_groupings(monkeypatch, capsys) -> N
     monkeypatch.setattr(
         cli,
         "discover_grouped_episode_sources",
-        lambda slug, _selected_seasons, _request_all: (
+        lambda slug, _selected_seasons, _request_all, _selected_groups: (
             [
                 f"https://www.raiplaysound.it/programmi/{slug}",
                 f"https://www.raiplaysound.it/programmi/{slug}/speciali/speciale-lucio-dalla",
@@ -336,6 +336,82 @@ def test_list_episodes_aggregates_discovered_groupings(monkeypatch, capsys) -> N
     assert '"group": "Speciale Lucio Dalla"' in captured.out
     assert '"title": "Speciale Pino Daniele - L\'intervista completa"' in captured.out
     assert '"title": "Intervista di Maurizio Federaro a Lucio Dalla"' in captured.out
+
+
+def test_list_episodes_filters_by_group(monkeypatch, capsys) -> None:
+    settings = Settings()
+
+    monkeypatch.setattr(cli, "parse_env_file", lambda _path: {"COMMAND": "list"})
+    monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
+    monkeypatch.setattr(
+        cli,
+        "discover_grouped_episode_sources",
+        lambda slug, _selected_seasons, _request_all, selected_groups: (
+            [f"https://www.raiplaysound.it/programmi/{slug}/speciali/speciale-lucio-dalla"],
+            [
+                GroupSource(
+                    key="speciale-lucio-dalla",
+                    label="Speciale Lucio Dalla",
+                    url=f"https://www.raiplaysound.it/programmi/{slug}/speciali/speciale-lucio-dalla",
+                    kind="special",
+                ),
+            ],
+            bool(selected_groups),
+        ),
+    )
+
+    def fake_load_show_context(
+        _settings: Settings,
+        input_value: str,
+        _selected_seasons: set[str],
+        _request_all: bool,
+        *,
+        for_list_seasons: bool = False,
+        sources_override: list[str] | None = None,
+        source_groups_override: list[GroupSource] | None = None,
+    ) -> tuple[str, str, list[object], object, Path]:
+        assert input_value == "profili"
+        assert sources_override == [
+            "https://www.raiplaysound.it/programmi/profili/speciali/speciale-lucio-dalla"
+        ]
+        assert [group.label for group in source_groups_override or []] == ["Speciale Lucio Dalla"]
+        episodes = [
+            type(
+                "Episode",
+                (),
+                {
+                    "season": "",
+                    "group_label": "Speciale Lucio Dalla",
+                    "group_kind": "special",
+                    "pretty_date": "2018-03-02",
+                    "title": "Intervista a Lucio Dalla",
+                    "episode_id": "ep-2",
+                    "url": "https://www.raiplaysound.it/audio/ep-2.html",
+                },
+            )(),
+        ]
+        summary = type("Summary", (), {"has_seasons": False})()
+        return (
+            "profili",
+            "https://www.raiplaysound.it/programmi/profili",
+            episodes,
+            summary,
+            Path("/tmp/.metadata-cache.tsv"),
+        )
+
+    monkeypatch.setattr(cli, "load_show_context", fake_load_show_context)
+    monkeypatch.setattr(
+        cli,
+        "filter_episodes_for_list_or_download",
+        lambda episodes, *_args, **_kwargs: episodes,
+    )
+
+    result = cli.main(["list", "episodes", "profili", "--group", "speciale-lucio-dalla"])
+    captured = capsys.readouterr()
+
+    assert result == 0
+    assert "Speciale Lucio Dalla" in captured.out
+    assert "Intervista a Lucio Dalla" in captured.out
 
 
 def test_main_without_args_ignores_configured_list_seasons(monkeypatch, capsys) -> None:
@@ -479,9 +555,20 @@ def test_list_seasons_prints_groupings_for_special_collections(monkeypatch, caps
 
     assert result == 0
     assert "Available groupings for profili" in captured.out
-    assert "Speciale Pino Daniele: 1 episodes (special; published: 2018)" in captured.out
-    assert "Speciale Lucio Dalla: 2 episodes (special; published: 2018)" in captured.out
+    assert "Speciale Pino Daniele: 1 episodes" in captured.out
+    assert "select with --group" in captured.out
+    assert "speciale-pino-daniele" in captured.out
+    assert "Speciale Lucio Dalla: 2 episodes" in captured.out
+    assert "speciale-lucio-dalla" in captured.out
     assert "all program episodes: raiplaysound-cli download profili" in captured.out
+    assert (
+        "speciale-pino-daniele: raiplaysound-cli download profili --group "
+        "speciale-pino-daniele" in captured.out
+    )
+    assert (
+        "speciale-lucio-dalla: raiplaysound-cli download profili --group "
+        "speciale-lucio-dalla" in captured.out
+    )
 
 
 def test_list_seasons_prints_download_suggestions_for_real_seasons(monkeypatch, capsys) -> None:
@@ -581,7 +668,7 @@ def test_list_episodes_text_prints_download_suggestions(monkeypatch, capsys) -> 
     monkeypatch.setattr(
         cli,
         "discover_grouped_episode_sources",
-        lambda _slug, _selected_seasons, _request_all: (None, None, False),
+        lambda _slug, _selected_seasons, _request_all, _selected_groups: (None, None, False),
     )
 
     def fake_load_show_context(
@@ -722,7 +809,7 @@ def test_flat_program_episode_listing_omits_season_column(monkeypatch, capsys) -
     monkeypatch.setattr(
         cli,
         "discover_grouped_episode_sources",
-        lambda _slug, _selected_seasons, _request_all: (None, None, False),
+        lambda _slug, _selected_seasons, _request_all, _selected_groups: (None, None, False),
     )
 
     def fake_load_show_context(
@@ -783,7 +870,7 @@ def test_collect_episodes_from_flat_source_does_not_mark_real_season(monkeypatch
     monkeypatch.setattr(
         episode_module,
         "run_yt_dlp",
-        lambda _args: type(
+        lambda _args, allow_partial_failure=False: type(
             "Result",
             (),
             {
@@ -928,7 +1015,7 @@ def test_download_uses_grouped_episode_sources(monkeypatch, tmp_path: Path, caps
     monkeypatch.setattr(
         cli,
         "discover_grouped_episode_sources",
-        lambda slug, _selected_seasons, _request_all: (
+        lambda slug, _selected_seasons, _request_all, selected_groups: (
             [
                 f"https://www.raiplaysound.it/programmi/{slug}",
                 f"https://www.raiplaysound.it/programmi/{slug}/speciali/speciale-lucio-dalla",
@@ -947,7 +1034,7 @@ def test_download_uses_grouped_episode_sources(monkeypatch, tmp_path: Path, caps
                     kind="special",
                 ),
             ],
-            True,
+            bool(selected_groups),
         ),
     )
 
@@ -1040,7 +1127,7 @@ def test_download_uses_grouped_episode_sources(monkeypatch, tmp_path: Path, caps
 
     monkeypatch.setattr(cli, "Downloader", FakeDownloader)
 
-    result = cli.main(["download", "profili"])
+    result = cli.main(["download", "profili", "--group", "speciale-lucio-dalla"])
     captured = capsys.readouterr()
 
     assert result == 0

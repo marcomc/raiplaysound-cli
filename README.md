@@ -146,6 +146,7 @@ Supported config keys:
 | `AUDIO_FORMAT` | `--format` | download |
 | `JOBS` | `--jobs` | download |
 | `SEASONS_ARG` | `--season` | download, list `episodes` |
+| `GROUPS_ARG` | `--group` | download, list `episodes` |
 | `EPISODES_ARG` | `--episode-ids` | download |
 | `EPISODE_URLS_ARG` | `--episode-urls` | download |
 | `AUTO_REDOWNLOAD_MISSING` | `--missing` | download |
@@ -230,6 +231,7 @@ raiplaysound-cli list seasons america7
 raiplaysound-cli list episodes america7
 raiplaysound-cli list episodes america7 --show-urls
 raiplaysound-cli list seasons america7 --json
+raiplaysound-cli list episodes battiti --group speciali
 ```
 
 Season listing uses a lightweight discovery path, so `list seasons` avoids
@@ -248,6 +250,21 @@ output to the requested season. For non-season groupings or flat programs,
 `list episodes <program>` also aggregates episodes across discovered
 groupings for grouped programs, instead of only listing the currently selected
 subpage.
+
+When a program uses non-season groupings, `list episodes <program> --group <key>`
+narrows the output to one or more discovered grouping keys or labels. For
+example:
+
+```bash
+raiplaysound-cli list episodes battiti --group speciali
+raiplaysound-cli list episodes profili --group speciale-lucio-dalla
+```
+
+`--group` cannot be combined with `--season`.
+
+`list seasons <program>` also prints the exact selectable `--group` token for
+each discovered grouping, plus ready-to-run `download --group ...` commands at
+the bottom of the listing.
 
 For flat programs that do not expose real seasons or other groupings,
 `list episodes` does not invent a fake `S1` column. Those programs are shown
@@ -283,6 +300,7 @@ raiplaysound-cli download [OPTIONS] <program_slug|program_url>
 raiplaysound-cli download musicalbox
 raiplaysound-cli download --format mp3 --jobs 5 musicalbox
 raiplaysound-cli download --season 1,2 america7
+raiplaysound-cli download battiti --group speciali
 raiplaysound-cli download --missing america7
 ```
 

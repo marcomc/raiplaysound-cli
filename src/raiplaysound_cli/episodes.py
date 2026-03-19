@@ -78,6 +78,23 @@ def build_requested_episode_filters(ids_raw: str, urls_raw: str) -> tuple[set[st
     return ids, urls
 
 
+def _normalize_group_token(value: str) -> str:
+    normalized = re.sub(r"[^A-Za-z0-9]+", "-", value.strip().lower()).strip("-")
+    return normalized
+
+
+def build_requested_groups(raw: str) -> set[str]:
+    selected: set[str] = set()
+    if not raw:
+        return selected
+    for part in [item.strip() for item in raw.split(",") if item.strip()]:
+        token = _normalize_group_token(part)
+        if not token:
+            raise CLIError(f"invalid group '{part}'.")
+        selected.add(token)
+    return selected
+
+
 def discover_feed_sources(
     slug: str,
     selected_seasons: set[str],
@@ -212,7 +229,7 @@ def discover_group_listing_sources(slug: str) -> tuple[str, list[GroupSource]]:
     if current_label and linked_groups:
         first_group = linked_groups[0]
         current_kind = first_group.kind
-        current_key = current_label
+        current_key = _normalize_group_token(current_label)
         if current_kind == "season":
             season_match = re.search(r"(\d{1,3})", current_label)
             if season_match:
@@ -256,21 +273,49 @@ def discover_grouped_episode_sources(
     slug: str,
     selected_seasons: set[str],
     include_all_seasons: bool,
+    selected_groups: set[str],
 ) -> tuple[list[str] | None, list[GroupSource] | None, bool]:
     _program_url, groups = discover_group_listing_sources(slug)
+    requested_groups = selected_groups
+    if requested_groups and (selected_seasons or include_all_seasons):
+        raise CLIError("--season and --group cannot be used together.")
     if not groups:
+        if requested_groups:
+            raise CLIError("this program does not expose groupings, so --group cannot be used.")
         return None, None, False
     all_seasons = all(group.kind == "season" for group in groups)
+    if all_seasons and requested_groups:
+        raise CLIError("this program exposes seasons, so use --season instead of --group.")
     if not all_seasons and (selected_seasons or include_all_seasons):
         raise CLIError("this program does not expose seasons, so --season cannot be used.")
-    selected_groups = groups
+    selected_sources: list[GroupSource] = list(groups)
     if all_seasons and selected_seasons and not include_all_seasons:
-        available = {group.key for group in groups}
-        missing = sorted(selected_seasons - available, key=int)
+        available_seasons = {group.key for group in groups}
+        missing = sorted(selected_seasons - available_seasons, key=int)
         if missing:
             raise CLIError(f"season {missing[0]} is not available.")
-        selected_groups = [group for group in groups if group.key in selected_seasons]
-    return [group.url for group in selected_groups], selected_groups, not all_seasons
+        selected_sources = [group for group in groups if group.key in selected_seasons]
+    elif requested_groups:
+        available: dict[str, GroupSource] = {}
+        for group in groups:
+            for candidate in {
+                _normalize_group_token(group.key),
+                _normalize_group_token(group.label),
+            }:
+                if candidate:
+                    available[candidate] = group
+        missing = sorted(requested_groups - set(available))
+        if missing:
+            raise CLIError(f"group '{missing[0]}' is not available.")
+        selected_sources = []
+        seen_urls: set[str] = set()
+        for request in sorted(requested_groups):
+            group = available[request]
+            if group.url in seen_urls:
+                continue
+            selected_sources.append(group)
+            seen_urls.add(group.url)
+    return [group.url for group in selected_sources], selected_sources, not all_seasons
 
 
 def collect_episodes_from_sources(
@@ -285,7 +330,16 @@ def collect_episodes_from_sources(
         if match:
             season_hint = match.group(1)
         group_source = source_groups.get(source) if source_groups is not None else None
-        result = run_yt_dlp(["--flat-playlist", "--print", "%(id)s\t%(webpage_url)s", source])
+        result = run_yt_dlp(
+            [
+                "--flat-playlist",
+                "--ignore-errors",
+                "--print",
+                "%(id)s\t%(webpage_url)s",
+                source,
+            ],
+            allow_partial_failure=True,
+        )
         for line in result.stdout.splitlines():
             parts = line.split("\t")
             if len(parts) < 2:
@@ -418,7 +472,8 @@ def collect_metadata(sources: list[str]) -> dict[str, tuple[str, str, str]]:
                 "--print",
                 "%(id)s\t%(upload_date|NA)s\t%(title|NA)s\t%(season_number|NA)s",
                 source,
-            ]
+            ],
+            allow_partial_failure=True,
         )
         for line in metadata.stdout.splitlines():
             parts = line.split("\t")

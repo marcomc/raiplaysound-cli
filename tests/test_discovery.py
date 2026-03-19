@@ -129,7 +129,10 @@ def test_collect_episodes_from_sources_deduplicates_ids_and_assigns_season(monke
         ),
     }
 
-    def fake_run_yt_dlp(args: list[str]) -> subprocess.CompletedProcess[str]:
+    def fake_run_yt_dlp(
+        args: list[str], *, allow_partial_failure: bool = False
+    ) -> subprocess.CompletedProcess[str]:
+        assert allow_partial_failure is True
         source = args[-1]
         return subprocess.CompletedProcess(
             args=args,
@@ -152,6 +155,65 @@ def test_collect_episodes_from_sources_deduplicates_ids_and_assigns_season(monke
     assert result[1].season == "2"
 
 
+def test_collect_episodes_from_sources_uses_ignore_errors_for_broken_items(monkeypatch) -> None:
+    captured_args: list[list[str]] = []
+
+    def fake_run_yt_dlp(
+        args: list[str], *, allow_partial_failure: bool = False
+    ) -> subprocess.CompletedProcess[str]:
+        assert allow_partial_failure is True
+        captured_args.append(args)
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=0,
+            stdout="ep-1\thttps://www.raiplaysound.it/audio/show-ep-1.html\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(episodes, "run_yt_dlp", fake_run_yt_dlp)
+
+    result = episodes.collect_episodes_from_sources(
+        ["https://www.raiplaysound.it/programmi/battiti/puntate/speciali"]
+    )
+
+    assert [episode.episode_id for episode in result] == ["ep-1"]
+    assert captured_args == [
+        [
+            "--flat-playlist",
+            "--ignore-errors",
+            "--print",
+            "%(id)s\t%(webpage_url)s",
+            "https://www.raiplaysound.it/programmi/battiti/puntate/speciali",
+        ]
+    ]
+
+
+def test_collect_metadata_accepts_partial_failure_output(monkeypatch) -> None:
+    def fake_run_yt_dlp(
+        args: list[str], *, allow_partial_failure: bool = False
+    ) -> subprocess.CompletedProcess[str]:
+        assert allow_partial_failure is True
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=1,
+            stdout=(
+                "ep-1\t20240101\tEpisode One\tNA\n"
+                "ERROR: broken item\n"
+                "ep-2\t20240102\tEpisode Two\t2\n"
+            ),
+            stderr="ERROR: broken item",
+        )
+
+    monkeypatch.setattr(episodes, "run_yt_dlp", fake_run_yt_dlp)
+
+    result = episodes.collect_metadata(["https://www.raiplaysound.it/programmi/battiti"])
+
+    assert result == {
+        "ep-1": ("20240101", "NA", "Episode One"),
+        "ep-2": ("20240102", "2", "Episode Two"),
+    }
+
+
 def test_collect_season_summary_from_sources_uses_url_years_without_metadata(monkeypatch) -> None:
     outputs = {
         "https://www.raiplaysound.it/programmi/america7/episodi/stagione-1": (
@@ -163,7 +225,10 @@ def test_collect_season_summary_from_sources_uses_url_years_without_metadata(mon
         ),
     }
 
-    def fake_run_yt_dlp(args: list[str]) -> subprocess.CompletedProcess[str]:
+    def fake_run_yt_dlp(
+        args: list[str], *, allow_partial_failure: bool = False
+    ) -> subprocess.CompletedProcess[str]:
+        assert allow_partial_failure is True
         source = args[-1]
         return subprocess.CompletedProcess(
             args=args,

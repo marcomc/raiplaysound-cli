@@ -167,10 +167,14 @@ This is the main fallback when the HTML is inconsistent.
 - enumerates episodes with `yt-dlp`
 - may refresh metadata cache when data is missing or stale
 - suppresses fake season semantics for flat programs and non-season groupings
+- accepts `--group` to select one or more discovered non-season groupings by
+  key or normalized label
 
 ### `download`
 
 - reuses the same grouping-aware source discovery used by episode listing
+- accepts `--group` to select one or more discovered non-season groupings by
+  key or normalized label
 - writes into the target show directory
 - preserves:
   - `.download-archive.txt`

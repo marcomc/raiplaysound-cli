@@ -88,6 +88,8 @@ raiplaysound-cli list episodes america7
 - when the program exposes real seasons, it prints seasons
 - when the program exposes other grouping families, it prints groupings instead
   of incorrectly collapsing to a flat list
+- non-season grouping output includes the exact `--group` selector token for
+  each grouping and matching `download --group ...` suggestions
 - `--season` narrows the output only for real seasonal programs
 - `--season` is rejected for non-season grouped programs and flat programs
 - JSON output exposes:
@@ -99,6 +101,9 @@ raiplaysound-cli list episodes america7
 
 - requires a program slug or full program URL
 - aggregates episodes across discovered group pages when the program is grouped
+- `--group` narrows grouped programs to one or more discovered grouping keys or
+  labels
+- `--group` cannot be combined with `--season`
 - for real seasonal programs, it shows the season column
 - for non-season grouped programs, it shows a grouping column instead
 - for flat programs with no real seasons or groupings, it shows no grouping
@@ -130,6 +135,8 @@ raiplaysound-cli list episodes america7
   - optional `playlist.m3u`
 - reuses grouped-source discovery, so grouped programs download across the same
   discovered collections used by `list episodes`
+- `--group` narrows grouped downloads to one or more discovered grouping keys
+  or labels
 - supports season filtering, episode-ID filtering, and episode-URL filtering
 - supports legacy aliases:
   - `--seasons` for `--season`
@@ -172,6 +179,8 @@ Relevant config behavior:
   `list episodes`
 - `LIST_TARGET` only applies when `list` is selected and no explicit list
   target was passed
+- `GROUPS_ARG` acts as the default `--group` value for `download` and
+  `list episodes`
 - `STATION_FILTER`, `GROUP_BY`, `PODCASTS_SORTED`, `SHOW_URLS`, and
   `STATIONS_DETAILED` act as list defaults
 - `CHECK_JOBS`, `TARGET_BASE`, and `CATALOG_CACHE_FILE` are config-only knobs

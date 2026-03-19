@@ -39,6 +39,7 @@ from .downloads import (
 )
 from .episodes import (
     build_requested_episode_filters,
+    build_requested_groups,
     build_requested_set,
     cache_entry_is_complete,
     collect_episodes_from_sources,
@@ -160,6 +161,17 @@ def print_season_download_suggestions(slug: str, season_keys: list[str]) -> None
         console.print(
             f"  some seasons:  raiplaysound-cli download {slug} --season "
             f"{','.join(season_keys[:2])}",
+            soft_wrap=True,
+        )
+
+
+def print_group_download_suggestions(slug: str, groups: list[Any]) -> None:
+    console.print("")
+    console.print("Download:")
+    console.print(f"  all program episodes: raiplaysound-cli download {slug}")
+    for group in groups:
+        console.print(
+            f"  {group.key}: raiplaysound-cli download {slug} --group {group.key}",
             soft_wrap=True,
         )
 
@@ -421,11 +433,9 @@ def list_seasons(settings: Settings, args: argparse.Namespace) -> int:
             published = year_span(group.year_min, group.year_max)
             console.print(
                 f"  - {group.label}: {group.episodes} episodes "
-                f"({group.kind}; published: {published})"
+                f"({group.kind}; select with --group {group.key}; published: {published})"
             )
-        console.print("")
-        console.print("Download:")
-        console.print(f"  all program episodes: raiplaysound-cli download {slug}")
+        print_group_download_suggestions(slug, group_summaries)
         return 0
     _, sources = discover_season_listing_sources(slug)
     episodes, summary = collect_season_summary_from_sources(sources)
@@ -463,12 +473,14 @@ def list_seasons(settings: Settings, args: argparse.Namespace) -> int:
 
 def list_episodes(settings: Settings, args: argparse.Namespace) -> int:
     selected_seasons, request_all = build_requested_set(args.season or settings.seasons_arg)
+    selected_groups = build_requested_groups(args.group or settings.groups_arg)
     input_value = args.input
     slug, _program_url = detect_slug(input_value)
     sources_override, groups, non_season_groups = discover_grouped_episode_sources(
         slug,
         selected_seasons,
         request_all,
+        selected_groups,
     )
     slug, program_url, episodes, summary, _metadata_cache = load_show_context(
         settings,
@@ -613,6 +625,11 @@ def build_list_parser() -> argparse.ArgumentParser:
         default="",
         help="Restrict listing to one or more seasons.",
     )
+    parser.add_argument(
+        "--group",
+        default="",
+        help="Restrict `list episodes` to one or more discovered grouping keys or labels.",
+    )
     return parser
 
 
@@ -647,6 +664,11 @@ def build_download_parser() -> argparse.ArgumentParser:
         "--season",
         default="",
         help="Restrict downloads to one or more seasons.",
+    )
+    parser.add_argument(
+        "--group",
+        default="",
+        help="Restrict downloads to one or more discovered grouping keys or labels.",
     )
     parser.add_argument(
         "--seasons",
@@ -835,6 +857,7 @@ def predicted_media_exists(episode_url: str, output_template: str, audio_format:
 def download_command(settings: Settings, args: argparse.Namespace) -> int:
     slug, program_url = detect_slug(args.input or settings.input_value)
     selected_seasons, request_all = build_requested_set(args.season or settings.seasons_arg)
+    selected_groups = build_requested_groups(args.group or settings.groups_arg)
     requested_episode_ids, requested_episode_urls = build_requested_episode_filters(
         args.episode_ids or settings.episodes_arg,
         ",".join(args.episode_url or [])
@@ -851,6 +874,7 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
         slug,
         selected_seasons,
         request_all,
+        selected_groups,
     )
     slug, program_url, episodes, summary, metadata_cache_file = load_show_context(
         settings,
@@ -1031,10 +1055,16 @@ def main(argv: list[str] | None = None) -> int:
                     "stations, programs, seasons, or episodes."
                 )
             if target == "stations":
+                if args.group:
+                    raise CLIError("--group can only be used with list episodes.")
                 return list_stations(settings, args)
             if target == "programs":
+                if args.group:
+                    raise CLIError("--group can only be used with list episodes.")
                 return list_programs(settings, args)
             if target == "seasons":
+                if args.group:
+                    raise CLIError("--group can only be used with list episodes.")
                 if not args.input:
                     raise CLIError("list seasons requires <program_slug|program_url>.")
                 return list_seasons(settings, args)

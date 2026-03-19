@@ -30,6 +30,11 @@ All notable changes to this project are documented in this file.
 - Removed the legacy list target flags (`--stations`, `--programs`,
   `--seasons`, `--episodes`) so list targets are now positional-only:
   `list stations|programs|seasons|episodes`.
+- Added `--group` for `list episodes` and `download`, so non-season grouped
+  programs can be narrowed to one or more discovered grouping keys or labels
+  such as `speciali`.
+- Updated grouping listings so each available grouping prints its exact
+  selectable `--group` token and a matching `download --group ...` command.
 - Added developer-facing documentation under `docs/` covering the current
   RaiPlaySound site structure assumptions, verified season URL patterns, cache
   behavior, and known discovery gaps for future contributors.

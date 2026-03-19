@@ -35,6 +35,14 @@ CHECK_JOBS=8
 # - list mode when LIST_TARGET="episodes"
 # SEASONS_ARG=""
 
+# Optional default grouping selection for non-season grouped programs.
+# Examples: "speciali", "speciale-lucio-dalla", "repliche"
+# Used by:
+# - download mode
+# - list mode when LIST_TARGET="episodes"
+# Cannot be combined with SEASONS_ARG.
+# GROUPS_ARG=""
+
 # Optional default episode-ID filters for download mode (comma-separated IDs).
 # Maps to: download --episode-ids
 # EPISODES_ARG=""
