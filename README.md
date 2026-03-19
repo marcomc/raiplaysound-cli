@@ -231,26 +231,41 @@ raiplaysound-cli list stations --detailed
 Example output:
 
 ```text
-Available RaiPlaySound radio stations (station slug -> name):
-  - radio1           Rai Radio 1
-  - radio2           Rai Radio 2
-  - radio3           Rai Radio 3
-  - isoradio         Rai Isoradio
-  - nonameradio      No Name Radio
-  - radio1sport      Rai Radio 1 Sport
-  - radio3classica   Rai Radio 3 Classica
+Available RaiPlaySound radio stations (7):
+┏━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━┓
+┃ Name          ┃ Programs ┃ Slug         ┃ Page ┃
+┡━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━┩
+│ Rai Radio 1   │      123 │ radio1       │ open │
+│ Rai Radio 2   │      107 │ radio2       │ open │
+│ Rai Radio 3   │      198 │ radio3       │ open │
+└───────────────┴──────────┴──────────────┴──────┘
+
+Next:
+  programs for one station: raiplaysound-cli list programs --filter radio2
 ```
 
 ```text
 Programs grouped alphabetically (107):
+┏━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━┓
+┃ Name                 ┃ Slug          ┃ Station ┃ Years     ┃ Groupings ┃ Description                  ┃ Page ┃
+┡━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━┩
+│ 1 M Next             │ 1mnext        │ radio2  │ 2025      │         — │ —                            │ open │
+│ 100 Volte Alberto    │ 100voltealbe… │ radio2  │ 2020-2025 │         — │ —                            │ open │
+│ Sordi                │               │         │           │           │                              │      │
+│ A qualcuno piace     │ aqualcunopia… │ radio2  │ 2025-2026 │         2 │ Un programma del mattino... │ open │
+│ Radio2               │               │         │           │           │                              │      │
+└──────────────────────┴───────────────┴─────────┴───────────┴───────────┴──────────────────────────────┴──────┘
 
-  - 1 M Next (1mnext) [Rai Radio 2:radio2 | 2025]
-  - 100 Volte Alberto Sordi (100voltealbertosordi) [Rai Radio 2:radio2 | 2020-2025]
-  - 5 in condotta (5incondotta) [Rai Radio 2:radio2 | 2024-2025]
-
-[A]
-  - A qualcuno piace Radio2 (aqualcunopiaceradio2) [Rai Radio 2:radio2 | 2025-2026]
+Next:
+  one station:   raiplaysound-cli list programs --filter radio2
+  one program:   raiplaysound-cli list episodes 1mnext
+  download one:  raiplaysound-cli download 1mnext
 ```
+
+`list programs` intentionally prints the full table by default so the output is
+pipe-friendly and easy to capture. For large catalogs, the most practical way
+to narrow the output is still `--filter`, `--sorted`, or a future opt-in pager
+rather than auto-paging by default.
 
 ### Inspect seasons and episodes
 

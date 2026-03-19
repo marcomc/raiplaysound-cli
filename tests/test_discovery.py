@@ -24,6 +24,9 @@ def test_fetch_program_metadata_parses_station_and_year(monkeypatch) -> None:
         station_name="Radio 2",
         station_short="radio2",
         years="2024-2025",
+        page_url="https://www.raiplaysound.it/programmi/show-a",
+        description_excerpt="",
+        grouping_count=0,
     )
 
 

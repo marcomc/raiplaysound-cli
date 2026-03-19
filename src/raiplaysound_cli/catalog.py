@@ -10,6 +10,15 @@ from .models import Program, Station
 from .runtime import http_get
 
 
+def _normalize_program_excerpt(value: str) -> str:
+    collapsed = " ".join(value.split())
+    if not collapsed:
+        return ""
+    if len(collapsed) <= 120:
+        return collapsed
+    return f"{collapsed[:117].rstrip()}..."
+
+
 def parse_stations(raw_json: str) -> list[Station]:
     payload = json.loads(raw_json)
     if isinstance(payload, dict):
@@ -54,7 +63,7 @@ def program_cache_format_is_current(path: Path) -> bool:
             if not line.strip():
                 continue
             parts = line.split("\t")
-            if len(parts) < 5:
+            if len(parts) < 8:
                 return False
             if parts[2] == "No station" and parts[3].lower() != "none":
                 return False
@@ -88,6 +97,10 @@ def fetch_program_metadata(slug: str, last_year: str = "") -> Program | None:
     channel = payload.get("channel") or {}
     station_name = channel.get("name") or "No station"
     station_short = (channel.get("category_path") or "none").lower()
+    description_excerpt = _normalize_program_excerpt(
+        str(payload.get("description") or payload.get("subtitle") or "")
+    )
+    filters = payload.get("filters") if isinstance(payload.get("filters"), list) else []
     year = str(payload.get("year") or "")
     create_date = str(payload.get("create_date") or "")
     if not re.fullmatch(r"\d{4}", year):
@@ -107,6 +120,9 @@ def fetch_program_metadata(slug: str, last_year: str = "") -> Program | None:
         station_name=station_name,
         station_short=station_short,
         years=years,
+        page_url=f"https://www.raiplaysound.it/programmi/{slug}",
+        description_excerpt=description_excerpt,
+        grouping_count=len(filters),
     )
 
 
@@ -142,7 +158,16 @@ def load_cached_programs(path: Path) -> list[Program]:
     for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
-        slug, title, station_name, station_short, years = line.split("\t", 4)
+        (
+            slug,
+            title,
+            station_name,
+            station_short,
+            years,
+            page_url,
+            description_excerpt,
+            grouping_count,
+        ) = line.split("\t", 7)
         programs.append(
             Program(
                 slug=slug,
@@ -150,6 +175,9 @@ def load_cached_programs(path: Path) -> list[Program]:
                 station_name=station_name,
                 station_short=station_short,
                 years=years,
+                page_url=page_url,
+                description_excerpt=description_excerpt,
+                grouping_count=int(grouping_count or "0"),
             )
         )
     return programs
@@ -159,7 +187,9 @@ def write_program_cache(path: Path, programs: list[Program]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         "".join(
-            f"{item.slug}\t{item.title}\t{item.station_name}\t{item.station_short}\t{item.years}\n"
+            f"{item.slug}\t{item.title}\t{item.station_name}\t{item.station_short}\t"
+            f"{item.years}\t{item.page_url}\t{item.description_excerpt}\t"
+            f"{item.grouping_count}\n"
             for item in programs
         ),
         encoding="utf-8",

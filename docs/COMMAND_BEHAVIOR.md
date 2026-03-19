@@ -74,8 +74,18 @@ raiplaysound-cli list episodes america7
 ### `list stations`
 
 - fetches live data from `dirette.json`
-- does not use a local cache
-- `--detailed` adds page and feed URLs
+- does not use a live program cache for station discovery
+- text output is a table with:
+  - `Name`
+  - `Programs`
+  - `Slug`
+  - `Page`
+  - optional `Feed` with `--detailed`
+- station program counts are taken from the locally cached program catalog when
+  available; when no compatible local catalog exists yet, the count column may
+  be unknown
+- the footer prints a concrete `list programs --filter ...` example using one
+  discovered station slug
 - JSON output includes mode, count, detail flag, and station objects
 
 ### `list programs`
@@ -93,6 +103,19 @@ raiplaysound-cli list episodes america7
 - `--group-by auto` groups by station unless a station filter is active, in
   which case it groups alphabetically
 - `--sorted` forces a flat alphabetical list
+- text output is a table with:
+  - `Name`
+  - `Slug`
+  - `Station`
+  - `Years`
+  - `Groupings`
+  - `Description`
+  - `Page`
+- the `Page` column is a clickable terminal link in Rich-capable terminals
+- the footer prints concrete follow-up commands for:
+  - listing programs for one station
+  - listing episodes for one program
+  - downloading one program
 - errors if the station filter matches nothing
 
 ### `list seasons`

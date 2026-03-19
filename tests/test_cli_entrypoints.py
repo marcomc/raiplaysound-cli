@@ -196,6 +196,9 @@ def test_main_list_programs_uses_config_filter_and_json(
                 station_name="Radio 2",
                 station_short="radio2",
                 years="2024",
+                page_url="https://www.raiplaysound.it/programmi/show-a",
+                description_excerpt="Excerpt A",
+                grouping_count=2,
             ),
             Program(
                 slug="show-b",
@@ -203,6 +206,9 @@ def test_main_list_programs_uses_config_filter_and_json(
                 station_name="Radio 3",
                 station_short="radio3",
                 years="2025",
+                page_url="https://www.raiplaysound.it/programmi/show-b",
+                description_excerpt="Excerpt B",
+                grouping_count=0,
             ),
         ],
     )
@@ -216,7 +222,9 @@ def test_main_list_programs_uses_config_filter_and_json(
     assert '"slug": "show-b"' not in captured.out
 
 
-def test_list_programs_text_prints_download_suggestion(monkeypatch, tmp_path: Path, capsys) -> None:
+def test_list_programs_text_prints_table_and_navigation_suggestions(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
     settings = Settings()
     settings.catalog_cache_file = tmp_path / "program-catalog.tsv"
 
@@ -233,6 +241,9 @@ def test_list_programs_text_prints_download_suggestion(monkeypatch, tmp_path: Pa
                 station_name="Radio 2",
                 station_short="radio2",
                 years="2024",
+                page_url="https://www.raiplaysound.it/programmi/show-a",
+                description_excerpt="Excerpt A",
+                grouping_count=2,
             )
         ],
     )
@@ -241,8 +252,61 @@ def test_list_programs_text_prints_download_suggestion(monkeypatch, tmp_path: Pa
     captured = capsys.readouterr()
 
     assert result == 0
-    assert "Download:" in captured.out
-    assert "raiplaysound-cli download <program_slug>" in captured.out
+    assert "Name" in captured.out
+    assert "Slug" in captured.out
+    assert "Station" in captured.out
+    assert "Groupings" in captured.out
+    assert "Description" in captured.out
+    assert "Page" in captured.out
+    assert "show-a" in captured.out
+    assert "Excerpt A" in captured.out
+    assert "Next:" in captured.out
+    assert "raiplaysound-cli list programs --filter STATION" in captured.out
+    assert "raiplaysound-cli list episodes PROGRAM" in captured.out
+    assert "raiplaysound-cli download PROGRAM" in captured.out
+
+
+def test_list_stations_text_prints_table_and_program_suggestion(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    settings = Settings()
+    settings.catalog_cache_file = tmp_path / "program-catalog.tsv"
+
+    monkeypatch.setattr(cli, "parse_env_file", lambda _path: {"COMMAND": "list"})
+    monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
+    monkeypatch.setattr(
+        cli,
+        "parse_stations",
+        lambda _raw: [
+            type(
+                "StationProxy",
+                (),
+                {
+                    "short": "radio2",
+                    "name": "Rai Radio 2",
+                    "page_url": "https://www.raiplaysound.it/radio2",
+                    "feed_url": "https://www.raiplaysound.it/feed-radio2",
+                },
+            )()
+        ],
+    )
+    monkeypatch.setattr(cli, "http_get", lambda _url: "{}")
+    monkeypatch.setattr(cli, "_load_station_program_counts", lambda _settings: {"radio2": 123})
+
+    result = cli.main(["list", "stations"])
+    captured = capsys.readouterr()
+
+    assert result == 0
+    assert "Available RaiPlaySound radio stations (1):" in captured.out
+    assert "Name" in captured.out
+    assert "Programs" in captured.out
+    assert "Slug" in captured.out
+    assert "Page" in captured.out
+    assert "Rai Radio 2" in captured.out
+    assert "123" in captured.out
+    assert "radio2" in captured.out
+    assert "Next:" in captured.out
+    assert "raiplaysound-cli list programs --filter STATION" in captured.out
 
 
 def test_list_episodes_does_not_create_download_directory(

@@ -350,44 +350,92 @@ def format_main_help() -> str:
 
 def print_programs_text(programs: list[Any], mode: str) -> None:
     if mode == "sorted":
-        console.print(f"Programs sorted alphabetically ({len(programs)}):")
-        for program in sorted(programs, key=lambda item: (item.title.casefold(), item.slug)):
-            console.print(f"  - {program.title} ({program.slug}) [{program.years}]")
-        return
-    if mode == "alpha":
-        console.print(f"Programs grouped alphabetically ({len(programs)}):")
-        current_group = None
-        for program in sorted(programs, key=lambda item: (item.title.casefold(), item.slug)):
-            group = program.title[:1].upper()
-            if not group.isalpha():
-                group = "#"
-            if group != current_group:
-                current_group = group
-                console.print("")
-                console.print(f"[{group}]")
-            console.print(
-                f"  - {program.title} ({program.slug}) "
-                f"[{program.station_name}:{program.station_short} | {program.years}]"
-            )
-        return
-    console.print(f"Programs grouped by station ({len(programs)}):")
-    current_station = None
-    for program in sorted(
-        programs,
-        key=lambda item: (item.station_name.casefold(), item.title.casefold(), item.slug),
-    ):
-        station_key = (program.station_name, program.station_short)
-        if station_key != current_station:
-            current_station = station_key
-            console.print("")
-            console.print(f"[{program.station_name} | {program.station_short}]")
-        console.print(f"  - {program.title} ({program.slug}) [{program.years}]")
+        ordered = sorted(programs, key=lambda item: (item.title.casefold(), item.slug))
+        heading = f"Programs sorted alphabetically ({len(programs)}):"
+    elif mode == "alpha":
+        ordered = sorted(programs, key=lambda item: (item.title.casefold(), item.slug))
+        heading = f"Programs grouped alphabetically ({len(programs)}):"
+    else:
+        ordered = sorted(
+            programs,
+            key=lambda item: (item.station_name.casefold(), item.title.casefold(), item.slug),
+        )
+        heading = f"Programs grouped by station ({len(programs)}):"
+    table = Table(show_header=True)
+    table.add_column("Name", overflow="fold")
+    table.add_column("Slug", no_wrap=True)
+    table.add_column("Station", no_wrap=True)
+    table.add_column("Years", no_wrap=True)
+    table.add_column("Groupings", justify="right", no_wrap=True)
+    table.add_column("Description", overflow="fold", max_width=40)
+    table.add_column("Page", overflow="fold", max_width=44)
+    for program in ordered:
+        table.add_row(
+            str(program.title),
+            str(program.slug),
+            str(program.station_short),
+            str(program.years),
+            str(program.grouping_count) if getattr(program, "grouping_count", 0) > 0 else "—",
+            str(program.description_excerpt or "—"),
+            str(program.page_url),
+        )
+    console.print(heading)
+    console.print(table)
 
 
-def print_program_download_suggestion() -> None:
+def print_program_navigation_suggestions(programs: list[Any]) -> None:
     console.print("")
-    console.print("Download:")
-    console.print("  raiplaysound-cli download <program_slug>", soft_wrap=True)
+    console.print("Next:")
+    console.print(
+        "  one station:   raiplaysound-cli list programs --filter STATION",
+        soft_wrap=True,
+    )
+    console.print("  one program:   raiplaysound-cli list episodes PROGRAM", soft_wrap=True)
+    console.print("  download one:  raiplaysound-cli download PROGRAM", soft_wrap=True)
+
+
+def _load_station_program_counts(settings: Settings) -> dict[str, int]:
+    if not program_cache_format_is_current(settings.catalog_cache_file):
+        return {}
+    counts: dict[str, int] = {}
+    for program in load_cached_programs(settings.catalog_cache_file):
+        counts[program.station_short] = counts.get(program.station_short, 0) + 1
+    return counts
+
+
+def print_station_table(
+    stations: list[Any],
+    *,
+    counts: dict[str, int],
+    detailed: bool,
+) -> None:
+    table = Table(show_header=True)
+    table.add_column("Name", overflow="fold")
+    table.add_column("Programs", justify="right", no_wrap=True)
+    table.add_column("Slug", no_wrap=True)
+    table.add_column("Page", overflow="fold", max_width=44)
+    if detailed:
+        table.add_column("Feed", overflow="fold", max_width=44)
+    for station in stations:
+        row = [
+            str(station.name),
+            str(counts.get(station.short, "?")),
+            str(station.short),
+            str(station.page_url),
+        ]
+        if detailed:
+            row.append(str(station.feed_url))
+        table.add_row(*row)
+    console.print(table)
+
+
+def print_station_program_suggestions(stations: list[Any]) -> None:
+    console.print("")
+    console.print("Next:")
+    console.print(
+        "  programs for one station: raiplaysound-cli list programs --filter STATION",
+        soft_wrap=True,
+    )
 
 
 def print_season_download_suggestions(slug: str, season_keys: list[str]) -> None:
@@ -607,25 +655,21 @@ def load_cached_show_context(
 
 def list_stations(_settings: Settings, args: argparse.Namespace) -> int:
     stations = parse_stations(http_get("https://www.raiplaysound.it/dirette.json"))
+    counts = _load_station_program_counts(_settings)
     if args.json:
         json_dump(
             {
                 "mode": "stations",
                 "count": len(stations),
                 "detailed": args.detailed,
+                "program_counts_available": bool(counts),
                 "stations": [dataclasses.asdict(item) for item in stations],
             }
         )
         return 0
-    if args.detailed:
-        console.print("Available RaiPlaySound radio stations (detailed):")
-    else:
-        console.print("Available RaiPlaySound radio stations (station slug -> name):")
-    for station in stations:
-        console.print(f"  - {station.short:<16} {station.name}")
-        if args.detailed:
-            console.print(f"      page: {station.page_url}")
-            console.print(f"      feed: {station.feed_url}")
+    console.print(f"Available RaiPlaySound radio stations ({len(stations)}):")
+    print_station_table(stations, counts=counts, detailed=args.detailed)
+    print_station_program_suggestions(stations)
     return 0
 
 
@@ -663,7 +707,7 @@ def list_programs(settings: Settings, args: argparse.Namespace) -> int:
         )
         return 0
     print_programs_text(programs, mode)
-    print_program_download_suggestion()
+    print_program_navigation_suggestions(programs)
     return 0
 
 

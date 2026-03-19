@@ -26,6 +26,9 @@ All notable changes to this project are documented in this file.
 - Removed the generic argparse `options:` block from subcommand help in favor
   of explicit `General`, `Programs`, `Episodes`, `Selection`, and related
   sections, and hid compatibility aliases from normal help output.
+- Changed `list stations` and `list programs` text output from ad-hoc line
+  listings to Rich tables with clearer columns and compact next-step command
+  suggestions below the table.
 
 ## [2.1.1] - 2026-03-19 - download progress and startup visibility improvements
 
