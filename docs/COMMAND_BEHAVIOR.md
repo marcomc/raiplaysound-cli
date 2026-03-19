@@ -108,6 +108,8 @@ raiplaysound-cli list episodes america7
 
 - requires a program slug or full program URL
 - aggregates episodes across discovered group pages when the program is grouped
+- uses a read-only listing path: it reuses any existing `.metadata-cache.tsv`
+  for enrichment, but it should not refresh or rewrite that cache
 - `--group` narrows grouped programs to one or more discovered grouping keys or
   labels
 - `--group` cannot be combined with `--season`

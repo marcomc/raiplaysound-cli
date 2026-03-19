@@ -268,6 +268,10 @@ output to the requested season. For non-season groupings or flat programs,
 groupings for grouped programs, instead of only listing the currently selected
 subpage.
 
+Episode listing now uses a read-only path: it can reuse an existing
+`.metadata-cache.tsv` to improve titles and dates, but it does not refresh or
+rewrite that cache during `list episodes`.
+
 When a program uses non-season groupings, `list episodes <program> --group <key>`
 narrows the output to one or more discovered grouping keys or labels. For
 example:

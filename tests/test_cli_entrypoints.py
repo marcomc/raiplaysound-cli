@@ -235,6 +235,64 @@ def test_list_episodes_does_not_create_download_directory(
     assert not (settings.target_base / "america7").exists()
 
 
+def test_list_episodes_skips_metadata_refresh_and_cache_writes(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    settings = Settings()
+    settings.target_base = tmp_path / "Music" / "RaiPlaySound"
+
+    def fail(*_args, **_kwargs) -> None:
+        raise AssertionError("list episodes should not refresh or write metadata cache")
+
+    monkeypatch.setattr(cli, "parse_env_file", lambda _path: {"COMMAND": "list"})
+    monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
+    monkeypatch.setattr(
+        cli,
+        "discover_grouped_episode_sources",
+        lambda _slug, _selected_seasons, _request_all, _selected_groups: (None, None, False),
+    )
+    monkeypatch.setattr(cli, "load_show_context", fail)
+    monkeypatch.setattr(cli, "collect_metadata", fail)
+    monkeypatch.setattr(cli, "write_metadata_cache", fail)
+    monkeypatch.setattr(
+        cli,
+        "load_list_episode_context",
+        lambda *_args, **_kwargs: (
+            "musicalbox",
+            "https://www.raiplaysound.it/programmi/musicalbox",
+            [
+                type(
+                    "Episode",
+                    (),
+                    {
+                        "season": "",
+                        "group_label": "",
+                        "group_kind": "",
+                        "pretty_date": "2026-03-16",
+                        "title": "Musical Box del 15/03/2026",
+                        "episode_id": "ep-1",
+                        "url": "https://www.raiplaysound.it/audio/ep-1.html",
+                    },
+                )(),
+            ],
+            type("Summary", (), {"has_seasons": False, "latest_season": "1"})(),
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "filter_episodes_for_list_or_download",
+        lambda episodes, *_args, **_kwargs: episodes,
+    )
+
+    result = cli.main(["list", "episodes", "musicalbox", "--json"])
+    captured = capsys.readouterr()
+
+    assert result == 0
+    assert '"mode": "episodes"' in captured.out
+    assert '"title": "Musical Box del 15/03/2026"' in captured.out
+    assert not (settings.target_base / "musicalbox").exists()
+
+
 def test_list_episodes_aggregates_discovered_groupings(monkeypatch, capsys) -> None:
     settings = Settings()
 
@@ -266,18 +324,16 @@ def test_list_episodes_aggregates_discovered_groupings(monkeypatch, capsys) -> N
         ),
     )
 
-    def fake_load_show_context(
+    def fake_load_list_episode_context(
         _settings: Settings,
         input_value: str,
         _selected_seasons: set[str],
         _request_all: bool,
         *,
-        for_list_seasons: bool = False,
         sources_override: list[str] | None = None,
         source_groups_override: list[GroupSource] | None = None,
-    ) -> tuple[str, str, list[object], object, Path]:
+    ) -> tuple[str, str, list[object], object]:
         assert input_value == "profili"
-        assert for_list_seasons is False
         assert sources_override == [
             "https://www.raiplaysound.it/programmi/profili",
             "https://www.raiplaysound.it/programmi/profili/speciali/speciale-lucio-dalla",
@@ -317,10 +373,9 @@ def test_list_episodes_aggregates_discovered_groupings(monkeypatch, capsys) -> N
             "https://www.raiplaysound.it/programmi/profili",
             episodes,
             summary,
-            Path("/tmp/.metadata-cache.tsv"),
         )
 
-    monkeypatch.setattr(cli, "load_show_context", fake_load_show_context)
+    monkeypatch.setattr(cli, "load_list_episode_context", fake_load_list_episode_context)
     monkeypatch.setattr(
         cli,
         "filter_episodes_for_list_or_download",
@@ -360,16 +415,15 @@ def test_list_episodes_filters_by_group(monkeypatch, capsys) -> None:
         ),
     )
 
-    def fake_load_show_context(
+    def fake_load_list_episode_context(
         _settings: Settings,
         input_value: str,
         _selected_seasons: set[str],
         _request_all: bool,
         *,
-        for_list_seasons: bool = False,
         sources_override: list[str] | None = None,
         source_groups_override: list[GroupSource] | None = None,
-    ) -> tuple[str, str, list[object], object, Path]:
+    ) -> tuple[str, str, list[object], object]:
         assert input_value == "profili"
         assert sources_override == [
             "https://www.raiplaysound.it/programmi/profili/speciali/speciale-lucio-dalla"
@@ -396,10 +450,9 @@ def test_list_episodes_filters_by_group(monkeypatch, capsys) -> None:
             "https://www.raiplaysound.it/programmi/profili",
             episodes,
             summary,
-            Path("/tmp/.metadata-cache.tsv"),
         )
 
-    monkeypatch.setattr(cli, "load_show_context", fake_load_show_context)
+    monkeypatch.setattr(cli, "load_list_episode_context", fake_load_list_episode_context)
     monkeypatch.setattr(
         cli,
         "filter_episodes_for_list_or_download",
@@ -671,18 +724,16 @@ def test_list_episodes_text_prints_download_suggestions(monkeypatch, capsys) -> 
         lambda _slug, _selected_seasons, _request_all, _selected_groups: (None, None, False),
     )
 
-    def fake_load_show_context(
+    def fake_load_list_episode_context(
         _settings: Settings,
         input_value: str,
         _selected_seasons: set[str],
         _request_all: bool,
         *,
-        for_list_seasons: bool = False,
         sources_override: list[str] | None = None,
         source_groups_override: list[GroupSource] | None = None,
-    ) -> tuple[str, str, list[object], object, Path]:
+    ) -> tuple[str, str, list[object], object]:
         assert input_value == "america7"
-        assert for_list_seasons is False
         assert sources_override is None
         assert source_groups_override is None
         episodes = [
@@ -719,10 +770,9 @@ def test_list_episodes_text_prints_download_suggestions(monkeypatch, capsys) -> 
             "https://www.raiplaysound.it/programmi/america7",
             episodes,
             summary,
-            Path("/tmp/.metadata-cache.tsv"),
         )
 
-    monkeypatch.setattr(cli, "load_show_context", fake_load_show_context)
+    monkeypatch.setattr(cli, "load_list_episode_context", fake_load_list_episode_context)
     monkeypatch.setattr(
         cli,
         "filter_episodes_for_list_or_download",
@@ -812,18 +862,16 @@ def test_flat_program_episode_listing_omits_season_column(monkeypatch, capsys) -
         lambda _slug, _selected_seasons, _request_all, _selected_groups: (None, None, False),
     )
 
-    def fake_load_show_context(
+    def fake_load_list_episode_context(
         _settings: Settings,
         input_value: str,
         _selected_seasons: set[str],
         _request_all: bool,
         *,
-        for_list_seasons: bool = False,
         sources_override: list[str] | None = None,
         source_groups_override: list[GroupSource] | None = None,
-    ) -> tuple[str, str, list[object], object, Path]:
+    ) -> tuple[str, str, list[object], object]:
         assert input_value == "flat-show"
-        assert for_list_seasons is False
         assert sources_override is None
         assert source_groups_override is None
         episodes = [
@@ -847,10 +895,9 @@ def test_flat_program_episode_listing_omits_season_column(monkeypatch, capsys) -
             "https://www.raiplaysound.it/programmi/flat-show",
             episodes,
             summary,
-            Path("/tmp/.metadata-cache.tsv"),
         )
 
-    monkeypatch.setattr(cli, "load_show_context", fake_load_show_context)
+    monkeypatch.setattr(cli, "load_list_episode_context", fake_load_list_episode_context)
     monkeypatch.setattr(
         cli,
         "filter_episodes_for_list_or_download",

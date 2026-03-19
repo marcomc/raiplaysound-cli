@@ -48,6 +48,9 @@ All notable changes to this project are documented in this file.
   metadata still defaults to `24` hours, while the global program catalog used
   by `list programs` intentionally defaults to `2160` hours (90 days) unless
   the user lowers it or forces a catalog refresh.
+- Made `list episodes <program>` use a read-only metadata path: it reuses any
+  existing per-show cache for enrichment, but no longer refreshes or rewrites
+  `.metadata-cache.tsv` during listing.
 
 ## [2.0.0] - 2026-03-10 - Python Package Port
 

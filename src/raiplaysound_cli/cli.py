@@ -269,6 +269,37 @@ def load_show_context(
     return slug, program_url, episodes, summary, metadata_cache_file
 
 
+def load_list_episode_context(
+    settings: Settings,
+    input_value: str,
+    selected_seasons: set[str],
+    request_all_seasons: bool,
+    *,
+    sources_override: list[str] | None = None,
+    source_groups_override: list[GroupSource] | None = None,
+) -> tuple[str, str, list[Any], Any]:
+    slug, program_url = detect_slug(input_value)
+    metadata_cache_file = settings.target_base / slug / ".metadata-cache.tsv"
+    if sources_override is None:
+        sources = discover_feed_sources(
+            slug,
+            selected_seasons,
+            request_all_seasons,
+            False,
+        )
+    else:
+        sources = sources_override
+    source_groups = (
+        {group.url: group for group in source_groups_override}
+        if source_groups_override is not None
+        else None
+    )
+    episodes = collect_episodes_from_sources(sources, source_groups=source_groups)
+    cache = load_metadata_cache(metadata_cache_file)
+    summary = normalize_episode_metadata(episodes, cache)
+    return slug, program_url, episodes, summary
+
+
 def list_stations(_settings: Settings, args: argparse.Namespace) -> int:
     stations = parse_stations(http_get("https://www.raiplaysound.it/dirette.json"))
     if args.json:
@@ -482,7 +513,7 @@ def list_episodes(settings: Settings, args: argparse.Namespace) -> int:
         request_all,
         selected_groups,
     )
-    slug, program_url, episodes, summary, _metadata_cache = load_show_context(
+    slug, program_url, episodes, summary = load_list_episode_context(
         settings,
         input_value,
         selected_seasons,
