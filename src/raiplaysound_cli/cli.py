@@ -339,8 +339,8 @@ def list_seasons(settings: Settings, args: argparse.Namespace) -> int:
             if not summary.has_seasons:
                 items.append(
                     {
-                        "key": "1",
-                        "label": "Season 1",
+                        "key": "default",
+                        "label": "All episodes",
                         "kind": "flat",
                         "episodes": len(episodes),
                         "published": year_span(summary.show_year_min, summary.show_year_max),
@@ -457,7 +457,7 @@ def list_episodes(settings: Settings, args: argparse.Namespace) -> int:
                     {
                         "group": episode.group_label,
                         "group_kind": episode.group_kind,
-                        "season": episode.season,
+                        "season": episode.season if summary.has_seasons else None,
                         "date": episode.pretty_date,
                         "title": episode.title,
                         "id": episode.episode_id,

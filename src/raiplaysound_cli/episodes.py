@@ -234,7 +234,7 @@ def collect_episodes_from_sources(
     sources: list[str],
     source_groups: dict[str, GroupSource] | None = None,
 ) -> list[Episode]:
-    seen: set[str] = set()
+    seen: dict[str, Episode] = {}
     episodes: list[Episode] = []
     for source in sources:
         season_hint = ""
@@ -249,21 +249,28 @@ def collect_episodes_from_sources(
                 continue
             episode_id = parts[0].strip()
             episode_url = parts[1].strip().rstrip("/")
-            if not episode_id or not episode_url or episode_id in seen:
+            if not episode_id or not episode_url:
                 continue
-            seen.add(episode_id)
+            existing = seen.get(episode_id)
+            if existing is not None:
+                if not existing.season and season_hint:
+                    existing.season = season_hint
+                if not existing.group_label and group_source is not None:
+                    existing.group_label = group_source.label
+                    existing.group_kind = group_source.kind
+                continue
             base_name = Path(urllib.parse.urlparse(episode_url).path).stem
             label = re.sub(rf"-{re.escape(episode_id)}$", "", base_name) or episode_id
-            episodes.append(
-                Episode(
-                    episode_id=episode_id,
-                    url=episode_url,
-                    label=label,
-                    season=season_hint or "1",
-                    group_label=group_source.label if group_source is not None else "",
-                    group_kind=group_source.kind if group_source is not None else "",
-                )
+            episode = Episode(
+                episode_id=episode_id,
+                url=episode_url,
+                label=label,
+                season=season_hint,
+                group_label=group_source.label if group_source is not None else "",
+                group_kind=group_source.kind if group_source is not None else "",
             )
+            seen[episode_id] = episode
+            episodes.append(episode)
     if not episodes:
         raise CLIError("No episodes found.")
     return episodes

@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from raiplaysound_cli import cli
+from raiplaysound_cli import episodes as episode_module
 from raiplaysound_cli.config import Settings
 from raiplaysound_cli.models import GroupSource, Program
 
@@ -634,3 +635,151 @@ def test_list_episodes_text_prints_download_suggestions(monkeypatch, capsys) -> 
         "some episodes:  raiplaysound-cli download america7 --episode-ids ep-17,ep-16"
         in captured.out
     )
+
+
+def test_flat_program_outputs_do_not_invent_season_one(monkeypatch, capsys) -> None:
+    settings = Settings()
+
+    monkeypatch.setattr(cli, "parse_env_file", lambda _path: {"COMMAND": "list"})
+    monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
+    monkeypatch.setattr(
+        cli,
+        "discover_group_listing_sources",
+        lambda slug: (f"https://www.raiplaysound.it/programmi/{slug}", []),
+    )
+    monkeypatch.setattr(
+        cli,
+        "discover_season_listing_sources",
+        lambda slug: (f"https://www.raiplaysound.it/programmi/{slug}", []),
+    )
+    monkeypatch.setattr(
+        cli,
+        "collect_season_summary_from_sources",
+        lambda _sources: (
+            [
+                type(
+                    "Episode",
+                    (),
+                    {
+                        "season": "1",
+                        "group_label": "",
+                        "group_kind": "",
+                        "pretty_date": "2026-02-21",
+                        "title": "Standalone episode",
+                        "episode_id": "ep-1",
+                        "url": "https://www.raiplaysound.it/audio/ep-1.html",
+                    },
+                )()
+            ],
+            type(
+                "Summary",
+                (),
+                {
+                    "counts": {"1": 1},
+                    "year_min": {"1": "2026"},
+                    "year_max": {"1": "2026"},
+                    "show_year_min": "2026",
+                    "show_year_max": "2026",
+                    "has_seasons": False,
+                    "latest_season": "1",
+                },
+            )(),
+        ),
+    )
+
+    result = cli.main(["--seasons", "flat-show", "--json"])
+    captured = capsys.readouterr()
+
+    assert result == 0
+    assert '"label": "All episodes"' in captured.out
+    assert '"kind": "flat"' in captured.out
+    assert '"label": "Season 1"' not in captured.out
+
+
+def test_flat_program_episode_listing_omits_season_column(monkeypatch, capsys) -> None:
+    settings = Settings()
+
+    monkeypatch.setattr(cli, "parse_env_file", lambda _path: {"COMMAND": "list"})
+    monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
+    monkeypatch.setattr(
+        cli,
+        "discover_group_listing_sources",
+        lambda slug: (f"https://www.raiplaysound.it/programmi/{slug}", []),
+    )
+
+    def fake_load_show_context(
+        _settings: Settings,
+        input_value: str,
+        _selected_seasons: set[str],
+        _request_all: bool,
+        *,
+        for_list_seasons: bool = False,
+        sources_override: list[str] | None = None,
+        source_groups_override: list[GroupSource] | None = None,
+    ) -> tuple[str, str, list[object], object, Path]:
+        assert input_value == "flat-show"
+        assert for_list_seasons is False
+        assert sources_override is None
+        assert source_groups_override is None
+        episodes = [
+            type(
+                "Episode",
+                (),
+                {
+                    "season": "1",
+                    "group_label": "",
+                    "group_kind": "",
+                    "pretty_date": "2026-02-21",
+                    "title": "Standalone episode",
+                    "episode_id": "ep-1",
+                    "url": "https://www.raiplaysound.it/audio/ep-1.html",
+                },
+            )()
+        ]
+        summary = type("Summary", (), {"has_seasons": False})()
+        return (
+            "flat-show",
+            "https://www.raiplaysound.it/programmi/flat-show",
+            episodes,
+            summary,
+            Path("/tmp/.metadata-cache.tsv"),
+        )
+
+    monkeypatch.setattr(cli, "load_show_context", fake_load_show_context)
+    monkeypatch.setattr(
+        cli,
+        "filter_episodes_for_list_or_download",
+        lambda episodes, *_args, **_kwargs: episodes,
+    )
+
+    result = cli.main(["--episodes", "flat-show"])
+    captured = capsys.readouterr()
+
+    assert result == 0
+    assert "Season" not in captured.out
+    assert "S1" not in captured.out
+    assert "Standalone episode" in captured.out
+
+
+def test_collect_episodes_from_flat_source_does_not_mark_real_season(monkeypatch) -> None:
+    monkeypatch.setattr(
+        episode_module,
+        "run_yt_dlp",
+        lambda _args: type(
+            "Result",
+            (),
+            {
+                "stdout": (
+                    "ep-1\thttps://www.raiplaysound.it/audio/2026/03/16/"
+                    "musical-box-del-15-03-2026-ep-1.html\n"
+                )
+            },
+        )(),
+    )
+
+    episodes = cli.collect_episodes_from_sources(
+        ["https://www.raiplaysound.it/programmi/musicalbox"]
+    )
+
+    assert len(episodes) == 1
+    assert episodes[0].season == ""

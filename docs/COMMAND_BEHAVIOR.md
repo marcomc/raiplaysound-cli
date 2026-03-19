@@ -97,6 +97,8 @@ raiplaysound-cli list episodes america7
 - aggregates episodes across discovered group pages when the program is grouped
 - for real seasonal programs, it shows the season column
 - for non-season grouped programs, it shows a grouping column instead
+- for flat programs with no real seasons or groupings, it shows no grouping
+  column at all and must not invent `S1`
 - JSON output includes:
   - `group`
   - `group_kind`
@@ -108,6 +110,8 @@ raiplaysound-cli list episodes america7
 - `--show-urls` adds the URL column in text mode
 - by default, when seasons exist and no explicit episode or season filter is
   provided, it lists the latest season
+- for flat programs, JSON output should use `season: null` rather than a
+  synthetic season number
 
 ## `download` Command
 

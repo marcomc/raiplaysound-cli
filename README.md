@@ -245,6 +245,10 @@ collections instead of numbered seasons.
 groupings for grouped programs, instead of only listing the currently selected
 subpage.
 
+For flat programs that do not expose real seasons or other groupings,
+`list --episodes` does not invent a fake `S1` column. Those programs are shown
+as a plain episode list, and JSON output reports the season as `null`.
+
 Example output:
 
 ```text

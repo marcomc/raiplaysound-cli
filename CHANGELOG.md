@@ -15,6 +15,9 @@ All notable changes to this project are documented in this file.
 - Updated `raiplaysound-cli list --episodes <program>` so grouped programs are
   listed across all discovered groupings, rather than only the currently
   selected subpage.
+- Corrected flat program episode listings so they no longer invent a fake `S1`
+  season label when RaiPlaySound exposes neither real seasons nor alternate
+  groupings.
 - Added developer-facing documentation under `docs/` covering the current
   RaiPlaySound site structure assumptions, verified season URL patterns, cache
   behavior, and known discovery gaps for future contributors.

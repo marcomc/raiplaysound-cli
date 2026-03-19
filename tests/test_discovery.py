@@ -148,7 +148,7 @@ def test_collect_episodes_from_sources_deduplicates_ids_and_assigns_season(monke
     )
 
     assert [episode.episode_id for episode in result] == ["ep-1", "ep-2"]
-    assert result[0].season == "1"
+    assert result[0].season == "2"
     assert result[1].season == "2"
 
 
