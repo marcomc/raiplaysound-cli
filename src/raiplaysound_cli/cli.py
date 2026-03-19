@@ -176,7 +176,10 @@ def _build_season_listing_payload(settings: Settings, slug: str) -> dict[str, An
 def load_season_listing_payload(settings: Settings, slug: str) -> dict[str, Any]:
     cache_file = _season_summary_cache_file(settings, slug)
     if cache_file_is_fresh(cache_file, LIST_CACHE_MAX_AGE_HOURS):
-        payload = _load_json_cache(cache_file)
+        try:
+            payload = _load_json_cache(cache_file)
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            payload = {}
         if payload.get("version") == LIST_CACHE_VERSION:
             return payload
     payload = _build_season_listing_payload(settings, slug)
@@ -248,6 +251,56 @@ def _context_from_episode_payload(
         latest_season=str(raw_summary["latest_season"]),
     )
     return str(payload["slug"]), str(payload["program_url"]), episodes, summary
+
+
+def _resolve_episode_sources(
+    input_value: str,
+    selected_seasons: set[str],
+    request_all_seasons: bool,
+    *,
+    for_list_seasons: bool,
+    sources_override: list[str] | None,
+    source_groups_override: list[GroupSource] | None,
+) -> tuple[str, str, list[str], dict[str, GroupSource] | None]:
+    slug, program_url = detect_slug(input_value)
+    if sources_override is None:
+        sources = discover_feed_sources(
+            slug,
+            selected_seasons,
+            request_all_seasons,
+            for_list_seasons,
+        )
+    else:
+        sources = sources_override
+    source_groups = (
+        {group.url: group for group in source_groups_override}
+        if source_groups_override is not None
+        else None
+    )
+    return slug, program_url, sources, source_groups
+
+
+def _collect_episode_context(
+    settings: Settings,
+    input_value: str,
+    selected_seasons: set[str],
+    request_all_seasons: bool,
+    *,
+    for_list_seasons: bool,
+    sources_override: list[str] | None = None,
+    source_groups_override: list[GroupSource] | None = None,
+) -> tuple[str, str, list[str], list[Episode], Path]:
+    slug, program_url, sources, source_groups = _resolve_episode_sources(
+        input_value,
+        selected_seasons,
+        request_all_seasons,
+        for_list_seasons=for_list_seasons,
+        sources_override=sources_override,
+        source_groups_override=source_groups_override,
+    )
+    metadata_cache_file = settings.target_base / slug / ".metadata-cache.tsv"
+    episodes = collect_episodes_from_sources(sources, source_groups=source_groups)
+    return slug, program_url, sources, episodes, metadata_cache_file
 
 
 def make_argument_parser(**kwargs: Any) -> argparse.ArgumentParser:
@@ -416,24 +469,15 @@ def load_show_context(
     sources_override: list[str] | None = None,
     source_groups_override: list[GroupSource] | None = None,
 ) -> tuple[str, str, list[Any], Any, Path]:
-    slug, program_url = detect_slug(input_value)
-    target_dir = settings.target_base / slug
-    metadata_cache_file = target_dir / ".metadata-cache.tsv"
-    if sources_override is None:
-        sources = discover_feed_sources(
-            slug,
-            selected_seasons,
-            request_all_seasons,
-            for_list_seasons,
-        )
-    else:
-        sources = sources_override
-    source_groups = (
-        {group.url: group for group in source_groups_override}
-        if source_groups_override is not None
-        else None
+    slug, program_url, sources, episodes, metadata_cache_file = _collect_episode_context(
+        settings,
+        input_value,
+        selected_seasons,
+        request_all_seasons,
+        for_list_seasons=for_list_seasons,
+        sources_override=sources_override,
+        source_groups_override=source_groups_override,
     )
-    episodes = collect_episodes_from_sources(sources, source_groups=source_groups)
     cache: dict[str, tuple[str, str, str]] = {}
     if not settings.force_refresh_metadata and cache_file_is_fresh(
         metadata_cache_file, settings.metadata_max_age_hours
@@ -458,23 +502,15 @@ def load_list_episode_context(
     sources_override: list[str] | None = None,
     source_groups_override: list[GroupSource] | None = None,
 ) -> tuple[str, str, list[Any], Any]:
-    slug, program_url = detect_slug(input_value)
-    metadata_cache_file = settings.target_base / slug / ".metadata-cache.tsv"
-    if sources_override is None:
-        sources = discover_feed_sources(
-            slug,
-            selected_seasons,
-            request_all_seasons,
-            False,
-        )
-    else:
-        sources = sources_override
-    source_groups = (
-        {group.url: group for group in source_groups_override}
-        if source_groups_override is not None
-        else None
+    slug, program_url, _sources, episodes, metadata_cache_file = _collect_episode_context(
+        settings,
+        input_value,
+        selected_seasons,
+        request_all_seasons,
+        for_list_seasons=False,
+        sources_override=sources_override,
+        source_groups_override=source_groups_override,
     )
-    episodes = collect_episodes_from_sources(sources, source_groups=source_groups)
     cache = load_metadata_cache(metadata_cache_file)
     summary = normalize_episode_metadata(episodes, cache)
     return slug, program_url, episodes, summary
@@ -489,23 +525,15 @@ def load_cached_show_context(
     sources_override: list[str] | None = None,
     source_groups_override: list[GroupSource] | None = None,
 ) -> tuple[str, str, list[Any], Any, Path, dict[str, tuple[str, str, str]]]:
-    slug, program_url = detect_slug(input_value)
-    metadata_cache_file = settings.target_base / slug / ".metadata-cache.tsv"
-    if sources_override is None:
-        sources = discover_feed_sources(
-            slug,
-            selected_seasons,
-            request_all_seasons,
-            False,
-        )
-    else:
-        sources = sources_override
-    source_groups = (
-        {group.url: group for group in source_groups_override}
-        if source_groups_override is not None
-        else None
+    slug, program_url, _sources, episodes, metadata_cache_file = _collect_episode_context(
+        settings,
+        input_value,
+        selected_seasons,
+        request_all_seasons,
+        for_list_seasons=False,
+        sources_override=sources_override,
+        source_groups_override=source_groups_override,
     )
-    episodes = collect_episodes_from_sources(sources, source_groups=source_groups)
     cache: dict[str, tuple[str, str, str]] = {}
     if not settings.force_refresh_metadata and cache_file_is_fresh(
         metadata_cache_file, settings.metadata_max_age_hours
@@ -695,7 +723,10 @@ def list_episodes(settings: Settings, args: argparse.Namespace) -> int:
     cache_sources = sources_override or [program_url]
     cache_file = _episode_list_cache_file(settings, slug, cache_sources)
     if cache_file_is_fresh(cache_file, LIST_CACHE_MAX_AGE_HOURS):
-        payload = _load_json_cache(cache_file)
+        try:
+            payload = _load_json_cache(cache_file)
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            payload = {}
         if payload.get("version") == LIST_CACHE_VERSION:
             slug, program_url, episodes, summary = _context_from_episode_payload(payload)
         else:
