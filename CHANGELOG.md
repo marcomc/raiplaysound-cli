@@ -23,6 +23,9 @@ All notable changes to this project are documented in this file.
 - Reworked `list --help` and `download --help` into clearer, sectioned help
   screens with a compact usage line, user-facing argument descriptions, grouped
   options, and short practical examples.
+- Removed the generic argparse `options:` block from subcommand help in favor
+  of explicit `General`, `Programs`, `Episodes`, `Selection`, and related
+  sections, and hid compatibility aliases from normal help output.
 
 ## [2.1.1] - 2026-03-19 - download progress and startup visibility improvements
 

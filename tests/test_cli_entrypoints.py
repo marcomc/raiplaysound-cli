@@ -64,10 +64,12 @@ def test_list_help_prints_command_specific_help(capsys) -> None:
     )
     assert "Targets:" not in captured.out
     assert "What to list. One of:" not in captured.out
-    assert "Program slug or full URL for `seasons` and `episodes`." in captured.out
+    assert "For `seasons` and `episodes`: a program slug or full URL." in captured.out
     assert "`PROGRAM`" in captured.out
-    assert "Program Listing:" in captured.out
-    assert "Filtering and Selection:" in captured.out
+    assert "General:" in captured.out
+    assert "Programs:" in captured.out
+    assert "Episodes:" in captured.out
+    assert "options:" not in captured.out
     assert "Examples:" in captured.out
     assert "raiplaysound-cli list seasons PROGRAM" in captured.out
     assert "raiplaysound-cli list programs --filter STATION" in captured.out
@@ -80,17 +82,20 @@ def test_download_help_prints_command_specific_help(capsys) -> None:
 
     assert result == 0
     assert "usage: raiplaysound-cli download" in captured.out
-    assert "Episode Selection:" in captured.out
+    assert "General:" in captured.out
+    assert "Selection:" in captured.out
     assert "Execution:" in captured.out
     assert "Metadata and Cache:" in captured.out
     assert "Outputs:" in captured.out
+    assert "options:" not in captured.out
     assert "Examples:" in captured.out
     assert "raiplaysound-cli download PROGRAM --season SEASON" in captured.out
     assert "raiplaysound-cli download PROGRAM --group GROUP" in captured.out
     assert "--episode-ids" in captured.out
     assert "--group" in captured.out
-    assert "Accepts selector keys shown by" in captured.out
-    assert "`raiplaysound-cli list seasons <program>`" in captured.out
+    assert "For grouped programs. Use selector keys shown by `list seasons`." in captured.out
+    assert "--seasons" not in captured.out
+    assert "--episodes" not in captured.out
 
 
 def test_main_list_requires_exactly_one_target(capsys) -> None:

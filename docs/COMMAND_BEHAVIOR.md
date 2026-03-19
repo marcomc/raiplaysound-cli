@@ -30,6 +30,9 @@ It is intended as a command contract reference for contributors and AI agents.
   line, grouped option sections, and short examples.
 - `raiplaysound-cli download --help` prints download-specific help with grouped
   option sections, an explicit `PROGRAM` positional name, and short examples.
+- Compatibility aliases remain accepted where supported, but should be hidden
+  from normal help output so the documented surface stays focused on the
+  preferred flags.
 - Empty invocation does not dispatch any config-selected command.
 
 ## Command Selection
