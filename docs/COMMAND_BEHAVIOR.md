@@ -92,6 +92,13 @@ raiplaysound-cli list episodes america7
 - requires a program slug or full program URL
 - uses the lightweight grouping discovery path and should not refresh or write
   `.metadata-cache.tsv`
+- text output is a table with:
+  - `Program`
+  - `Type`
+  - `Name`
+  - `Episodes`
+  - `Selector`
+  - `Published`
 - when the program exposes real seasons, it prints seasons
 - when the program exposes other grouping families, it prints groupings instead
   of incorrectly collapsing to a flat list
@@ -99,8 +106,8 @@ raiplaysound-cli list episodes america7
   re-enumerating every grouping every time
 - cached list payloads are short-lived and versioned, and stale or incompatible
   payloads must be rebuilt automatically rather than reused
-- non-season grouping output includes the exact `--group` selector token for
-  each grouping and matching `download --group ...` suggestions
+- grouped output includes the exact selector token once in the table and keeps
+  the download suggestions generic instead of printing one command per row
 - `--season` narrows the output only for real seasonal programs
 - `--season` is rejected for non-season grouped programs and flat programs
 - JSON output exposes:

@@ -425,10 +425,17 @@ def print_season_download_suggestions(slug: str, season_keys: list[str]) -> None
 def print_group_download_suggestions(slug: str, groups: list[Any]) -> None:
     console.print("")
     console.print("Download:")
-    console.print(f"  all program episodes: raiplaysound-cli download {slug}")
-    for group in groups:
+    console.print(f"  all program episodes: raiplaysound-cli download {slug}", soft_wrap=True)
+    if groups:
         console.print(
-            f"  {group.key}: raiplaysound-cli download {slug} --group {group.key}",
+            f"  one grouping:         raiplaysound-cli download {slug} --group <selector>",
+            soft_wrap=True,
+        )
+    if len(groups) >= 2:
+        console.print(
+            "  some groupings:       "
+            f"raiplaysound-cli download {slug} --group "
+            "<selector1>,<selector2>",
             soft_wrap=True,
         )
 
@@ -485,6 +492,44 @@ def print_episode_download_suggestions(
 
 def print_download_prep_step(message: str) -> None:
     console.print(f"[dim]Preparing:[/dim] {message}")
+
+
+def _display_group_kind(kind: str) -> str:
+    return kind.replace("_", " ").title()
+
+
+def _dedupe_listing_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduped: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in items:
+        marker = (str(item.get("kind", "")).lower(), str(item.get("key", "")).lower())
+        if marker in seen:
+            continue
+        seen.add(marker)
+        deduped.append(item)
+    return deduped
+
+
+def print_grouping_table(slug: str, items: list[dict[str, Any]], *, all_seasons: bool) -> None:
+    table = Table(show_header=True)
+    table.add_column("Program", no_wrap=True)
+    table.add_column("Type", no_wrap=True)
+    table.add_column("Name", overflow="fold")
+    table.add_column("Episodes", justify="right")
+    table.add_column("Selector", overflow="fold")
+    table.add_column("Published", no_wrap=True)
+    for item in items:
+        kind = "Season" if all_seasons else _display_group_kind(str(item["kind"]))
+        name = f"Season {item['key']}" if all_seasons else str(item["label"])
+        table.add_row(
+            slug,
+            kind,
+            name,
+            str(item["episodes"]),
+            str(item["key"]),
+            str(item["published"]),
+        )
+    console.print(table)
 
 
 def load_show_context(
@@ -638,7 +683,7 @@ def list_seasons(settings: Settings, args: argparse.Namespace) -> int:
     slug, program_url = detect_slug(args.input)
     payload = load_season_listing_payload(settings, slug)
     program_url = str(payload["program_url"])
-    items = [dict(item) for item in payload["items"]]
+    items = _dedupe_listing_items([dict(item) for item in payload["items"]])
     has_groups = bool(payload["has_groups"])
     all_seasons = bool(payload["has_seasons"]) and all(
         str(item["kind"]) == "season" for item in items
@@ -677,20 +722,11 @@ def list_seasons(settings: Settings, args: argparse.Namespace) -> int:
         if all_seasons:
             console.print(f"Available seasons for {slug} ({program_url}):")
             sorted_items = sorted(items, key=lambda item: int(str(item["key"])))
-            for item in sorted_items:
-                console.print(
-                    f"  - Season {item['key']}: {item['episodes']} episodes "
-                    f"(published: {item['published']})"
-                )
+            print_grouping_table(slug, sorted_items, all_seasons=True)
             print_season_download_suggestions(slug, [str(item["key"]) for item in sorted_items])
             return 0
         console.print(f"Available groupings for {slug} ({program_url}):")
-        for item in items:
-            console.print(
-                f"  - {item['label']}: {item['episodes']} episodes "
-                f"({item['kind']}; select with --group {item['key']}; "
-                f"published: {item['published']})"
-            )
+        print_grouping_table(slug, items, all_seasons=False)
         print_group_download_suggestions(
             slug,
             [
@@ -728,11 +764,7 @@ def list_seasons(settings: Settings, args: argparse.Namespace) -> int:
         for item in sorted(items, key=lambda entry: int(str(entry["key"])))
         if not selected_seasons or request_all or str(item["key"]) in selected_seasons
     ]
-    for item in sorted_items:
-        console.print(
-            f"  - Season {item['key']}: {item['episodes']} episodes "
-            f"(published: {item['published']})"
-        )
+    print_grouping_table(slug, sorted_items, all_seasons=True)
     print_season_download_suggestions(slug, [str(item["key"]) for item in sorted_items])
     return 0
 

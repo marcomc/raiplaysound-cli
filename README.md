@@ -298,9 +298,18 @@ raiplaysound-cli list episodes profili --group speciale-lucio-dalla
 
 `--group` cannot be combined with `--season`.
 
-`list seasons <program>` also prints the exact selectable `--group` token for
-each discovered grouping, plus ready-to-run `download --group ...` commands at
-the bottom of the listing.
+`list seasons <program>` now renders seasons and non-season groupings in a
+table with:
+
+- `Program`
+- `Type`
+- `Name`
+- `Episodes`
+- `Selector`
+- `Published`
+
+For grouped programs, the footer now shows compact generic `download --group`
+examples instead of repeating one command per discovered grouping.
 
 For flat programs that do not expose real seasons or other groupings,
 `list episodes` does not invent a fake `S1` column. Those programs are shown

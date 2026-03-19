@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- Made `raiplaysound-cli list seasons <program>` render seasons and non-season
+  groupings as a compact table with program, type, name, episode count,
+  selector, and published-range columns.
+- Deduplicated repeated grouping rows in season/group listing output, so the
+  same selector no longer appears multiple times when RaiPlaySound exposes the
+  current grouping through more than one discovery path.
+- Simplified grouped download hints below `list seasons` so they show generic
+  `--group` usage patterns instead of repeating one command per discovered
+  grouping.
+
 ## [2.1.1] - 2026-03-19 - download progress and startup visibility improvements
 
 ### Changed

@@ -737,7 +737,8 @@ def test_list_seasons_uses_cached_summary_payload(monkeypatch, tmp_path: Path, c
     captured = capsys.readouterr()
 
     assert result == 0
-    assert "Season 2: 17 episodes" in captured.out
+    assert "Season 2" in captured.out
+    assert "17" in captured.out
 
 
 def test_list_seasons_json_uses_real_discovered_season_urls(
@@ -841,6 +842,19 @@ def test_list_seasons_prints_groupings_for_special_collections(
                 "GroupSummary",
                 (),
                 {
+                    "key": "speciale-pino-daniele",
+                    "label": "Speciale Pino Daniele",
+                    "url": "https://www.raiplaysound.it/programmi/profili",
+                    "kind": "special",
+                    "episodes": 1,
+                    "year_min": "2018",
+                    "year_max": "2018",
+                },
+            )(),
+            type(
+                "GroupSummary",
+                (),
+                {
                     "key": "speciale-lucio-dalla",
                     "label": "Speciale Lucio Dalla",
                     "url": "https://www.raiplaysound.it/programmi/profili/speciali/speciale-lucio-dalla",
@@ -858,19 +872,24 @@ def test_list_seasons_prints_groupings_for_special_collections(
 
     assert result == 0
     assert "Available groupings for profili" in captured.out
-    assert "Speciale Pino Daniele: 1 episodes" in captured.out
-    assert "select with --group" in captured.out
-    assert "speciale-pino-daniele" in captured.out
-    assert "Speciale Lucio Dalla: 2 episodes" in captured.out
-    assert "speciale-lucio-dalla" in captured.out
+    assert "Program" in captured.out
+    assert "Type" in captured.out
+    assert "Selector" in captured.out
+    assert "Published" in captured.out
+    assert "speciale-pino-d" in captured.out
+    assert "Speciale Pino" in captured.out
+    assert "Daniele" in captured.out
+    assert "Speciale Lucio" in captured.out
+    assert "Dalla" in captured.out
+    assert "speciale-lucio-" in captured.out
+    assert captured.out.count("Daniele") == 1
     assert "all program episodes: raiplaysound-cli download profili" in captured.out
     assert (
-        "speciale-pino-daniele: raiplaysound-cli download profili --group "
-        "speciale-pino-daniele" in captured.out
+        "one grouping:         raiplaysound-cli download profili --group <selector>" in captured.out
     )
     assert (
-        "speciale-lucio-dalla: raiplaysound-cli download profili --group "
-        "speciale-lucio-dalla" in captured.out
+        "some groupings:       raiplaysound-cli download profili --group "
+        "<selector1>,<selector2>" in captured.out
     )
 
 
@@ -1270,8 +1289,9 @@ def test_list_seasons_honors_season_filter_for_real_seasons(
     captured = capsys.readouterr()
 
     assert result == 0
-    assert "Season 2: 17 episodes" in captured.out
-    assert "Season 1: 71 episodes" not in captured.out
+    assert "Season 2" in captured.out
+    assert "17" in captured.out
+    assert "Season 1" not in captured.out
 
 
 def test_list_seasons_rejects_season_filter_for_non_season_groupings(
