@@ -18,6 +18,15 @@ All notable changes to this project are documented in this file.
 - Corrected flat program episode listings so they no longer invent a fake `S1`
   season label when RaiPlaySound exposes neither real seasons nor alternate
   groupings.
+- Extended grouping discovery to cover year and period buckets, thematic
+  subseries, and thin-HTML season selectors where the current season is visible
+  but numbered season links are not.
+- Updated `raiplaysound-cli download <program>` to reuse grouped discovery, so
+  grouped programs download across their discovered collections instead of only
+  the root subpage.
+- Changed `raiplaysound-cli list --seasons --season <n>` so it now narrows
+  output for real seasonal programs and rejects `--season` for non-season or
+  flat programs instead of ignoring it.
 - Added developer-facing documentation under `docs/` covering the current
   RaiPlaySound site structure assumptions, verified season URL patterns, cache
   behavior, and known discovery gaps for future contributors.

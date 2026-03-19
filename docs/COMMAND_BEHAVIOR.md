@@ -86,6 +86,8 @@ raiplaysound-cli list episodes america7
 - when the program exposes real seasons, it prints seasons
 - when the program exposes other grouping families, it prints groupings instead
   of incorrectly collapsing to a flat list
+- `--season` narrows the output only for real seasonal programs
+- `--season` is rejected for non-season grouped programs and flat programs
 - JSON output exposes:
   - `has_seasons`
   - `has_groups`
@@ -124,6 +126,8 @@ raiplaysound-cli list episodes america7
   - `.download-archive.txt`
   - optional `feed.xml`
   - optional `playlist.m3u`
+- reuses grouped-source discovery, so grouped programs download across the same
+  discovered collections used by `list --episodes`
 - supports season filtering, episode-ID filtering, and episode-URL filtering
 - supports legacy aliases:
   - `--seasons` for `--season`
@@ -190,8 +194,5 @@ Relevant config behavior:
 
 - some program pages expose grouped UI state without directly exposing the full
   grouping set in the initial HTML
-- `afroamerica-blackmusicrevolution` remains a known under-detected case
-- `list --seasons` still parses `--season`, but does not currently use it to
-  narrow the output
-- `download` still follows the older discovery path and does not yet fully
-  reuse the richer grouping aggregation used by `list --episodes`
+- some grouped pages can still fail downstream in `yt-dlp` extraction even when
+  the HTML discovery layer finds the right season or grouping URLs

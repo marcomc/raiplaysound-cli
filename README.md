@@ -238,8 +238,12 @@ inspection or download preparation.
 
 For programs that use non-season groupings on RaiPlaySound, `list --seasons`
 also reports those groupings instead of incorrectly collapsing everything into a
-flat episode list. For example, programs may expose specials or named
-collections instead of numbered seasons.
+flat episode list. For example, programs may expose specials, named thematic
+collections, or year and period buckets instead of numbered seasons.
+
+When a program exposes real seasons, `list --seasons --season <n>` narrows the
+output to the requested season. For non-season groupings or flat programs,
+`--season` is rejected instead of being silently ignored.
 
 `list --episodes <program>` also aggregates episodes across discovered
 groupings for grouped programs, instead of only listing the currently selected
@@ -248,6 +252,10 @@ subpage.
 For flat programs that do not expose real seasons or other groupings,
 `list --episodes` does not invent a fake `S1` column. Those programs are shown
 as a plain episode list, and JSON output reports the season as `null`.
+
+`download <program>` now follows the same grouping-aware discovery path as
+`list --episodes`, so grouped programs can be downloaded across their
+discovered collections instead of only the root subpage.
 
 Example output:
 
