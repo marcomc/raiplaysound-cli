@@ -300,6 +300,41 @@ def load_list_episode_context(
     return slug, program_url, episodes, summary
 
 
+def load_cached_show_context(
+    settings: Settings,
+    input_value: str,
+    selected_seasons: set[str],
+    request_all_seasons: bool,
+    *,
+    sources_override: list[str] | None = None,
+    source_groups_override: list[GroupSource] | None = None,
+) -> tuple[str, str, list[Any], Any, Path, dict[str, tuple[str, str, str]]]:
+    slug, program_url = detect_slug(input_value)
+    metadata_cache_file = settings.target_base / slug / ".metadata-cache.tsv"
+    if sources_override is None:
+        sources = discover_feed_sources(
+            slug,
+            selected_seasons,
+            request_all_seasons,
+            False,
+        )
+    else:
+        sources = sources_override
+    source_groups = (
+        {group.url: group for group in source_groups_override}
+        if source_groups_override is not None
+        else None
+    )
+    episodes = collect_episodes_from_sources(sources, source_groups=source_groups)
+    cache: dict[str, tuple[str, str, str]] = {}
+    if not settings.force_refresh_metadata and cache_file_is_fresh(
+        metadata_cache_file, settings.metadata_max_age_hours
+    ):
+        cache = load_metadata_cache(metadata_cache_file)
+    summary = normalize_episode_metadata(episodes, cache)
+    return slug, program_url, episodes, summary, metadata_cache_file, cache
+
+
 def list_stations(_settings: Settings, args: argparse.Namespace) -> int:
     stations = parse_stations(http_get("https://www.raiplaysound.it/dirette.json"))
     if args.json:
@@ -907,7 +942,7 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
         request_all,
         selected_groups,
     )
-    slug, program_url, episodes, summary, metadata_cache_file = load_show_context(
+    slug, program_url, episodes, summary, metadata_cache_file, cache = load_cached_show_context(
         settings,
         args.input or settings.input_value,
         selected_seasons,
@@ -928,7 +963,16 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
     )
     if not filtered:
         raise CLIError("No episodes selected for download.")
-    if summary.has_seasons:
+    need_refresh = settings.force_refresh_metadata or any(
+        not cache_entry_is_complete(cache.get(episode.episode_id)) for episode in filtered
+    )
+    if need_refresh:
+        cache.update(collect_metadata([episode.url for episode in filtered], single_entries=True))
+        write_metadata_cache(metadata_cache_file, cache)
+    filtered_summary = normalize_episode_metadata(filtered, cache)
+    if non_season_groups:
+        filtered_summary.has_seasons = False
+    if filtered_summary.has_seasons:
         season_template = (
             "%(series,playlist_title,uploader)s - "
             "S%(season_number|0)02d%(episode_number|0)02d - "

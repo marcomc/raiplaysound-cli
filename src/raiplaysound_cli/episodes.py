@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import json
 import re
 import urllib.parse
 from pathlib import Path
@@ -462,17 +463,68 @@ def write_metadata_cache(path: Path, cache: dict[str, tuple[str, str, str]]) -> 
     path.write_text("".join(lines), encoding="utf-8")
 
 
-def collect_metadata(sources: list[str]) -> dict[str, tuple[str, str, str]]:
+def _episode_json_url(url: str) -> str:
+    normalized = url.rstrip("/")
+    if normalized.endswith(".json"):
+        return normalized
+    if normalized.endswith(".html"):
+        return normalized[:-5] + ".json"
+    return normalized + ".json"
+
+
+def _normalize_episode_upload_date(payload: dict[str, object]) -> str:
+    date_tracking = str(payload.get("date_tracking") or "").strip()
+    match = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})", date_tracking)
+    if match:
+        return "".join(match.groups())
+    create_date = str(payload.get("create_date") or "").strip()
+    match = re.fullmatch(r"(\d{2})-(\d{2})-(\d{4})", create_date)
+    if match:
+        day, month, year = match.groups()
+        return f"{year}{month}{day}"
+    return "NA"
+
+
+def _collect_metadata_from_episode_json(source: str) -> dict[str, tuple[str, str, str]]:
+    payload = json.loads(http_get(_episode_json_url(source)))
+    if not isinstance(payload, dict):
+        raise CLIError("invalid episode payload")
+    raw_id = str(payload.get("uniquename") or "")
+    match = re.search(r"ContentItem-([0-9a-fA-F-]{8,})$", raw_id)
+    if match:
+        episode_id = match.group(1)
+    else:
+        path_id = str(payload.get("path_id") or payload.get("weblink") or "")
+        match = EPISODE_ID_FROM_URL_RE.search(path_id)
+        if not match:
+            raise CLIError("episode metadata did not include an ID")
+        episode_id = match.group(1)
+    title = str(payload.get("title") or payload.get("episode_title") or "NA")
+    season = str(payload.get("season") or payload.get("season_number") or "NA")
+    return {episode_id: (_normalize_episode_upload_date(payload), season, title)}
+
+
+def collect_metadata(
+    sources: list[str], *, single_entries: bool = False
+) -> dict[str, tuple[str, str, str]]:
     result: dict[str, tuple[str, str, str]] = {}
     for source in sources:
+        if single_entries:
+            try:
+                result.update(_collect_metadata_from_episode_json(source))
+                continue
+            except Exception:
+                pass
+        args = [
+            "--skip-download",
+            "--ignore-errors",
+            "--print",
+            "%(id)s\t%(upload_date|NA)s\t%(title|NA)s\t%(season_number|NA)s",
+        ]
+        if single_entries:
+            args.append("--no-playlist")
         metadata = run_yt_dlp(
-            [
-                "--skip-download",
-                "--ignore-errors",
-                "--print",
-                "%(id)s\t%(upload_date|NA)s\t%(title|NA)s\t%(season_number|NA)s",
-                source,
-            ],
+            args + [source],
             allow_partial_failure=True,
         )
         for line in metadata.stdout.splitlines():

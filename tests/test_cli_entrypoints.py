@@ -1085,18 +1085,16 @@ def test_download_uses_grouped_episode_sources(monkeypatch, tmp_path: Path, caps
         ),
     )
 
-    def fake_load_show_context(
+    def fake_load_cached_show_context(
         _settings: Settings,
         input_value: str,
         _selected_seasons: set[str],
         _request_all: bool,
         *,
-        for_list_seasons: bool = False,
         sources_override: list[str] | None = None,
         source_groups_override: list[GroupSource] | None = None,
-    ) -> tuple[str, str, list[object], object, Path]:
+    ) -> tuple[str, str, list[object], object, Path, dict[str, tuple[str, str, str]]]:
         assert input_value == "profili"
-        assert for_list_seasons is False
         assert sources_override == [
             "https://www.raiplaysound.it/programmi/profili",
             "https://www.raiplaysound.it/programmi/profili/speciali/speciale-lucio-dalla",
@@ -1142,9 +1140,10 @@ def test_download_uses_grouped_episode_sources(monkeypatch, tmp_path: Path, caps
             episodes,
             summary,
             settings.target_base / "profili" / ".metadata-cache.tsv",
+            {},
         )
 
-    monkeypatch.setattr(cli, "load_show_context", fake_load_show_context)
+    monkeypatch.setattr(cli, "load_cached_show_context", fake_load_cached_show_context)
 
     def fake_filter_episodes(
         episodes: list[object],
@@ -1179,3 +1178,112 @@ def test_download_uses_grouped_episode_sources(monkeypatch, tmp_path: Path, caps
 
     assert result == 0
     assert "Completed: done=2, skipped=0, errors=0" in captured.out
+
+
+def test_download_refreshes_metadata_only_for_filtered_episodes(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    settings = Settings()
+    settings.target_base = tmp_path / "Music" / "RaiPlaySound"
+    settings.jobs = 1
+    settings.check_jobs = 1
+
+    monkeypatch.setattr(cli, "parse_env_file", lambda _path: {})
+    monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
+    monkeypatch.setattr(
+        cli,
+        "discover_grouped_episode_sources",
+        lambda _slug, _selected_seasons, _request_all, _selected_groups: (None, None, False),
+    )
+
+    episodes = [
+        type(
+            "Episode",
+            (),
+            {
+                "season": "2",
+                "group_label": "",
+                "group_kind": "",
+                "pretty_date": "NA",
+                "title": "Episode One",
+                "label": "episode-one",
+                "episode_id": "ep-1",
+                "url": "https://www.raiplaysound.it/audio/ep-1.html",
+            },
+        )(),
+        type(
+            "Episode",
+            (),
+            {
+                "season": "2",
+                "group_label": "",
+                "group_kind": "",
+                "pretty_date": "NA",
+                "title": "Episode Two",
+                "label": "episode-two",
+                "episode_id": "ep-2",
+                "url": "https://www.raiplaysound.it/audio/ep-2.html",
+            },
+        )(),
+    ]
+    summary = type("Summary", (), {"has_seasons": True, "latest_season": "2"})()
+
+    monkeypatch.setattr(
+        cli,
+        "load_cached_show_context",
+        lambda *_args, **_kwargs: (
+            "america7",
+            "https://www.raiplaysound.it/programmi/america7",
+            episodes,
+            summary,
+            settings.target_base / "america7" / ".metadata-cache.tsv",
+            {},
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "filter_episodes_for_list_or_download",
+        lambda _episodes, *_args, **_kwargs: [episodes[1]],
+    )
+
+    captured_targets: list[list[str]] = []
+
+    def fake_collect_metadata(
+        targets: list[str], *, single_entries: bool = False
+    ) -> dict[str, tuple[str, str, str]]:
+        captured_targets.append(targets)
+        assert single_entries is True
+        return {"ep-2": ("20260306", "2", "Episode Two")}
+
+    written_cache: dict[str, tuple[str, str, str]] = {}
+
+    monkeypatch.setattr(cli, "collect_metadata", fake_collect_metadata)
+    monkeypatch.setattr(
+        cli,
+        "write_metadata_cache",
+        lambda _path, cache: written_cache.update(cache),
+    )
+    monkeypatch.setattr(cli, "predicted_media_exists", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(cli, "acquire_lock", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(cli, "release_lock", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(cli, "resolve_log_file", lambda **_kwargs: None)
+
+    class FakeDownloader:
+        def __init__(self, **_kwargs) -> None:
+            return None
+
+        def download_one(self, task: object) -> tuple[str, str]:
+            return "DONE", "done"
+
+        def terminate_all(self) -> None:
+            return None
+
+    monkeypatch.setattr(cli, "Downloader", FakeDownloader)
+
+    result = cli.main(["download", "america7", "--episode-ids", "ep-2"])
+    captured = capsys.readouterr()
+
+    assert result == 0
+    assert captured_targets == [["https://www.raiplaysound.it/audio/ep-2.html"]]
+    assert written_cache == {"ep-2": ("20260306", "2", "Episode Two")}
+    assert "Completed: done=1, skipped=0, errors=0" in captured.out

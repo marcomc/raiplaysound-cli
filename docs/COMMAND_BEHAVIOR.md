@@ -144,6 +144,9 @@ raiplaysound-cli list episodes america7
   - optional `playlist.m3u`
 - reuses grouped-source discovery, so grouped programs download across the same
   discovered collections used by `list episodes`
+- defers metadata refresh until after episode filtering, so narrow selections
+  such as `--group`, `--episode-ids`, and `--episode-urls` only refresh
+  metadata for the episodes that will actually be downloaded
 - `--group` narrows grouped downloads to one or more discovered grouping keys
   or labels
 - supports season filtering, episode-ID filtering, and episode-URL filtering

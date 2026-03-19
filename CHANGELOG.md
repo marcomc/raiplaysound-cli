@@ -51,6 +51,10 @@ All notable changes to this project are documented in this file.
 - Made `list episodes <program>` use a read-only metadata path: it reuses any
   existing per-show cache for enrichment, but no longer refreshes or rewrites
   `.metadata-cache.tsv` during listing.
+- Reduced `download <program>` startup work for narrow selections by deferring
+  metadata refresh until after episode filtering, so `--group`,
+  `--episode-ids`, and `--episode-urls` only refresh metadata for the episodes
+  that will actually be downloaded.
 
 ## [2.0.0] - 2026-03-10 - Python Package Port
 

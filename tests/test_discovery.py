@@ -214,6 +214,74 @@ def test_collect_metadata_accepts_partial_failure_output(monkeypatch) -> None:
     }
 
 
+def test_collect_metadata_uses_no_playlist_for_single_entries(monkeypatch) -> None:
+    captured_args: list[list[str]] = []
+
+    def fake_run_yt_dlp(
+        args: list[str], *, allow_partial_failure: bool = False
+    ) -> subprocess.CompletedProcess[str]:
+        assert allow_partial_failure is True
+        captured_args.append(args)
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=0,
+            stdout="ep-1\t20240101\tEpisode One\tNA\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(episodes, "run_yt_dlp", fake_run_yt_dlp)
+
+    result = episodes.collect_metadata(
+        ["https://www.raiplaysound.it/audio/2024/01/episode-one-ep-1.json"],
+        single_entries=True,
+    )
+
+    assert result == {"ep-1": ("20240101", "NA", "Episode One")}
+    assert captured_args == [
+        [
+            "--skip-download",
+            "--ignore-errors",
+            "--print",
+            "%(id)s\t%(upload_date|NA)s\t%(title|NA)s\t%(season_number|NA)s",
+            "--no-playlist",
+            "https://www.raiplaysound.it/audio/2024/01/episode-one-ep-1.json",
+        ]
+    ]
+
+
+def test_collect_metadata_uses_episode_json_for_single_entries(monkeypatch) -> None:
+    monkeypatch.setattr(
+        episodes,
+        "http_get",
+        lambda url: (
+            '{"uniquename":"ContentItem-48e8407b-360f-472f-969e-a1c2f24e713c",'
+            '"date_tracking":"2022-03-09","title":"Speciale Burnt Sugar",'
+            '"season":"2021-22","path_id":"/audio/2022/03/Speciale-Burnt-Sugar-'
+            '48e8407b-360f-472f-969e-a1c2f24e713c.json"}'
+        ),
+    )
+    monkeypatch.setattr(
+        episodes,
+        "run_yt_dlp",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("yt-dlp should not run")),
+    )
+
+    result = episodes.collect_metadata(
+        [
+            "https://www.raiplaysound.it/audio/2022/03/Speciale-Burnt-Sugar-48e8407b-360f-472f-969e-a1c2f24e713c.html"
+        ],
+        single_entries=True,
+    )
+
+    assert result == {
+        "48e8407b-360f-472f-969e-a1c2f24e713c": (
+            "20220309",
+            "2021-22",
+            "Speciale Burnt Sugar",
+        )
+    }
+
+
 def test_collect_season_summary_from_sources_uses_url_years_without_metadata(monkeypatch) -> None:
     outputs = {
         "https://www.raiplaysound.it/programmi/america7/episodi/stagione-1": (

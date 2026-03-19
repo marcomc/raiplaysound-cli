@@ -295,6 +295,12 @@ as a plain episode list, and JSON output reports the season as `null`.
 `list episodes`, so grouped programs can be downloaded across their
 discovered collections instead of only the root subpage.
 
+Download startup is also narrower now: episode discovery still happens across
+the selected program or grouping, but metadata refresh is deferred until after
+episode filtering. When you use selectors like `--group`, `--episode-ids`, or
+`--episode-urls`, the CLI refreshes metadata only for the episodes that will
+actually be downloaded.
+
 Example output:
 
 ```text
