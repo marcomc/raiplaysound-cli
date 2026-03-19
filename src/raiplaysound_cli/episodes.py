@@ -22,7 +22,10 @@ GROUP_LINK_RE = re.compile(
 )
 EPISODE_ID_FROM_URL_RE = re.compile(r"-([0-9a-fA-F-]{8,})\.(?:html|json)$")
 SEASON_IN_TITLE_RE = re.compile(r"[Ss](\d{1,3})[ _-]*[Ee]\d{1,3}")
-SEASON_LABEL_RE = re.compile(r"\bStagione\s+(\d{1,3})\b", re.IGNORECASE)
+SEASON_LABEL_RE = re.compile(
+    r"(?:\bStagione\s+(\d{1,3})\b|\b(\d{1,3})\s*\^?\s*Stagione\b)",
+    re.IGNORECASE,
+)
 CURRENT_FILTER_LABEL_RE = re.compile(
     r"data-filters-current[^>]*>.*?<span[^>]*>(?P<label>[^<]+)</span>",
     re.IGNORECASE | re.DOTALL,
@@ -108,13 +111,32 @@ def discover_season_listing_sources(slug: str) -> tuple[str, list[str]]:
     ]
     season_urls = {f"https://www.raiplaysound.it{match.group(0)}" for match in linked_matches}
     known_numbers = {int(match.group("season")) for match in linked_matches}
-    known_numbers.update(int(value) for value in SEASON_LABEL_RE.findall(html))
-    sections = {match.group("section") for match in linked_matches}
-    if not sections:
-        sections = {"episodi", "puntate"}
+    for label_match in SEASON_LABEL_RE.findall(html):
+        for value in label_match:
+            if value:
+                known_numbers.add(int(value))
+    linked_sections = {match.group("section") for match in linked_matches}
+    sections = linked_sections or {"episodi", "puntate"}
+    if known_numbers and not linked_matches:
+        for section in sections:
+            for season in range(1, max(known_numbers) + 1):
+                candidate = f"{program_url}/{section}/stagione-{season}"
+                try:
+                    http_get(candidate)
+                except Exception:
+                    continue
+                season_urls.add(candidate)
     for section in sections:
         for season in sorted(known_numbers):
-            season_urls.add(f"{program_url}/{section}/stagione-{season}")
+            candidate = f"{program_url}/{section}/stagione-{season}"
+            if linked_sections:
+                season_urls.add(candidate)
+                continue
+            try:
+                http_get(candidate)
+            except Exception:
+                continue
+            season_urls.add(candidate)
     next_number = max(known_numbers) + 1 if known_numbers else 1
     while True:
         found_next = False
@@ -228,6 +250,27 @@ def discover_group_listing_sources(slug: str) -> tuple[str, list[GroupSource]]:
             return season_url_program, season_groups
 
     return program_url, []
+
+
+def discover_grouped_episode_sources(
+    slug: str,
+    selected_seasons: set[str],
+    include_all_seasons: bool,
+) -> tuple[list[str] | None, list[GroupSource] | None, bool]:
+    _program_url, groups = discover_group_listing_sources(slug)
+    if not groups:
+        return None, None, False
+    all_seasons = all(group.kind == "season" for group in groups)
+    if not all_seasons and (selected_seasons or include_all_seasons):
+        raise CLIError("this program does not expose seasons, so --season cannot be used.")
+    selected_groups = groups
+    if all_seasons and selected_seasons and not include_all_seasons:
+        available = {group.key for group in groups}
+        missing = sorted(selected_seasons - available, key=int)
+        if missing:
+            raise CLIError(f"season {missing[0]} is not available.")
+        selected_groups = [group for group in groups if group.key in selected_seasons]
+    return [group.url for group in selected_groups], selected_groups, not all_seasons
 
 
 def collect_episodes_from_sources(

@@ -123,6 +123,21 @@ Verified live during this session:
 
 These pages are not uniformly linked from the main program page.
 
+### Other grouping pages
+
+Verified live during this session:
+
+- `https://www.raiplaysound.it/programmi/<slug>/speciali/<slug>`
+- `https://www.raiplaysound.it/programmi/<slug>/puntate-e-podcast/<slug>`
+- `https://www.raiplaysound.it/programmi/<slug>/puntate/<bucket>`
+- `https://www.raiplaysound.it/programmi/<slug>/episodi-/<bucket>`
+
+Observed bucket labels include:
+
+- named thematic collections
+- year buckets such as `2026`
+- period buckets such as `2025-26` or `2021 (Gen-Giu)`
+
 ### Episode enumeration and metadata
 
 The application uses `yt-dlp` against program pages and season pages:
@@ -148,13 +163,14 @@ This is the main fallback when the HTML is inconsistent.
 ### `list --episodes`
 
 - resolves the slug or URL
-- discovers source pages from the main program page
+- discovers grouped source pages from the main program page
 - enumerates episodes with `yt-dlp`
 - may refresh metadata cache when data is missing or stale
+- suppresses fake season semantics for flat programs and non-season groupings
 
 ### `download`
 
-- shares the heavy discovery path used by episode listing
+- reuses the same grouping-aware source discovery used by episode listing
 - writes into the target show directory
 - preserves:
   - `.download-archive.txt`
@@ -288,7 +304,9 @@ Current implementation in
    - `puntate-e-podcast`
    - named or year-based `puntate` buckets
 4. Build candidate URLs for known season numbers under the detected section.
-5. Probe consecutive season URLs above the highest known season number until no
+5. When only season labels are visible, probe verified candidate season URLs
+   rather than assuming both `episodi` and `puntate` exist.
+6. Probe consecutive season URLs above the highest known season number until no
    more pages are found.
 
 This works for:
@@ -300,6 +318,9 @@ This works for:
 It does not yet fully work for:
 
 - `afroamerica-blackmusicrevolution`
+
+The discovery layer now finds more of the right URLs for this class of page,
+but some of those pages can still fail later in `yt-dlp` extraction.
 
 ## Known Failure Modes
 
@@ -341,7 +362,8 @@ Example:
 - `afroamerica-blackmusicrevolution`
 
 The page shows a season selector, but the initial HTML does not expose any
-`.../stagione-N` link. This likely requires a different discovery strategy.
+`.../stagione-N` link. The CLI now probes verified season candidates for this
+shape, but downstream extraction may still fail in `yt-dlp`.
 
 ### Some grouped pages are not seasons at all
 

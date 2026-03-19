@@ -215,3 +215,87 @@ def test_discover_group_listing_sources_supports_speciali(monkeypatch) -> None:
             "https://www.raiplaysound.it/programmi/profili/speciali/speciale-lucio-dalla",
         ),
     ]
+
+
+def test_discover_group_listing_sources_supports_year_and_series_buckets(monkeypatch) -> None:
+    def fake_http_get(url: str) -> str:
+        if url == "https://www.raiplaysound.it/programmi/wikiradio":
+            return (
+                "<button data-filters-current><span>2026</span></button>"
+                '<a href="/programmi/wikiradio/episodi-/2025">2025</a>'
+            )
+        if url == "https://www.raiplaysound.it/programmi/3sullaluna":
+            return (
+                '<a href="/programmi/3sullaluna/puntate-e-podcast/destinazione-luna">'
+                "Destinazione Luna</a>"
+            )
+        raise RuntimeError("not found")
+
+    monkeypatch.setattr(episodes, "http_get", fake_http_get)
+
+    _program_url, groups = episodes.discover_group_listing_sources("wikiradio")
+
+    assert [(group.label, group.kind, group.url) for group in groups] == [
+        ("2026", "bucket", "https://www.raiplaysound.it/programmi/wikiradio"),
+        ("2025", "bucket", "https://www.raiplaysound.it/programmi/wikiradio/episodi-/2025"),
+    ]
+
+    _program_url, groups = episodes.discover_group_listing_sources("3sullaluna")
+
+    assert [(group.label, group.kind, group.url) for group in groups] == [
+        (
+            "Destinazione Luna",
+            "series",
+            "https://www.raiplaysound.it/programmi/3sullaluna/puntate-e-podcast/destinazione-luna",
+        )
+    ]
+
+
+def test_discover_group_listing_sources_skips_auxiliary_tabs(monkeypatch) -> None:
+    def fake_http_get(url: str) -> str:
+        if url == "https://www.raiplaysound.it/programmi/show":
+            return (
+                '<a href="/programmi/show/clip">Clip</a>'
+                '<a href="/programmi/show/extra">Extra</a>'
+                '<a href="/programmi/show/playlist">Playlist</a>'
+                '<a href="/programmi/show/novita">Novita</a>'
+            )
+        raise RuntimeError("not found")
+
+    monkeypatch.setattr(episodes, "http_get", fake_http_get)
+
+    _program_url, groups = episodes.discover_group_listing_sources("show")
+
+    assert groups == []
+
+
+def test_discover_season_listing_sources_supports_caret_current_labels(monkeypatch) -> None:
+    def fake_http_get(url: str) -> str:
+        if url == "https://www.raiplaysound.it/programmi/afroamerica-blackmusicrevolution":
+            return (
+                "<button data-filters-current><span>2^ Stagione</span></button>"
+                '<a href="/programmi/afroamerica-blackmusicrevolution/episodi/episodi">Episodi</a>'
+            )
+        if url == (
+            "https://www.raiplaysound.it/programmi/"
+            "afroamerica-blackmusicrevolution/episodi/stagione-1"
+        ):
+            return "<title>Afroamerica | Stagione 1</title>"
+        if url == (
+            "https://www.raiplaysound.it/programmi/"
+            "afroamerica-blackmusicrevolution/episodi/stagione-2"
+        ):
+            return "<title>Afroamerica | Stagione 2</title>"
+        raise RuntimeError("not found")
+
+    monkeypatch.setattr(episodes, "http_get", fake_http_get)
+
+    program_url, sources = episodes.discover_season_listing_sources(
+        "afroamerica-blackmusicrevolution"
+    )
+
+    assert program_url == "https://www.raiplaysound.it/programmi/afroamerica-blackmusicrevolution"
+    assert sources == [
+        "https://www.raiplaysound.it/programmi/afroamerica-blackmusicrevolution/episodi/stagione-1",
+        "https://www.raiplaysound.it/programmi/afroamerica-blackmusicrevolution/episodi/stagione-2",
+    ]

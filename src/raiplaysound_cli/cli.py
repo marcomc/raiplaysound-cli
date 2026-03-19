@@ -31,7 +31,12 @@ from .catalog import (
     write_program_cache,
 )
 from .config import Settings, choose_command, parse_env_file
-from .downloads import Downloader, DownloadTask, remove_missing_ids_from_archive, resolve_log_file
+from .downloads import (
+    Downloader,
+    DownloadTask,
+    remove_missing_ids_from_archive,
+    resolve_log_file,
+)
 from .episodes import (
     build_requested_episode_filters,
     build_requested_set,
@@ -43,6 +48,7 @@ from .episodes import (
     detect_slug,
     discover_feed_sources,
     discover_group_listing_sources,
+    discover_grouped_episode_sources,
     discover_season_listing_sources,
     filter_episodes_for_list_or_download,
     load_metadata_cache,
@@ -308,12 +314,20 @@ def list_programs(settings: Settings, args: argparse.Namespace) -> int:
 
 
 def list_seasons(settings: Settings, args: argparse.Namespace) -> int:
-    _selected_seasons, _request_all = build_requested_set(args.season or settings.seasons_arg)
+    selected_seasons, request_all = build_requested_set(args.season or settings.seasons_arg)
     slug, program_url = detect_slug(args.input)
     _, groups = discover_group_listing_sources(slug)
     if groups:
         group_summaries = collect_group_summaries(groups)
         all_seasons = all(group.kind == "season" for group in group_summaries)
+        if not all_seasons and (selected_seasons or request_all):
+            raise CLIError("this program does not expose seasons, so --season cannot be used.")
+        if all_seasons and selected_seasons and not request_all:
+            available = {group.key for group in group_summaries}
+            missing = sorted(selected_seasons - available, key=int)
+            if missing:
+                raise CLIError(f"season {missing[0]} is not available.")
+            group_summaries = [group for group in group_summaries if group.key in selected_seasons]
     else:
         group_summaries = []
         all_seasons = False
@@ -337,6 +351,10 @@ def list_seasons(settings: Settings, args: argparse.Namespace) -> int:
             episodes, summary = collect_season_summary_from_sources(sources)
             has_seasons = summary.has_seasons
             if not summary.has_seasons:
+                if selected_seasons or request_all:
+                    raise CLIError(
+                        "this program does not expose seasons, so --season cannot be used."
+                    )
                 items.append(
                     {
                         "key": "default",
@@ -348,7 +366,14 @@ def list_seasons(settings: Settings, args: argparse.Namespace) -> int:
                     }
                 )
             else:
+                available = set(summary.counts)
+                if selected_seasons and not request_all:
+                    missing = sorted(selected_seasons - available, key=int)
+                    if missing:
+                        raise CLIError(f"season {missing[0]} is not available.")
                 for season in sorted(summary.counts, key=lambda item: int(item)):
+                    if selected_seasons and not request_all and season not in selected_seasons:
+                        continue
                     items.append(
                         {
                             "key": season,
@@ -399,6 +424,8 @@ def list_seasons(settings: Settings, args: argparse.Namespace) -> int:
     _, sources = discover_season_listing_sources(slug)
     episodes, summary = collect_season_summary_from_sources(sources)
     if not summary.has_seasons:
+        if selected_seasons or request_all:
+            raise CLIError("this program does not expose seasons, so --season cannot be used.")
         console.print(f"No seasons detected for {slug} ({program_url}).")
         console.print(
             f"  - Episodes: {len(episodes)} "
@@ -406,7 +433,16 @@ def list_seasons(settings: Settings, args: argparse.Namespace) -> int:
         )
         return 0
     console.print(f"Available seasons for {slug} ({program_url}):")
-    sorted_seasons = sorted(summary.counts, key=lambda item: int(item))
+    available = set(summary.counts)
+    if selected_seasons and not request_all:
+        missing = sorted(selected_seasons - available, key=int)
+        if missing:
+            raise CLIError(f"season {missing[0]} is not available.")
+    sorted_seasons = [
+        season
+        for season in sorted(summary.counts, key=lambda item: int(item))
+        if not selected_seasons or request_all or season in selected_seasons
+    ]
     for season in sorted_seasons:
         published = year_span(
             summary.year_min.get(season, ""),
@@ -423,16 +459,18 @@ def list_episodes(settings: Settings, args: argparse.Namespace) -> int:
     selected_seasons, request_all = build_requested_set(args.season or settings.seasons_arg)
     input_value = args.input
     slug, _program_url = detect_slug(input_value)
-    _, groups = discover_group_listing_sources(slug)
-    sources_override = [group.url for group in groups] if groups else None
-    non_season_groups = bool(groups) and any(group.kind != "season" for group in groups)
+    sources_override, groups, non_season_groups = discover_grouped_episode_sources(
+        slug,
+        selected_seasons,
+        request_all,
+    )
     slug, program_url, episodes, summary, _metadata_cache = load_show_context(
         settings,
         input_value,
         selected_seasons,
         request_all,
         sources_override=sources_override,
-        source_groups_override=groups if groups else None,
+        source_groups_override=groups,
     )
     if non_season_groups:
         summary.has_seasons = False
@@ -837,12 +875,21 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
     metadata_cache_file = target_dir / ".metadata-cache.tsv"
     if settings.clear_metadata_cache and metadata_cache_file.exists():
         metadata_cache_file.unlink()
+    sources_override, groups, non_season_groups = discover_grouped_episode_sources(
+        slug,
+        selected_seasons,
+        request_all,
+    )
     slug, program_url, episodes, summary, metadata_cache_file = load_show_context(
         settings,
         args.input or settings.input_value,
         selected_seasons,
         request_all,
+        sources_override=sources_override,
+        source_groups_override=groups,
     )
+    if non_season_groups:
+        summary.has_seasons = False
     filtered = filter_episodes_for_list_or_download(
         episodes,
         summary,
