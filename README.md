@@ -321,7 +321,8 @@ as source discovery, episode enumeration, metadata refresh, and archive-file
 checks so long grouped downloads are not silent before transfer starts.
 
 Once transfers begin, each per-episode progress row now shows downloaded size
-in megabytes, for example `5.0/10.0 MB`, while the bar advances gradually.
+in megabytes, for example `5.0/10.0 MB`, while the overall row shows aggregate
+transfer speed.
 
 When `--missing` is not enabled, the CLI now skips the archive/file existence
 scan entirely instead of paying that startup cost on every download.

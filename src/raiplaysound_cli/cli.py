@@ -13,7 +13,6 @@ from typing import Any
 from rich.console import Console
 from rich.progress import (
     BarColumn,
-    MofNCompleteColumn,
     Progress,
     SpinnerColumn,
     TaskProgressColumn,
@@ -1266,7 +1265,7 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
         BarColumn(bar_width=None),
         TaskProgressColumn(),
         TextColumn("{task.fields[size_text]}"),
-        MofNCompleteColumn(),
+        TextColumn("{task.fields[speed_text]}"),
         TimeRemainingColumn(),
         console=console,
     )
@@ -1277,7 +1276,12 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
         console.print(f"Starting downloads for {slug} ({len(filtered)} episode(s))")
         with progress:
             overall_label = f"[bold]Total ({len(filtered)} episode(s))[/bold]"
-            overall = progress.add_task(overall_label, total=len(filtered), size_text="")
+            overall = progress.add_task(
+                overall_label,
+                total=len(filtered),
+                size_text="",
+                speed_text="",
+            )
             downloader = Downloader(
                 archive_file=archive_file,
                 output_template=output_template,
@@ -1285,6 +1289,7 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
                 log_file=log_file,
                 rich_progress=progress,
                 debug_pids=settings.debug_pids,
+                overall_task_id=overall,
             )
 
             def _handle_signal(signum: int, _frame: Any) -> None:
@@ -1303,6 +1308,7 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
                         f"download {episode.label}",
                         total=100,
                         size_text="0.0 MB",
+                        speed_text="",
                     ),
                 )
                 for episode in filtered

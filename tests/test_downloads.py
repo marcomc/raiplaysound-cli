@@ -71,22 +71,27 @@ def test_downloader_parses_progress_lines(monkeypatch, tmp_path: Path) -> None:
         "total": 100,
         "completed": 10,
         "size_text": "0.0/0.0 MB",
+        "speed_text": "",
     } in progress.updated
     assert {
         "task_id": 7,
         "total": 100,
         "completed": 40,
         "size_text": "0.0/0.0 MB",
+        "speed_text": "",
     } in progress.updated
     assert {
         "task_id": 7,
         "total": 100,
         "completed": 100,
         "size_text": "0.0/0.0 MB",
+        "speed_text": "",
     } in progress.updated
 
 
-def test_downloader_formats_megabytes_for_byte_progress(monkeypatch, tmp_path: Path) -> None:
+def test_downloader_formats_megabytes_and_updates_overall_speed(
+    monkeypatch, tmp_path: Path
+) -> None:
     progress = RecordingProgress()
     task = DownloadTask(
         episode_id="ep-1",
@@ -104,6 +109,8 @@ def test_downloader_formats_megabytes_for_byte_progress(monkeypatch, tmp_path: P
         "raiplaysound_cli.downloads.subprocess.Popen",
         lambda *args, **kwargs: fake_process,
     )
+    times = iter([0.0, 1.0, 2.0])
+    monkeypatch.setattr("raiplaysound_cli.downloads.time.monotonic", lambda: next(times))
 
     downloader = Downloader(
         archive_file=tmp_path / ".download-archive.txt",
@@ -112,6 +119,7 @@ def test_downloader_formats_megabytes_for_byte_progress(monkeypatch, tmp_path: P
         log_file=None,
         rich_progress=progress,  # type: ignore[arg-type]
         debug_pids=False,
+        overall_task_id=cast(TaskID, 99),
     )
 
     state, detail = downloader.download_one(task)
@@ -122,13 +130,17 @@ def test_downloader_formats_megabytes_for_byte_progress(monkeypatch, tmp_path: P
         "total": 10000000,
         "completed": 5000000,
         "size_text": "5.0/10.0 MB",
+        "speed_text": "",
     } in progress.updated
     assert {
         "task_id": 8,
         "total": 10000000,
         "completed": 10000000,
         "size_text": "10.0/10.0 MB",
+        "speed_text": "",
     } in progress.updated
+    assert {"task_id": 99, "speed_text": "5.0 MB/s"} in progress.updated
+    assert progress.updated[-1] == {"task_id": 99, "speed_text": ""}
 
 
 def test_downloader_marks_archive_skip(monkeypatch, tmp_path: Path) -> None:

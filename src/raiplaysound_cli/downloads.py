@@ -28,6 +28,7 @@ class Downloader:
         log_file: Path | None,
         rich_progress: Progress,
         debug_pids: bool,
+        overall_task_id: TaskID | None = None,
     ) -> None:
         self.archive_file = archive_file
         self.output_template = output_template
@@ -35,8 +36,11 @@ class Downloader:
         self.log_file = log_file
         self.progress = rich_progress
         self.debug_pids = debug_pids
+        self.overall_task_id = overall_task_id
         self.lock = threading.Lock()
         self.processes: set[subprocess.Popen[str]] = set()
+        self.task_samples: dict[TaskID, tuple[float, int]] = {}
+        self.task_rates: dict[TaskID, float] = {}
 
     def log(self, message: str) -> None:
         if self.log_file is not None:
@@ -48,6 +52,31 @@ class Downloader:
             for process in list(self.processes):
                 with contextlib.suppress(ProcessLookupError):
                     process.terminate()
+
+    def _update_overall_speed(self, task_id: TaskID, downloaded_bytes: int) -> None:
+        if self.overall_task_id is None:
+            return
+        now = time.monotonic()
+        with self.lock:
+            previous = self.task_samples.get(task_id)
+            if previous is not None:
+                previous_time, previous_bytes = previous
+                elapsed = now - previous_time
+                delta = downloaded_bytes - previous_bytes
+                if elapsed > 0 and delta > 0:
+                    self.task_rates[task_id] = delta / elapsed
+            self.task_samples[task_id] = (now, downloaded_bytes)
+            speed_text = _format_transfer_speed(sum(self.task_rates.values()))
+        self.progress.update(self.overall_task_id, speed_text=speed_text)
+
+    def _clear_overall_speed(self, task_id: TaskID) -> None:
+        if self.overall_task_id is None:
+            return
+        with self.lock:
+            self.task_samples.pop(task_id, None)
+            self.task_rates.pop(task_id, None)
+            speed_text = _format_transfer_speed(sum(self.task_rates.values()))
+        self.progress.update(self.overall_task_id, speed_text=speed_text)
 
     def download_one(self, task: DownloadTask) -> tuple[str, str]:
         parse_metadata_expr = (
@@ -108,7 +137,9 @@ class Downloader:
                     completed=100,
                     total=100,
                     size_text="",
+                    speed_text="",
                 )
+                self._clear_overall_speed(task.task_id)
                 continue
             if line.startswith("ERROR:"):
                 state = "ERROR"
@@ -119,7 +150,9 @@ class Downloader:
                     completed=100,
                     total=100,
                     size_text="",
+                    speed_text="",
                 )
+                self._clear_overall_speed(task.task_id)
                 continue
             if not line.startswith("progress:"):
                 continue
@@ -133,14 +166,18 @@ class Downloader:
                     total=total,
                     completed=downloaded,
                     size_text=_format_megabyte_progress(downloaded, total),
+                    speed_text="",
                 )
+                self._update_overall_speed(task.task_id, downloaded)
             elif estimate > 0:
                 self.progress.update(
                     task.task_id,
                     total=estimate,
                     completed=downloaded,
                     size_text=_format_megabyte_progress(downloaded, estimate),
+                    speed_text="",
                 )
+                self._update_overall_speed(task.task_id, downloaded)
             else:
                 percent_text = raw_percent.strip().replace("%", "")
                 try:
@@ -152,13 +189,16 @@ class Downloader:
                     completed=percent,
                     total=100,
                     size_text=_format_megabyte_progress(downloaded, 0),
+                    speed_text="",
                 )
+                self._update_overall_speed(task.task_id, downloaded)
         process.wait()
         with self.lock:
             self.processes.discard(process)
         if process.returncode != 0 and state != "SKIP":
             state = "ERROR"
             detail = f"yt-dlp exit code {process.returncode}"
+        self._clear_overall_speed(task.task_id)
         self.progress.remove_task(task.task_id)
         return state, detail
 
@@ -169,6 +209,16 @@ def _format_megabyte_progress(downloaded_bytes: int, total_bytes: int) -> str:
         total_mb = total_bytes / 1_000_000
         return f"{downloaded_mb:.1f}/{total_mb:.1f} MB"
     return f"{downloaded_mb:.1f} MB"
+
+
+def _format_transfer_speed(bytes_per_second: float) -> str:
+    if bytes_per_second <= 0:
+        return ""
+    megabytes_per_second = bytes_per_second / 1_000_000
+    if megabytes_per_second >= 1:
+        return f"{megabytes_per_second:.1f} MB/s"
+    kilobytes_per_second = bytes_per_second / 1_000
+    return f"{kilobytes_per_second:.0f} KB/s"
 
 
 def resolve_log_file(
