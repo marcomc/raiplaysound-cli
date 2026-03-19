@@ -104,6 +104,10 @@ Important note:
 
 - program listing uses the cached full catalog plus local filtering by station
   slug rather than relying on station-scoped pages or station-scoped APIs
+- station attribution for the program catalog must prefer
+  `payload.podcast_info.channel` from `programmi/<slug>.json`; the older
+  top-level `channel` field is often `null` in current Rai responses and will
+  collapse station counts to `none` if used as the primary source
 
 ### Program pages
 
