@@ -83,8 +83,12 @@ CHECK_JOBS=8
 
 # Optional program catalog cache max age (hours).
 # Default is 2160 hours (90 days).
-# This is the persistent default; CLI --catalog-max-age-hours overrides per run.
-# CATALOG_MAX_AGE_HOURS=2160
+# This is intentionally longer-lived than the per-show metadata cache, which
+# defaults to 24 hours.
+# Use --refresh-catalog to force a rebuild on one run, or lower this value if
+# you want fresher program listings by default.
+# Example 24-hour override:
+# CATALOG_MAX_AGE_HOURS=24
 
 # Optional program catalog cache file path.
 # CATALOG_CACHE_FILE="$HOME/.local/state/raiplaysound-cli/program-catalog.tsv"

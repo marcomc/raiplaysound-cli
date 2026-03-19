@@ -44,6 +44,10 @@ All notable changes to this project are documented in this file.
 - Changed the empty CLI invocation and top-level help path so
   `raiplaysound-cli` now prints an extensive help message listing both commands
   and their available options.
+- Clarified the caching contract in the docs and sample config: per-show
+  metadata still defaults to `24` hours, while the global program catalog used
+  by `list programs` intentionally defaults to `2160` hours (90 days) unless
+  the user lowers it or forces a catalog refresh.
 
 ## [2.0.0] - 2026-03-10 - Python Package Port
 

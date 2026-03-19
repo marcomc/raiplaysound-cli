@@ -74,6 +74,13 @@ raiplaysound-cli list episodes america7
 
 - uses the cached full program catalog when it is fresh and current
 - otherwise rebuilds the catalog from the sitemap plus per-program JSON
+- the default catalog cache age is intentionally long-lived: `2160` hours
+  (90 days)
+- this is separate from the per-show metadata cache, which defaults to `24`
+  hours
+- use `--refresh-catalog` to force a rebuild, or lower
+  `--catalog-max-age-hours` / `CATALOG_MAX_AGE_HOURS` if you want fresher
+  program listings
 - station filtering is local, using the full cached catalog
 - `--group-by auto` groups by station unless a station filter is active, in
   which case it groups alphabetically

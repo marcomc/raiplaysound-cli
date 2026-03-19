@@ -139,6 +139,19 @@ STATION_FILTER="radio2"
 CATALOG_MAX_AGE_HOURS=2160
 ```
 
+Cache-age defaults are intentionally different:
+
+- `METADATA_MAX_AGE_HOURS` defaults to `24` for per-show episode metadata
+- `CATALOG_MAX_AGE_HOURS` defaults to `2160` (90 days) for the full program
+  catalog used by `list programs`
+
+If you want fresher program listings by default, lower
+`CATALOG_MAX_AGE_HOURS` in your config, for example:
+
+```bash
+CATALOG_MAX_AGE_HOURS=24
+```
+
 Supported config keys:
 
 | Config key | CLI option | Scope |
@@ -167,6 +180,10 @@ Supported config keys:
 | `STATIONS_DETAILED` | `--detailed` | list `stations` |
 | `SHOW_URLS` | `--show-urls` | list `episodes` |
 | `INPUT` | `<program_slug\|program_url>` | download, list `seasons`, list `episodes` |
+
+`FORCE_REFRESH_CATALOG` and `CATALOG_MAX_AGE_HOURS` affect only `list programs`.
+They do not change the per-show metadata cache used by `download` and
+`list episodes`.
 
 `RSS_BASE_URL` must be a direct file-serving base URL. The CLI builds enclosure
 URLs as:
