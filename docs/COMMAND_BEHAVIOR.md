@@ -47,12 +47,14 @@ Config loading order is:
 
 ## `list` Command
 
-`list` requires exactly one target:
+`list` requires exactly one target.
 
-- `--stations`
-- `--programs`
-- `--seasons`
-- `--episodes`
+Target forms:
+
+- `stations`
+- `programs`
+- `seasons`
+- `episodes`
 
 Positional target forms are also supported, for example:
 
@@ -61,14 +63,14 @@ raiplaysound-cli list seasons america7
 raiplaysound-cli list episodes america7
 ```
 
-### `list --stations`
+### `list stations`
 
 - fetches live data from `dirette.json`
 - does not use a local cache
 - `--detailed` adds page and feed URLs
 - JSON output includes mode, count, detail flag, and station objects
 
-### `list --programs`
+### `list programs`
 
 - uses the cached full program catalog when it is fresh and current
 - otherwise rebuilds the catalog from the sitemap plus per-program JSON
@@ -78,7 +80,7 @@ raiplaysound-cli list episodes america7
 - `--sorted` forces a flat alphabetical list
 - errors if the station filter matches nothing
 
-### `list --seasons`
+### `list seasons`
 
 - requires a program slug or full program URL
 - uses the lightweight grouping discovery path and should not refresh or write
@@ -93,7 +95,7 @@ raiplaysound-cli list episodes america7
   - `has_groups`
   - `items`
 
-### `list --episodes`
+### `list episodes`
 
 - requires a program slug or full program URL
 - aggregates episodes across discovered group pages when the program is grouped
@@ -127,7 +129,7 @@ raiplaysound-cli list episodes america7
   - optional `feed.xml`
   - optional `playlist.m3u`
 - reuses grouped-source discovery, so grouped programs download across the same
-  discovered collections used by `list --episodes`
+  discovered collections used by `list episodes`
 - supports season filtering, episode-ID filtering, and episode-URL filtering
 - supports legacy aliases:
   - `--seasons` for `--season`
@@ -166,8 +168,8 @@ Rules:
 
 Relevant config behavior:
 
-- `INPUT` can supply the program for `download`, `list --seasons`, and
-  `list --episodes`
+- `INPUT` can supply the program for `download`, `list seasons`, and
+  `list episodes`
 - `LIST_TARGET` only applies when `list` is selected and no explicit list
   target was passed
 - `STATION_FILTER`, `GROUP_BY`, `PODCASTS_SORTED`, `SHOW_URLS`, and
@@ -177,7 +179,7 @@ Relevant config behavior:
 ## Grouping and Season Behavior
 
 - season filters accept values `1` through `100` or `all`
-- `list --episodes` and `download` default to the latest season when real
+- `list episodes` and `download` default to the latest season when real
   seasons exist and no explicit season or episode filter is provided
 - season discovery supports both:
   - `/episodi/stagione-N`
@@ -187,7 +189,7 @@ Relevant config behavior:
   - `speciali`
   - named thematic buckets
   - year or period buckets
-- `list --seasons` currently acts as the grouping inspector for backwards
+- `list seasons` currently acts as the grouping inspector for backwards
   compatibility
 
 ## Known Gaps

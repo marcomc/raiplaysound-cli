@@ -145,7 +145,7 @@ Supported config keys:
 | --- | --- | --- |
 | `AUDIO_FORMAT` | `--format` | download |
 | `JOBS` | `--jobs` | download |
-| `SEASONS_ARG` | `--season` | download, list `--episodes` |
+| `SEASONS_ARG` | `--season` | download, list `episodes` |
 | `EPISODES_ARG` | `--episode-ids` | download |
 | `EPISODE_URLS_ARG` | `--episode-urls` | download |
 | `AUTO_REDOWNLOAD_MISSING` | `--missing` | download |
@@ -158,14 +158,14 @@ Supported config keys:
 | `FORCE_REFRESH_METADATA` | `--refresh-metadata` | download |
 | `CLEAR_METADATA_CACHE` | `--clear-metadata-cache` | download |
 | `METADATA_MAX_AGE_HOURS` | `--metadata-max-age-hours` | download |
-| `GROUP_BY` | `--group-by` | list `--programs` |
-| `PODCASTS_SORTED` | `--sorted` | list `--programs` |
-| `STATION_FILTER` | `--filter` | list `--programs` |
-| `FORCE_REFRESH_CATALOG` | `--refresh-catalog` | list `--programs` |
-| `CATALOG_MAX_AGE_HOURS` | `--catalog-max-age-hours` | list `--programs` |
-| `STATIONS_DETAILED` | `--detailed` | list `--stations` |
-| `SHOW_URLS` | `--show-urls` | list `--episodes` |
-| `INPUT` | `<program_slug\|program_url>` | download, list `--seasons`, list `--episodes` |
+| `GROUP_BY` | `--group-by` | list `programs` |
+| `PODCASTS_SORTED` | `--sorted` | list `programs` |
+| `STATION_FILTER` | `--filter` | list `programs` |
+| `FORCE_REFRESH_CATALOG` | `--refresh-catalog` | list `programs` |
+| `CATALOG_MAX_AGE_HOURS` | `--catalog-max-age-hours` | list `programs` |
+| `STATIONS_DETAILED` | `--detailed` | list `stations` |
+| `SHOW_URLS` | `--show-urls` | list `episodes` |
+| `INPUT` | `<program_slug\|program_url>` | download, list `seasons`, list `episodes` |
 
 `RSS_BASE_URL` must be a direct file-serving base URL. The CLI builds enclosure
 URLs as:
@@ -182,9 +182,9 @@ RSS enclosure bases.
 ## Quick Start
 
 ```bash
-raiplaysound-cli list --stations
-raiplaysound-cli list --programs
-raiplaysound-cli list --episodes america7
+raiplaysound-cli list stations
+raiplaysound-cli list programs
+raiplaysound-cli list episodes america7
 raiplaysound-cli download america7
 ```
 
@@ -193,10 +193,10 @@ raiplaysound-cli download america7
 ### Discover stations and programs
 
 ```bash
-raiplaysound-cli list --stations
-raiplaysound-cli list --programs
-raiplaysound-cli list --programs --filter radio2
-raiplaysound-cli list --stations --detailed
+raiplaysound-cli list stations
+raiplaysound-cli list programs
+raiplaysound-cli list programs --filter radio2
+raiplaysound-cli list stations --detailed
 ```
 
 Example output:
@@ -226,35 +226,35 @@ Programs grouped alphabetically (107):
 ### Inspect seasons and episodes
 
 ```bash
-raiplaysound-cli list --seasons america7
-raiplaysound-cli list --episodes america7
-raiplaysound-cli list --episodes america7 --show-urls
-raiplaysound-cli list --seasons america7 --json
+raiplaysound-cli list seasons america7
+raiplaysound-cli list episodes america7
+raiplaysound-cli list episodes america7 --show-urls
+raiplaysound-cli list seasons america7 --json
 ```
 
-Season listing uses a lightweight discovery path, so `list --seasons` avoids
+Season listing uses a lightweight discovery path, so `list seasons` avoids
 download-side metadata refreshes and is typically faster than episode
 inspection or download preparation.
 
-For programs that use non-season groupings on RaiPlaySound, `list --seasons`
+For programs that use non-season groupings on RaiPlaySound, `list seasons`
 also reports those groupings instead of incorrectly collapsing everything into a
 flat episode list. For example, programs may expose specials, named thematic
 collections, or year and period buckets instead of numbered seasons.
 
-When a program exposes real seasons, `list --seasons --season <n>` narrows the
+When a program exposes real seasons, `list seasons <program> --season <n>` narrows the
 output to the requested season. For non-season groupings or flat programs,
 `--season` is rejected instead of being silently ignored.
 
-`list --episodes <program>` also aggregates episodes across discovered
+`list episodes <program>` also aggregates episodes across discovered
 groupings for grouped programs, instead of only listing the currently selected
 subpage.
 
 For flat programs that do not expose real seasons or other groupings,
-`list --episodes` does not invent a fake `S1` column. Those programs are shown
+`list episodes` does not invent a fake `S1` column. Those programs are shown
 as a plain episode list, and JSON output reports the season as `null`.
 
 `download <program>` now follows the same grouping-aware discovery path as
-`list --episodes`, so grouped programs can be downloaded across their
+`list episodes`, so grouped programs can be downloaded across their
 discovered collections instead of only the root subpage.
 
 Example output:
@@ -309,8 +309,8 @@ Command forms:
 
 ```bash
 raiplaysound-cli download [OPTIONS] <program_slug|program_url>
-raiplaysound-cli list [--stations|--programs] [OPTIONS]
-raiplaysound-cli list [--seasons|--episodes] [OPTIONS] <program_slug|program_url>
+raiplaysound-cli list <stations|programs> [OPTIONS]
+raiplaysound-cli list <seasons|episodes> [OPTIONS] <program_slug|program_url>
 ```
 
 Output folder contents:

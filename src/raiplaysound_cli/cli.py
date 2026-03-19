@@ -86,6 +86,12 @@ def format_main_help() -> str:
                     "  list      Inspect stations, programs, seasons, or episodes",
                     "  download  Download one program into the local music library",
                     "",
+                    "Preferred list forms:",
+                    "  raiplaysound-cli list stations",
+                    "  raiplaysound-cli list programs",
+                    "  raiplaysound-cli list seasons <program_slug|program_url>",
+                    "  raiplaysound-cli list episodes <program_slug|program_url>",
+                    "",
                     "Run `raiplaysound-cli <command> --help` for command-specific help.",
                 ]
             ),
@@ -541,10 +547,7 @@ def list_episodes(settings: Settings, args: argparse.Namespace) -> int:
 def build_list_parser() -> argparse.ArgumentParser:
     parser = make_argument_parser(
         prog="raiplaysound-cli list",
-        usage=(
-            "raiplaysound-cli list (--stations | --programs | --seasons | --episodes) "
-            "[<program_slug|program_url>] [options]"
-        ),
+        usage="raiplaysound-cli list <stations|programs|seasons|episodes> [INPUT] [options]",
         description="Inspect RaiPlaySound stations, programs, seasons, or episodes.",
         color=False,
     )
@@ -553,7 +556,7 @@ def build_list_parser() -> argparse.ArgumentParser:
         nargs="?",
         metavar="TARGET_OR_INPUT",
         help=(
-            "Optional positional target (`stations`, `programs`, `seasons`, `episodes`) "
+            "Preferred positional target (`stations`, `programs`, `seasons`, `episodes`) "
             "or program input."
         ),
     )
@@ -569,35 +572,15 @@ def build_list_parser() -> argparse.ArgumentParser:
         help="Print machine-readable JSON output.",
     )
     parser.add_argument(
-        "--stations",
-        action="store_true",
-        help="List available RaiPlaySound stations.",
-    )
-    parser.add_argument(
-        "--programs",
-        action="store_true",
-        help="List available programs.",
-    )
-    parser.add_argument(
-        "--seasons",
-        action="store_true",
-        help="List program seasons or similar groupings.",
-    )
-    parser.add_argument(
-        "--episodes",
-        action="store_true",
-        help="List program episodes.",
-    )
-    parser.add_argument(
         "--detailed",
         action="store_true",
-        help="Show extra station details with `--stations`.",
+        help="Show extra station details with `list stations`.",
     )
     parser.add_argument(
         "--group-by",
         choices=["auto", "alpha", "station"],
         default="auto",
-        help="Program grouping mode for `--programs`.",
+        help="Program grouping mode for `list programs`.",
     )
     parser.add_argument(
         "--filter",
@@ -623,7 +606,7 @@ def build_list_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--show-urls",
         action="store_true",
-        help="Show episode URLs in episode listings.",
+        help="Show episode URLs in `list episodes` output.",
     )
     parser.add_argument(
         "--season",
@@ -794,17 +777,6 @@ def apply_download_overrides(settings: Settings, args: argparse.Namespace) -> Se
 
 
 def apply_list_defaults(settings: Settings, args: argparse.Namespace) -> argparse.Namespace:
-    if settings.list_target and not any(
-        (args.stations, args.programs, args.seasons, args.episodes)
-    ):
-        if settings.list_target == "stations":
-            args.stations = True
-        elif settings.list_target == "programs":
-            args.programs = True
-        elif settings.list_target == "seasons":
-            args.seasons = True
-        elif settings.list_target == "episodes":
-            args.episodes = True
     if settings.show_urls and not args.show_urls:
         args.show_urls = True
     if settings.stations_detailed and not args.detailed:
@@ -1050,36 +1022,19 @@ def main(argv: list[str] | None = None) -> int:
             if args.positional_a in {"stations", "programs", "seasons", "episodes"}:
                 target = args.positional_a
                 input_value = args.positional_b
-            else:
-                target = (
-                    "stations"
-                    if args.stations
-                    else (
-                        "programs"
-                        if args.programs
-                        else "seasons" if args.seasons else "episodes" if args.episodes else ""
-                    )
+            elif settings.list_target in {"stations", "programs", "seasons", "episodes"}:
+                target = settings.list_target
+            args.input = input_value or settings.input_value
+            if target not in {"stations", "programs", "seasons", "episodes"}:
+                raise CLIError(
+                    "list mode requires exactly one positional target: "
+                    "stations, programs, seasons, or episodes."
                 )
             if target == "stations":
-                args.stations = True
-            elif target == "programs":
-                args.programs = True
-            elif target == "seasons":
-                args.seasons = True
-            elif target == "episodes":
-                args.episodes = True
-            args.input = input_value or settings.input_value
-            targets = sum([args.stations, args.programs, args.seasons, args.episodes])
-            if targets != 1:
-                raise CLIError(
-                    "list mode requires exactly one target: "
-                    "--stations, --programs, --seasons, or --episodes."
-                )
-            if args.stations:
                 return list_stations(settings, args)
-            if args.programs:
+            if target == "programs":
                 return list_programs(settings, args)
-            if args.seasons:
+            if target == "seasons":
                 if not args.input:
                     raise CLIError("list seasons requires <program_slug|program_url>.")
                 return list_seasons(settings, args)
@@ -1096,3 +1051,6 @@ def main(argv: list[str] | None = None) -> int:
     except CLIError as exc:
         err_console.print(f"Error: {exc}")
         return 1
+    except SystemExit as exc:
+        code = exc.code
+        return code if isinstance(code, int) else 1

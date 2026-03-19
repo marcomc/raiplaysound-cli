@@ -48,10 +48,6 @@ def choose_command(argv: list[str], config: dict[str, str]) -> tuple[str, list[s
         return configured, argv
 
     list_switches = {
-        "--stations",
-        "--programs",
-        "--seasons",
-        "--episodes",
         "--detailed",
         "--group-by",
         "--sorted",

@@ -34,11 +34,12 @@ def test_main_without_args_prints_extensive_help(capsys) -> None:
     assert "Commands:" in captured.out
     assert "list      Inspect stations, programs, seasons, or episodes" in captured.out
     assert "download  Download one program into the local music library" in captured.out
+    assert "raiplaysound-cli list seasons <program_slug|program_url>" in captured.out
+    assert "raiplaysound-cli list episodes <program_slug|program_url>" in captured.out
     assert "usage: raiplaysound-cli list" in captured.out
     assert "usage: raiplaysound-cli download" in captured.out
     assert "TARGET_OR_INPUT" in captured.out
-    assert "Optional positional target" in captured.out
-    assert "--stations" in captured.out
+    assert "Preferred positional target" in captured.out
     assert "--episode-ids" in captured.out
     assert "\x1b[" not in captured.out
 
@@ -59,8 +60,8 @@ def test_main_list_requires_exactly_one_target(capsys) -> None:
 
     assert result == 1
     assert (
-        "list mode requires exactly one target" in captured.err
-        or "list mode requires exactly one target" in captured.out
+        "list mode requires exactly one positional target" in captured.err
+        or "list mode requires exactly one positional target" in captured.out
     )
 
 
@@ -101,7 +102,7 @@ def test_main_list_episodes_positional_target_dispatches(monkeypatch, capsys) ->
 
 
 def test_main_list_seasons_requires_input(capsys) -> None:
-    result = cli.main(["list", "--seasons"])
+    result = cli.main(["list", "seasons"])
     captured = capsys.readouterr()
 
     assert result == 1
@@ -109,11 +110,19 @@ def test_main_list_seasons_requires_input(capsys) -> None:
 
 
 def test_main_list_episodes_requires_input(capsys) -> None:
-    result = cli.main(["list", "--episodes"])
+    result = cli.main(["list", "episodes"])
     captured = capsys.readouterr()
 
     assert result == 1
     assert "list episodes requires <program_slug|program_url>." in captured.err
+
+
+def test_main_rejects_legacy_list_target_flags(capsys) -> None:
+    result = cli.main(["list", "--episodes", "america7"])
+    captured = capsys.readouterr()
+
+    assert result == 2
+    assert "unrecognized arguments: --episodes" in captured.err
 
 
 def test_main_download_requires_input(capsys) -> None:
@@ -154,7 +163,7 @@ def test_main_list_programs_uses_config_filter_and_json(
         ],
     )
 
-    result = cli.main(["--programs", "--json"])
+    result = cli.main(["list", "programs", "--json"])
     captured = capsys.readouterr()
 
     assert result == 0
@@ -184,7 +193,7 @@ def test_list_programs_text_prints_download_suggestion(monkeypatch, tmp_path: Pa
         ],
     )
 
-    result = cli.main(["--programs"])
+    result = cli.main(["list", "programs"])
     captured = capsys.readouterr()
 
     assert result == 0
@@ -218,7 +227,7 @@ def test_list_episodes_does_not_create_download_directory(
     )
     monkeypatch.setattr(cli, "filter_episodes_for_list_or_download", lambda *_args, **_kwargs: [])
 
-    result = cli.main(["--episodes", "america7", "--json"])
+    result = cli.main(["list", "episodes", "america7", "--json"])
     captured = capsys.readouterr()
 
     assert result == 0
@@ -318,7 +327,7 @@ def test_list_episodes_aggregates_discovered_groupings(monkeypatch, capsys) -> N
         lambda episodes, *_args, **_kwargs: episodes,
     )
 
-    result = cli.main(["--episodes", "profili", "--json"])
+    result = cli.main(["list", "episodes", "profili", "--json"])
     captured = capsys.readouterr()
 
     assert result == 0
@@ -397,7 +406,7 @@ def test_list_seasons_skips_metadata_refresh_and_cache_writes(
     monkeypatch.setattr(cli, "collect_metadata", fail)
     monkeypatch.setattr(cli, "write_metadata_cache", fail)
 
-    result = cli.main(["--seasons", "america7", "--json"])
+    result = cli.main(["list", "seasons", "america7", "--json"])
     captured = capsys.readouterr()
 
     assert result == 0
@@ -465,7 +474,7 @@ def test_list_seasons_prints_groupings_for_special_collections(monkeypatch, caps
         ],
     )
 
-    result = cli.main(["--seasons", "profili"])
+    result = cli.main(["list", "seasons", "profili"])
     captured = capsys.readouterr()
 
     assert result == 0
@@ -534,7 +543,7 @@ def test_list_seasons_prints_download_suggestions_for_real_seasons(monkeypatch, 
         ],
     )
 
-    result = cli.main(["--seasons", "america7"])
+    result = cli.main(["list", "seasons", "america7"])
     captured = capsys.readouterr()
 
     assert result == 0
@@ -633,7 +642,7 @@ def test_list_episodes_text_prints_download_suggestions(monkeypatch, capsys) -> 
         lambda episodes, *_args, **_kwargs: episodes,
     )
 
-    result = cli.main(["--episodes", "america7", "--season", "2"])
+    result = cli.main(["list", "episodes", "america7", "--season", "2"])
     captured = capsys.readouterr()
 
     assert result == 0
@@ -696,7 +705,7 @@ def test_flat_program_outputs_do_not_invent_season_one(monkeypatch, capsys) -> N
         ),
     )
 
-    result = cli.main(["--seasons", "flat-show", "--json"])
+    result = cli.main(["list", "seasons", "flat-show", "--json"])
     captured = capsys.readouterr()
 
     assert result == 0
@@ -761,7 +770,7 @@ def test_flat_program_episode_listing_omits_season_column(monkeypatch, capsys) -
         lambda episodes, *_args, **_kwargs: episodes,
     )
 
-    result = cli.main(["--episodes", "flat-show"])
+    result = cli.main(["list", "episodes", "flat-show"])
     captured = capsys.readouterr()
 
     assert result == 0
@@ -853,7 +862,7 @@ def test_list_seasons_honors_season_filter_for_real_seasons(monkeypatch, capsys)
         ],
     )
 
-    result = cli.main(["--seasons", "america7", "--season", "2"])
+    result = cli.main(["list", "seasons", "america7", "--season", "2"])
     captured = capsys.readouterr()
 
     assert result == 0
@@ -901,7 +910,7 @@ def test_list_seasons_rejects_season_filter_for_non_season_groupings(monkeypatch
         ],
     )
 
-    result = cli.main(["--seasons", "profili", "--season", "1"])
+    result = cli.main(["list", "seasons", "profili", "--season", "1"])
     captured = capsys.readouterr()
 
     assert result == 1

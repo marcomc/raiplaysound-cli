@@ -150,17 +150,17 @@ This is the main fallback when the HTML is inconsistent.
 
 ## Current CLI Discovery Flow
 
-### `list --stations`
+### `list stations`
 
 - fetches `dirette.json`
 - parses station slug, station name, page URL, and feed URL
 
-### `list --programs`
+### `list programs`
 
 - reads the cached full program catalog when valid
 - otherwise rebuilds it from sitemap plus per-program JSON
 
-### `list --episodes`
+### `list episodes`
 
 - resolves the slug or URL
 - discovers grouped source pages from the main program page
@@ -178,7 +178,7 @@ This is the main fallback when the HTML is inconsistent.
   - optional `feed.xml`
   - optional `playlist.m3u`
 
-### `list --seasons`
+### `list seasons`
 
 This command was optimized during this session to avoid the heavy metadata path.
 
@@ -377,7 +377,7 @@ Implication:
 
 - the internal discovery abstraction should be `groupings` or `collections`
   rather than only `seasons`
-- the user-facing `list --seasons` command currently acts as the grouping
+- the user-facing `list seasons` command currently acts as the grouping
   inspector for backwards compatibility
 
 ### Year span does not guarantee seasons
@@ -419,7 +419,7 @@ Contains tab-separated rows with:
 
 Important note:
 
-- after the optimization in this session, `list --seasons` should not write this
+- after the optimization in this session, `list seasons` should not write this
   file
 
 ### Download archive

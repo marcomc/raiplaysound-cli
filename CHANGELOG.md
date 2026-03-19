@@ -27,6 +27,9 @@ All notable changes to this project are documented in this file.
 - Changed `raiplaysound-cli list --seasons --season <n>` so it now narrows
   output for real seasonal programs and rejects `--season` for non-season or
   flat programs instead of ignoring it.
+- Removed the legacy list target flags (`--stations`, `--programs`,
+  `--seasons`, `--episodes`) so list targets are now positional-only:
+  `list stations|programs|seasons|episodes`.
 - Added developer-facing documentation under `docs/` covering the current
   RaiPlaySound site structure assumptions, verified season URL patterns, cache
   behavior, and known discovery gaps for future contributors.
