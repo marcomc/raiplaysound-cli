@@ -22,7 +22,12 @@ def http_get(url: str, *, timeout: float = 30.0) -> str:
         return response.read().decode("utf-8", errors="replace")
 
 
-def run_yt_dlp(args: list[str], *, capture_output: bool = True) -> subprocess.CompletedProcess[str]:
+def run_yt_dlp(
+    args: list[str],
+    *,
+    capture_output: bool = True,
+    allow_partial_failure: bool = False,
+) -> subprocess.CompletedProcess[str]:
     cmd = ["yt-dlp", *args]
     try:
         return subprocess.run(
@@ -35,6 +40,13 @@ def run_yt_dlp(args: list[str], *, capture_output: bool = True) -> subprocess.Co
     except FileNotFoundError as exc:
         raise CLIError("yt-dlp is required but was not found in PATH.") from exc
     except subprocess.CalledProcessError as exc:
+        if allow_partial_failure:
+            return subprocess.CompletedProcess(
+                args=exc.cmd,
+                returncode=exc.returncode,
+                stdout=exc.stdout or "",
+                stderr=exc.stderr or "",
+            )
         stderr = (exc.stderr or "").strip()
         stdout = (exc.stdout or "").strip()
         detail = stderr or stdout or f"yt-dlp failed with exit code {exc.returncode}"

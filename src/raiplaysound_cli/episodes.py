@@ -1,19 +1,38 @@
 from __future__ import annotations
 
+import concurrent.futures
+import html
+import json
 import re
 import urllib.parse
 from pathlib import Path
 
 from .errors import CLIError
-from .models import Episode, SeasonSummary
+from .models import Episode, GroupSource, GroupSummary, SeasonSummary
 from .runtime import http_get, run_yt_dlp
 
 PROGRAM_URL_RE = re.compile(r"^https?://www\.raiplaysound\.it/programmi/([A-Za-z0-9-]+)/?$")
 PROGRAM_SLUG_RE = re.compile(r"^[A-Za-z0-9-]+$")
 EPISODE_URL_RE = re.compile(r"^https?://www\.raiplaysound\.it/.+")
-SEASON_PAGE_RE = re.compile(r"/programmi/(?P<slug>[A-Za-z0-9-]+)/episodi/stagione-(?P<season>\d+)")
+SEASON_PAGE_RE = re.compile(
+    r"/programmi/(?P<slug>[A-Za-z0-9-]+)/(?P<section>episodi|puntate)/stagione-(?P<season>\d+)"
+)
+GROUP_LINK_RE = re.compile(
+    r'<a href="(?P<href>/programmi/(?P<slug>[A-Za-z0-9-]+)/'
+    r'(?P<section>[^"/]+)/(?P<tail>[^"]+))"[^>]*>'
+    r"(?P<label>[^<]+)</a>"
+)
 EPISODE_ID_FROM_URL_RE = re.compile(r"-([0-9a-fA-F-]{8,})\.(?:html|json)$")
 SEASON_IN_TITLE_RE = re.compile(r"[Ss](\d{1,3})[ _-]*[Ee]\d{1,3}")
+SEASON_LABEL_RE = re.compile(
+    r"(?:\bStagione\s+(\d{1,3})\b|\b(\d{1,3})\s*\^?\s*Stagione\b)",
+    re.IGNORECASE,
+)
+CURRENT_FILTER_LABEL_RE = re.compile(
+    r"data-filters-current[^>]*>.*?<span[^>]*>(?P<label>[^<]+)</span>",
+    re.IGNORECASE | re.DOTALL,
+)
+SKIP_GROUP_SECTIONS = {"clip", "extra", "playlist", "novita"}
 
 
 def detect_slug(input_value: str) -> tuple[str, str]:
@@ -61,6 +80,23 @@ def build_requested_episode_filters(ids_raw: str, urls_raw: str) -> tuple[set[st
     return ids, urls
 
 
+def _normalize_group_token(value: str) -> str:
+    normalized = re.sub(r"[^A-Za-z0-9]+", "-", value.strip().lower()).strip("-")
+    return normalized
+
+
+def build_requested_groups(raw: str) -> set[str]:
+    selected: set[str] = set()
+    if not raw:
+        return selected
+    for part in [item.strip() for item in raw.split(",") if item.strip()]:
+        token = _normalize_group_token(part)
+        if not token:
+            raise CLIError(f"invalid group '{part}'.")
+        selected.add(token)
+    return selected
+
+
 def discover_feed_sources(
     slug: str,
     selected_seasons: set[str],
@@ -84,37 +120,415 @@ def discover_feed_sources(
     return sorted(set(season_urls + [program_url]))
 
 
-def collect_episodes_from_sources(sources: list[str]) -> list[Episode]:
-    seen: set[str] = set()
+def discover_season_listing_sources(slug: str) -> tuple[str, list[str]]:
+    program_url = f"https://www.raiplaysound.it/programmi/{slug}"
+    html = http_get(program_url)
+    linked_matches = [
+        match
+        for match in SEASON_PAGE_RE.finditer(html)
+        if match.group("slug").lower() == slug.lower()
+    ]
+    season_urls = {f"https://www.raiplaysound.it{match.group(0)}" for match in linked_matches}
+    known_numbers = {int(match.group("season")) for match in linked_matches}
+    for label_match in SEASON_LABEL_RE.findall(html):
+        for value in label_match:
+            if value:
+                known_numbers.add(int(value))
+    linked_sections = {match.group("section") for match in linked_matches}
+    sections = linked_sections or {"episodi", "puntate"}
+    if known_numbers and not linked_matches:
+        for section in sections:
+            for season in range(1, max(known_numbers) + 1):
+                candidate = f"{program_url}/{section}/stagione-{season}"
+                try:
+                    http_get(candidate)
+                except Exception:
+                    continue
+                season_urls.add(candidate)
+    for section in sections:
+        for season in sorted(known_numbers):
+            candidate = f"{program_url}/{section}/stagione-{season}"
+            if linked_sections:
+                season_urls.add(candidate)
+                continue
+            try:
+                http_get(candidate)
+            except Exception:
+                continue
+            season_urls.add(candidate)
+    next_number = max(known_numbers) + 1 if known_numbers else 1
+    while True:
+        found_next = False
+        for section in sections:
+            candidate = f"{program_url}/{section}/stagione-{next_number}"
+            try:
+                http_get(candidate)
+            except Exception:
+                continue
+            season_urls.add(candidate)
+            found_next = True
+        if not found_next:
+            break
+        next_number += 1
+    if season_urls:
+        return program_url, sorted(season_urls)
+    return program_url, [program_url]
+
+
+def _normalize_group_label(raw: str) -> str:
+    return re.sub(r"\s+", " ", html.unescape(raw)).strip()
+
+
+def _season_key_from_label(label: str) -> str | None:
+    label_match = SEASON_LABEL_RE.search(label)
+    if not label_match:
+        return None
+    for value in label_match.groups():
+        if value:
+            return value
+    return None
+
+
+def _classify_group(section: str, tail: str, label: str) -> tuple[str, str] | None:
+    normalized_section = section.lower()
+    normalized_tail = tail.strip("/").lower()
+    normalized_label = label.lower()
+    if normalized_section in SKIP_GROUP_SECTIONS:
+        return None
+    season_key = _season_key_from_label(label)
+    if season_key is not None:
+        return "season", season_key
+    if normalized_section == "speciali":
+        return "special", tail
+    if normalized_section == "puntate-e-podcast":
+        return "series", tail
+    if normalized_section.startswith("episodi") or normalized_section.startswith("puntate"):
+        if normalized_tail.startswith("stagione-"):
+            return "season", normalized_tail.removeprefix("stagione-")
+        if normalized_tail in {"episodi", "puntate"}:
+            if "stagione" in normalized_label:
+                return "season", normalized_label
+            return None
+        return "bucket", tail
+    return None
+
+
+def _program_json_url(slug: str) -> str:
+    return f"https://www.raiplaysound.it/programmi/{slug}.json"
+
+
+def _discover_groups_from_program_json(slug: str) -> list[GroupSource]:
+    try:
+        payload = json.loads(http_get(_program_json_url(slug)))
+    except Exception:
+        return []
+    if not isinstance(payload, dict):
+        return []
+    raw_filters = payload.get("filters")
+    if not isinstance(raw_filters, list):
+        return []
+
+    filter_entries: list[tuple[str, str, str]] = []
+    for item in raw_filters:
+        if not isinstance(item, dict):
+            continue
+        label = _normalize_group_label(str(item.get("label") or ""))
+        weblink = str(item.get("weblink") or "").strip()
+        path = str(item.get("path") or "").strip()
+        if not label or not weblink.startswith("/programmi/"):
+            continue
+        filter_entries.append((label, weblink.rstrip("/"), path))
+
+    has_season_filters = any(
+        _season_key_from_label(label) for label, _weblink, _path in filter_entries
+    )
+    groups: list[GroupSource] = []
+    seen_urls: set[str] = set()
+    for label, weblink, path in filter_entries:
+        href = f"https://www.raiplaysound.it{weblink}"
+        if href in seen_urls:
+            continue
+        match = re.match(
+            r"^/programmi/(?P<slug>[A-Za-z0-9-]+)/(?P<section>[^/]+)/(?P<tail>.+)$", weblink
+        )
+        classified: tuple[str, str] | None = None
+        if match and match.group("slug").lower() == slug.lower():
+            section = match.group("section")
+            tail = match.group("tail")
+            if has_season_filters and path.lower() in {"episodi", "puntate"}:
+                continue
+            classified = _classify_group(section, tail, label)
+        elif has_season_filters and _season_key_from_label(label):
+            season_key = _season_key_from_label(label)
+            if season_key is not None:
+                classified = ("season", season_key)
+        if classified is None:
+            continue
+        kind, key = classified
+        groups.append(GroupSource(key=key, label=label, url=href, kind=kind))
+        seen_urls.add(href)
+    return groups
+
+
+def discover_group_listing_sources(slug: str) -> tuple[str, list[GroupSource]]:
+    program_url = f"https://www.raiplaysound.it/programmi/{slug}"
+    html_text = http_get(program_url)
+    groups: list[GroupSource] = []
+    seen_urls: set[str] = set()
+    linked_groups: list[GroupSource] = []
+
+    for match in GROUP_LINK_RE.finditer(html_text):
+        if match.group("slug").lower() != slug.lower():
+            continue
+        label = _normalize_group_label(match.group("label"))
+        href = f"https://www.raiplaysound.it{match.group('href').rstrip('/')}"
+        classified = _classify_group(match.group("section"), match.group("tail"), label)
+        if classified is None or href in seen_urls:
+            continue
+        kind, key = classified
+        linked_groups.append(
+            GroupSource(
+                key=key,
+                label=label,
+                url=href,
+                kind=kind,
+            )
+        )
+        seen_urls.add(href)
+
+    current_match = CURRENT_FILTER_LABEL_RE.search(html_text)
+    current_label = _normalize_group_label(current_match.group("label")) if current_match else ""
+    if current_label and linked_groups:
+        first_group = linked_groups[0]
+        current_kind = first_group.kind
+        current_key = _normalize_group_token(current_label)
+        if current_kind == "season":
+            season_key = _season_key_from_label(current_label)
+            if season_key is not None:
+                current_key = season_key
+        current_group = GroupSource(
+            key=current_key,
+            label=current_label,
+            url=program_url,
+            kind=current_kind,
+        )
+        if all(group.label != current_group.label for group in linked_groups):
+            groups.append(current_group)
+
+    groups.extend(linked_groups)
+    for group in _discover_groups_from_program_json(slug):
+        if group.url in seen_urls:
+            continue
+        groups.append(group)
+        seen_urls.add(group.url)
+    if groups:
+        return program_url, groups
+
+    season_url_program, season_urls = discover_season_listing_sources(slug)
+    if season_urls != [program_url]:
+        season_groups: list[GroupSource] = []
+        for url in season_urls:
+            season_match = re.search(r"stagione-(\d+)$", url)
+            if season_match:
+                season_number = season_match.group(1)
+                season_groups.append(
+                    GroupSource(
+                        key=season_number,
+                        label=f"Stagione {season_number}",
+                        url=url,
+                        kind="season",
+                    )
+                )
+        if season_groups:
+            season_groups.sort(key=lambda group: int(group.key))
+            return season_url_program, season_groups
+
+    return program_url, []
+
+
+def discover_grouped_episode_sources(
+    slug: str,
+    selected_seasons: set[str],
+    include_all_seasons: bool,
+    selected_groups: set[str],
+) -> tuple[list[str] | None, list[GroupSource] | None, bool]:
+    _program_url, groups = discover_group_listing_sources(slug)
+    requested_groups = selected_groups
+    if requested_groups and (selected_seasons or include_all_seasons):
+        raise CLIError("--season and --group cannot be used together.")
+    if not groups:
+        if requested_groups:
+            raise CLIError("this program does not expose groupings, so --group cannot be used.")
+        return None, None, False
+    all_seasons = all(group.kind == "season" for group in groups)
+    if all_seasons and requested_groups:
+        raise CLIError("this program exposes seasons, so use --season instead of --group.")
+    if not all_seasons and (selected_seasons or include_all_seasons):
+        raise CLIError("this program does not expose seasons, so --season cannot be used.")
+    selected_sources: list[GroupSource] = list(groups)
+    if all_seasons and selected_seasons and not include_all_seasons:
+        available_seasons = {group.key for group in groups}
+        missing = sorted(selected_seasons - available_seasons, key=int)
+        if missing:
+            raise CLIError(f"season {missing[0]} is not available.")
+        selected_sources = [group for group in groups if group.key in selected_seasons]
+    elif requested_groups:
+        available: dict[str, GroupSource] = {}
+        for group in groups:
+            for candidate in {
+                _normalize_group_token(group.key),
+                _normalize_group_token(group.label),
+            }:
+                if candidate:
+                    available[candidate] = group
+        missing = sorted(requested_groups - set(available))
+        if missing:
+            raise CLIError(f"group '{missing[0]}' is not available.")
+        selected_sources = []
+        seen_urls: set[str] = set()
+        for request in sorted(requested_groups):
+            group = available[request]
+            if group.url in seen_urls:
+                continue
+            selected_sources.append(group)
+            seen_urls.add(group.url)
+    return [group.url for group in selected_sources], selected_sources, not all_seasons
+
+
+def collect_episodes_from_sources(
+    sources: list[str],
+    source_groups: dict[str, GroupSource] | None = None,
+) -> list[Episode]:
+    seen: dict[str, Episode] = {}
     episodes: list[Episode] = []
     for source in sources:
+        group_source = source_groups.get(source) if source_groups is not None else None
         season_hint = ""
-        match = re.search(r"stagione-(\d+)$", source)
-        if match:
-            season_hint = match.group(1)
-        result = run_yt_dlp(["--flat-playlist", "--print", "%(id)s\t%(webpage_url)s", source])
+        for pattern in (r"stagione-(\d+)$", r"(\d+)-stagione$"):
+            match = re.search(pattern, source)
+            if match:
+                season_hint = match.group(1)
+                break
+        if not season_hint and group_source is not None and group_source.kind == "season":
+            season_hint = group_source.key
+        result = run_yt_dlp(
+            [
+                "--flat-playlist",
+                "--ignore-errors",
+                "--print",
+                "%(id)s\t%(webpage_url)s",
+                source,
+            ],
+            allow_partial_failure=True,
+        )
         for line in result.stdout.splitlines():
             parts = line.split("\t")
             if len(parts) < 2:
                 continue
             episode_id = parts[0].strip()
             episode_url = parts[1].strip().rstrip("/")
-            if not episode_id or not episode_url or episode_id in seen:
+            if not episode_id or not episode_url:
                 continue
-            seen.add(episode_id)
+            existing = seen.get(episode_id)
+            if existing is not None:
+                if not existing.season and season_hint:
+                    existing.season = season_hint
+                if not existing.group_label and group_source is not None:
+                    existing.group_label = group_source.label
+                    existing.group_kind = group_source.kind
+                continue
             base_name = Path(urllib.parse.urlparse(episode_url).path).stem
             label = re.sub(rf"-{re.escape(episode_id)}$", "", base_name) or episode_id
-            episodes.append(
-                Episode(
-                    episode_id=episode_id,
-                    url=episode_url,
-                    label=label,
-                    season=season_hint or "1",
-                )
+            episode = Episode(
+                episode_id=episode_id,
+                url=episode_url,
+                label=label,
+                season=season_hint,
+                group_label=group_source.label if group_source is not None else "",
+                group_kind=group_source.kind if group_source is not None else "",
             )
+            seen[episode_id] = episode
+            episodes.append(episode)
     if not episodes:
         raise CLIError("No episodes found.")
     return episodes
+
+
+def collect_season_summary_from_sources(sources: list[str]) -> tuple[list[Episode], SeasonSummary]:
+    episodes = collect_episodes_from_sources(sources)
+    season_counts: dict[str, int] = {}
+    season_year_min: dict[str, str] = {}
+    season_year_max: dict[str, str] = {}
+    show_year_min = ""
+    show_year_max = ""
+    explicit_seasons = any("stagione-" in source for source in sources)
+
+    for episode in episodes:
+        season = episode.season if episode.season.isdigit() else "1"
+        episode.season = season
+        episode.year = extract_year_from_url(episode.url)
+        season_counts[season] = season_counts.get(season, 0) + 1
+        if re.fullmatch(r"\d{4}", episode.year):
+            if not show_year_min or episode.year < show_year_min:
+                show_year_min = episode.year
+            if not show_year_max or episode.year > show_year_max:
+                show_year_max = episode.year
+            current_min = season_year_min.get(season)
+            current_max = season_year_max.get(season)
+            if current_min is None or episode.year < current_min:
+                season_year_min[season] = episode.year
+            if current_max is None or episode.year > current_max:
+                season_year_max[season] = episode.year
+
+    latest_season = (
+        sorted(season_counts, key=lambda value: int(value))[-1] if season_counts else "1"
+    )
+    return episodes, SeasonSummary(
+        counts=season_counts,
+        year_min=season_year_min,
+        year_max=season_year_max,
+        show_year_min=show_year_min,
+        show_year_max=show_year_max,
+        has_seasons=explicit_seasons or len(season_counts) > 1,
+        latest_season=latest_season,
+    )
+
+
+def _collect_group_summary(group: GroupSource) -> GroupSummary:
+    episodes = collect_episodes_from_sources([group.url])
+    year_min = ""
+    year_max = ""
+    for episode in episodes:
+        episode.year = extract_year_from_url(episode.url)
+        if re.fullmatch(r"\d{4}", episode.year):
+            if not year_min or episode.year < year_min:
+                year_min = episode.year
+            if not year_max or episode.year > year_max:
+                year_max = episode.year
+    return GroupSummary(
+        key=group.key,
+        label=group.label,
+        url=group.url,
+        kind=group.kind,
+        episodes=len(episodes),
+        year_min=year_min,
+        year_max=year_max,
+    )
+
+
+def collect_group_summaries(groups: list[GroupSource]) -> list[GroupSummary]:
+    if not groups:
+        return []
+    max_workers = min(len(groups), 8)
+    results: dict[int, GroupSummary] = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_map = {
+            executor.submit(_collect_group_summary, group): index
+            for index, group in enumerate(groups)
+        }
+        for future in concurrent.futures.as_completed(future_map):
+            results[future_map[future]] = future.result()
+    return [results[index] for index in range(len(groups))]
 
 
 def load_metadata_cache(path: Path) -> dict[str, tuple[str, str, str]]:
@@ -139,17 +553,69 @@ def write_metadata_cache(path: Path, cache: dict[str, tuple[str, str, str]]) -> 
     path.write_text("".join(lines), encoding="utf-8")
 
 
-def collect_metadata(sources: list[str]) -> dict[str, tuple[str, str, str]]:
+def _episode_json_url(url: str) -> str:
+    normalized = url.rstrip("/")
+    if normalized.endswith(".json"):
+        return normalized
+    if normalized.endswith(".html"):
+        return normalized[:-5] + ".json"
+    return normalized + ".json"
+
+
+def _normalize_episode_upload_date(payload: dict[str, object]) -> str:
+    date_tracking = str(payload.get("date_tracking") or "").strip()
+    match = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})", date_tracking)
+    if match:
+        return "".join(match.groups())
+    create_date = str(payload.get("create_date") or "").strip()
+    match = re.fullmatch(r"(\d{2})-(\d{2})-(\d{4})", create_date)
+    if match:
+        day, month, year = match.groups()
+        return f"{year}{month}{day}"
+    return "NA"
+
+
+def _collect_metadata_from_episode_json(source: str) -> dict[str, tuple[str, str, str]]:
+    payload = json.loads(http_get(_episode_json_url(source)))
+    if not isinstance(payload, dict):
+        raise CLIError("invalid episode payload")
+    raw_id = str(payload.get("uniquename") or "")
+    match = re.search(r"ContentItem-([0-9a-fA-F-]{8,})$", raw_id)
+    if match:
+        episode_id = match.group(1)
+    else:
+        path_id = str(payload.get("path_id") or payload.get("weblink") or "")
+        match = EPISODE_ID_FROM_URL_RE.search(path_id)
+        if not match:
+            raise CLIError("episode metadata did not include an ID")
+        episode_id = match.group(1)
+    title = str(payload.get("title") or payload.get("episode_title") or "NA")
+    season = str(payload.get("season") or payload.get("season_number") or "NA")
+    return {episode_id: (_normalize_episode_upload_date(payload), season, title)}
+
+
+def collect_metadata(
+    sources: list[str], *, single_entries: bool = False
+) -> dict[str, tuple[str, str, str]]:
     result: dict[str, tuple[str, str, str]] = {}
     for source in sources:
+        if single_entries:
+            try:
+                result.update(_collect_metadata_from_episode_json(source))
+                continue
+            except Exception:
+                pass
+        args = [
+            "--skip-download",
+            "--ignore-errors",
+            "--print",
+            "%(id)s\t%(upload_date|NA)s\t%(title|NA)s\t%(season_number|NA)s",
+        ]
+        if single_entries:
+            args.append("--no-playlist")
         metadata = run_yt_dlp(
-            [
-                "--skip-download",
-                "--ignore-errors",
-                "--print",
-                "%(id)s\t%(upload_date|NA)s\t%(title|NA)s\t%(season_number|NA)s",
-                source,
-            ]
+            args + [source],
+            allow_partial_failure=True,
         )
         for line in metadata.stdout.splitlines():
             parts = line.split("\t")

@@ -48,10 +48,6 @@ def choose_command(argv: list[str], config: dict[str, str]) -> tuple[str, list[s
         return configured, argv
 
     list_switches = {
-        "--stations",
-        "--programs",
-        "--seasons",
-        "--episodes",
         "--detailed",
         "--group-by",
         "--sorted",
@@ -101,6 +97,7 @@ class Settings:
     stations_detailed: bool = False
     show_urls: bool = False
     seasons_arg: str = ""
+    groups_arg: str = ""
     episodes_arg: str = ""
     episode_urls_arg: str = ""
 
@@ -180,6 +177,8 @@ class Settings:
                     settings.show_urls = parsed
             elif key == "SEASONS_ARG":
                 settings.seasons_arg = value
+            elif key == "GROUPS_ARG":
+                settings.groups_arg = value
             elif key == "EPISODES_ARG":
                 settings.episodes_arg = value
             elif key == "EPISODE_URLS_ARG":

@@ -9,6 +9,7 @@ from raiplaysound_cli.config import (
 )
 from raiplaysound_cli.episodes import (
     build_requested_episode_filters,
+    build_requested_groups,
     build_requested_set,
     cache_entry_is_complete,
     infer_season_from_text,
@@ -33,13 +34,17 @@ def test_normalize_bool_variants() -> None:
 
 def test_parse_env_file(tmp_path: Path) -> None:
     config = tmp_path / "config.env"
-    config.write_text('AUDIO_FORMAT="mp3"\n# comment\nJOBS=5\n', encoding="utf-8")
+    config.write_text(
+        'AUDIO_FORMAT="mp3"\n# comment\nJOBS=5\nGROUPS_ARG="speciali,battiti"\n',
+        encoding="utf-8",
+    )
     parsed = parse_env_file(config)
     assert parsed["AUDIO_FORMAT"] == "mp3"
     assert parsed["JOBS"] == "5"
     settings = Settings.from_config(parsed)
     assert settings.audio_format == "mp3"
     assert settings.jobs == 5
+    assert settings.groups_arg == "speciali,battiti"
 
 
 def test_requested_seasons() -> None:
@@ -58,6 +63,11 @@ def test_requested_episode_filters() -> None:
     )
     assert ids == {"abc123"}
     assert list(urls.values()) == ["12345678-abcd-1234-abcd-1234567890ab"]
+
+
+def test_requested_groups() -> None:
+    selected = build_requested_groups("speciali, Speciale Lucio Dalla")
+    assert selected == {"speciali", "speciale-lucio-dalla"}
 
 
 def test_infer_season_from_text() -> None:

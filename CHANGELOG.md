@@ -2,6 +2,73 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.1.0] - 2026-03-19 - speed improvements, grouping enhancements, and documentation additions
+
+### Changed
+
+- Made `raiplaysound-cli list seasons <program>` use a lightweight discovery
+  path that skips metadata refreshes and avoids writing per-download metadata
+  cache files during season-only listing.
+- Expanded `raiplaysound-cli list seasons <program>` so it can also surface
+  non-season RaiPlaySound groupings such as `speciali`, instead of always
+  falling back to a flat episode list.
+- Updated `raiplaysound-cli list episodes <program>` so grouped programs are
+  listed across all discovered groupings, rather than only the currently
+  selected subpage.
+- Corrected flat program episode listings so they no longer invent a fake `S1`
+  season label when RaiPlaySound exposes neither real seasons nor alternate
+  groupings.
+- Extended grouping discovery to cover year and period buckets, thematic
+  subseries, and thin-HTML season selectors where the current season is visible
+  but numbered season links are not.
+- Extended grouping discovery further to read program JSON filter definitions
+  when the HTML selector is incomplete, so programs such as
+  `afroamerica-blackmusicrevolution` now resolve season-like paths such as
+  `/episodi/2-stagione`.
+- Updated `raiplaysound-cli download <program>` to reuse grouped discovery, so
+  grouped programs download across their discovered collections instead of only
+  the root subpage.
+- Changed `raiplaysound-cli list seasons <program> --season <n>` so it now narrows
+  output for real seasonal programs and rejects `--season` for non-season or
+  flat programs instead of ignoring it.
+- Removed the legacy list target flags (`--stations`, `--programs`,
+  `--seasons`, `--episodes`) so list targets are now positional-only:
+  `list stations|programs|seasons|episodes`.
+- Added `--group` for `list episodes` and `download`, so non-season grouped
+  programs can be narrowed to one or more discovered grouping keys or labels
+  such as `speciali`.
+- Updated grouping listings so each available grouping prints its exact
+  selectable `--group` token and a matching `download --group ...` command.
+- Added developer-facing documentation under `docs/` covering the current
+  RaiPlaySound site structure assumptions, verified season URL patterns, cache
+  behavior, and known discovery gaps for future contributors.
+- Added `docs/COMMAND_BEHAVIOR.md` to document the expected behavior of the
+  top-level CLI, `list` targets, `download`, config interaction, grouping
+  behavior, and known gaps.
+- Changed the empty CLI invocation and top-level help path so
+  `raiplaysound-cli` now prints an extensive help message listing both commands
+  and their available options.
+- Clarified the caching contract in the docs and sample config: per-show
+  metadata still defaults to `24` hours, while the global program catalog used
+  by `list programs` intentionally defaults to `2160` hours (90 days) unless
+  the user lowers it or forces a catalog refresh.
+- Made `list episodes <program>` use a read-only metadata path: it reuses any
+  existing per-show cache for enrichment, but no longer refreshes or rewrites
+  `.metadata-cache.tsv` during listing.
+- Reduced `download <program>` startup work for narrow selections by deferring
+  metadata refresh until after episode filtering, so `--group`,
+  `--episode-ids`, and `--episode-urls` only refresh metadata for the episodes
+  that will actually be downloaded.
+- Added dedicated state-dir caches for repeated `list seasons` and
+  scope-specific `list episodes` calls, so list commands can reuse prior
+  summaries without touching download-side metadata.
+- Hardened list-only caches so stale or incompatible cached payloads are
+  rebuilt automatically instead of leaking bad results into later runs.
+- Bumped the list-only cache schema version again so installed CLIs rebuild old
+  cached listings after the new JSON-backed grouping discovery changes.
+- Reduced download startup overhead further by skipping archive/file existence
+  scans unless missing-file recovery is actually enabled.
+
 ## [2.0.0] - 2026-03-10 - Python Package Port
 
 ### Changed

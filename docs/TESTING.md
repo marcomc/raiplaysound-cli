@@ -198,8 +198,8 @@ checks are still useful after substantial changes.
 Recommended live smoke tests:
 
 ```bash
-raiplaysound-cli list --stations
-raiplaysound-cli list --programs --filter radio2
+raiplaysound-cli list stations
+raiplaysound-cli list programs --filter radio2
 raiplaysound-cli list seasons america7
 raiplaysound-cli list episodes america7 --json
 ```

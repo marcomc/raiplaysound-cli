@@ -30,6 +30,8 @@ class Episode:
     upload_date: str = "NA"
     season: str = "1"
     year: str = "NA"
+    group_label: str = ""
+    group_kind: str = ""
 
     @property
     def pretty_date(self) -> str:
@@ -47,3 +49,22 @@ class SeasonSummary:
     show_year_max: str
     has_seasons: bool
     latest_season: str
+
+
+@dataclasses.dataclass(slots=True)
+class GroupSource:
+    key: str
+    label: str
+    url: str
+    kind: str
+
+
+@dataclasses.dataclass(slots=True)
+class GroupSummary:
+    key: str
+    label: str
+    url: str
+    kind: str
+    episodes: int
+    year_min: str
+    year_max: str

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import dataclasses
+import hashlib
 import json
 import signal
 import sys
@@ -31,15 +32,26 @@ from .catalog import (
     write_program_cache,
 )
 from .config import Settings, choose_command, parse_env_file
-from .downloads import Downloader, DownloadTask, remove_missing_ids_from_archive, resolve_log_file
+from .downloads import (
+    Downloader,
+    DownloadTask,
+    remove_missing_ids_from_archive,
+    resolve_log_file,
+)
 from .episodes import (
     build_requested_episode_filters,
+    build_requested_groups,
     build_requested_set,
     cache_entry_is_complete,
     collect_episodes_from_sources,
+    collect_group_summaries,
     collect_metadata,
+    collect_season_summary_from_sources,
     detect_slug,
     discover_feed_sources,
+    discover_group_listing_sources,
+    discover_grouped_episode_sources,
+    discover_season_listing_sources,
     filter_episodes_for_list_or_download,
     load_metadata_cache,
     normalize_episode_metadata,
@@ -47,16 +59,304 @@ from .episodes import (
     year_span,
 )
 from .errors import CLIError
-from .models import Episode
+from .models import Episode, GroupSource, SeasonSummary
 from .outputs import generate_playlist, generate_rss_feed
 from .runtime import acquire_lock, http_get, release_lock, run_yt_dlp
 
 console = Console()
 err_console = Console(stderr=True)
+LIST_CACHE_MAX_AGE_HOURS = 24
+LIST_CACHE_VERSION = 3
 
 
 def json_dump(data: Any) -> None:
     console.print(json.dumps(data, indent=2, ensure_ascii=False))
+
+
+def _state_cache_dir(settings: Settings) -> Path:
+    return settings.catalog_cache_file.parent
+
+
+def _write_json_cache(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _load_json_cache(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _season_summary_cache_file(settings: Settings, slug: str) -> Path:
+    return _state_cache_dir(settings) / "list-seasons" / f"{slug}.json"
+
+
+def _episode_list_cache_file(settings: Settings, slug: str, sources: list[str]) -> Path:
+    digest = hashlib.sha1("\n".join(sorted(sources)).encode("utf-8")).hexdigest()[:12]
+    return _state_cache_dir(settings) / "list-episodes" / f"{slug}-{digest}.json"
+
+
+def _episode_listing_cache_sources(
+    input_value: str,
+    selected_seasons: set[str],
+    request_all_seasons: bool,
+    *,
+    sources_override: list[str] | None,
+    source_groups_override: list[GroupSource] | None,
+) -> tuple[str, str, list[str]]:
+    slug, program_url, sources, _source_groups = _resolve_episode_sources(
+        input_value,
+        selected_seasons,
+        request_all_seasons,
+        for_list_seasons=False,
+        sources_override=sources_override,
+        source_groups_override=source_groups_override,
+    )
+    return slug, program_url, sources
+
+
+def _season_summary_items_to_payload(
+    *,
+    slug: str,
+    program_url: str,
+    has_seasons: bool,
+    has_groups: bool,
+    items: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "version": LIST_CACHE_VERSION,
+        "slug": slug,
+        "program_url": program_url,
+        "has_seasons": has_seasons,
+        "has_groups": has_groups,
+        "items": items,
+    }
+
+
+def _build_season_listing_payload(settings: Settings, slug: str) -> dict[str, Any]:
+    program_url, groups = discover_group_listing_sources(slug)
+    if groups:
+        group_summaries = collect_group_summaries(groups)
+        all_seasons = all(group.kind == "season" for group in group_summaries)
+        items = [
+            {
+                "key": group.key,
+                "label": group.label if not all_seasons else f"Season {group.key}",
+                "kind": group.kind,
+                "episodes": group.episodes,
+                "published": year_span(group.year_min, group.year_max),
+                "url": group.url,
+            }
+            for group in group_summaries
+        ]
+        return _season_summary_items_to_payload(
+            slug=slug,
+            program_url=program_url,
+            has_seasons=all_seasons,
+            has_groups=True,
+            items=items,
+        )
+    _, sources = discover_season_listing_sources(slug)
+    episodes, summary = collect_season_summary_from_sources(sources)
+    season_urls = {
+        source.rsplit("-", 1)[-1]: source
+        for source in sources
+        if "/stagione-" in source and source.rsplit("-", 1)[-1].isdigit()
+    }
+    if not summary.has_seasons:
+        items = [
+            {
+                "key": "default",
+                "label": "All episodes",
+                "kind": "flat",
+                "episodes": len(episodes),
+                "published": year_span(summary.show_year_min, summary.show_year_max),
+                "url": program_url,
+            }
+        ]
+    else:
+        items = [
+            {
+                "key": season,
+                "label": f"Season {season}",
+                "kind": "season",
+                "episodes": summary.counts[season],
+                "published": year_span(
+                    summary.year_min.get(season, ""),
+                    summary.year_max.get(season, ""),
+                ),
+                "url": season_urls.get(season, f"{program_url}/stagione-{season}"),
+            }
+            for season in sorted(summary.counts, key=lambda item: int(item))
+        ]
+    return _season_summary_items_to_payload(
+        slug=slug,
+        program_url=program_url,
+        has_seasons=summary.has_seasons,
+        has_groups=False,
+        items=items,
+    )
+
+
+def load_season_listing_payload(settings: Settings, slug: str) -> dict[str, Any]:
+    cache_file = _season_summary_cache_file(settings, slug)
+    if cache_file_is_fresh(cache_file, LIST_CACHE_MAX_AGE_HOURS):
+        try:
+            payload = _load_json_cache(cache_file)
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            payload = {}
+        if payload.get("version") == LIST_CACHE_VERSION:
+            return payload
+    payload = _build_season_listing_payload(settings, slug)
+    _write_json_cache(cache_file, payload)
+    return payload
+
+
+def _episode_payload_from_context(
+    slug: str,
+    program_url: str,
+    summary: SeasonSummary,
+    episodes: list[Episode],
+) -> dict[str, Any]:
+    return {
+        "version": LIST_CACHE_VERSION,
+        "slug": slug,
+        "program_url": program_url,
+        "summary": {
+            "has_seasons": summary.has_seasons,
+            "latest_season": getattr(summary, "latest_season", "1"),
+            "show_year_min": getattr(summary, "show_year_min", ""),
+            "show_year_max": getattr(summary, "show_year_max", ""),
+            "counts": getattr(summary, "counts", {}),
+            "year_min": getattr(summary, "year_min", {}),
+            "year_max": getattr(summary, "year_max", {}),
+        },
+        "episodes": [
+            {
+                "episode_id": episode.episode_id,
+                "url": episode.url,
+                "label": getattr(episode, "label", getattr(episode, "episode_id", "")),
+                "title": getattr(episode, "title", ""),
+                "upload_date": getattr(episode, "upload_date", "NA"),
+                "season": getattr(episode, "season", "1"),
+                "year": getattr(episode, "year", "NA"),
+                "group_label": getattr(episode, "group_label", ""),
+                "group_kind": getattr(episode, "group_kind", ""),
+            }
+            for episode in episodes
+        ],
+    }
+
+
+def _context_from_episode_payload(
+    payload: dict[str, Any],
+) -> tuple[str, str, list[Episode], SeasonSummary]:
+    episodes = [
+        Episode(
+            episode_id=item["episode_id"],
+            url=item["url"],
+            label=item["label"],
+            title=item.get("title", ""),
+            upload_date=item.get("upload_date", "NA"),
+            season=item.get("season", "1"),
+            year=item.get("year", "NA"),
+            group_label=item.get("group_label", ""),
+            group_kind=item.get("group_kind", ""),
+        )
+        for item in payload["episodes"]
+    ]
+    raw_summary = payload["summary"]
+    summary = SeasonSummary(
+        counts={str(key): int(value) for key, value in raw_summary["counts"].items()},
+        year_min={str(key): str(value) for key, value in raw_summary["year_min"].items()},
+        year_max={str(key): str(value) for key, value in raw_summary["year_max"].items()},
+        show_year_min=str(raw_summary["show_year_min"]),
+        show_year_max=str(raw_summary["show_year_max"]),
+        has_seasons=bool(raw_summary["has_seasons"]),
+        latest_season=str(raw_summary["latest_season"]),
+    )
+    return str(payload["slug"]), str(payload["program_url"]), episodes, summary
+
+
+def _resolve_episode_sources(
+    input_value: str,
+    selected_seasons: set[str],
+    request_all_seasons: bool,
+    *,
+    for_list_seasons: bool,
+    sources_override: list[str] | None,
+    source_groups_override: list[GroupSource] | None,
+) -> tuple[str, str, list[str], dict[str, GroupSource] | None]:
+    slug, program_url = detect_slug(input_value)
+    if sources_override is None:
+        sources = discover_feed_sources(
+            slug,
+            selected_seasons,
+            request_all_seasons,
+            for_list_seasons,
+        )
+    else:
+        sources = sources_override
+    source_groups = (
+        {group.url: group for group in source_groups_override}
+        if source_groups_override is not None
+        else None
+    )
+    return slug, program_url, sources, source_groups
+
+
+def _collect_episode_context(
+    settings: Settings,
+    input_value: str,
+    selected_seasons: set[str],
+    request_all_seasons: bool,
+    *,
+    for_list_seasons: bool,
+    sources_override: list[str] | None = None,
+    source_groups_override: list[GroupSource] | None = None,
+) -> tuple[str, str, list[str], list[Episode], Path]:
+    slug, program_url, sources, source_groups = _resolve_episode_sources(
+        input_value,
+        selected_seasons,
+        request_all_seasons,
+        for_list_seasons=for_list_seasons,
+        sources_override=sources_override,
+        source_groups_override=source_groups_override,
+    )
+    metadata_cache_file = settings.target_base / slug / ".metadata-cache.tsv"
+    episodes = collect_episodes_from_sources(sources, source_groups=source_groups)
+    return slug, program_url, sources, episodes, metadata_cache_file
+
+
+def make_argument_parser(**kwargs: Any) -> argparse.ArgumentParser:
+    return argparse.ArgumentParser(**kwargs)
+
+
+def format_main_help() -> str:
+    return "\n\n".join(
+        [
+            "\n".join(
+                [
+                    "usage: raiplaysound-cli [--version] <command> [options]",
+                    "",
+                    "Python CLI for RaiPlaySound discovery and downloads.",
+                    "",
+                    "Commands:",
+                    "  list      Inspect stations, programs, seasons, or episodes",
+                    "  download  Download one program into the local music library",
+                    "",
+                    "Preferred list forms:",
+                    "  raiplaysound-cli list stations",
+                    "  raiplaysound-cli list programs",
+                    "  raiplaysound-cli list seasons <program_slug|program_url>",
+                    "  raiplaysound-cli list episodes <program_slug|program_url>",
+                    "",
+                    "Run `raiplaysound-cli <command> --help` for command-specific help.",
+                ]
+            ),
+            build_list_parser().format_help().rstrip(),
+            build_download_parser().format_help().rstrip(),
+        ]
+    )
 
 
 def print_programs_text(programs: list[Any], mode: str) -> None:
@@ -95,6 +395,94 @@ def print_programs_text(programs: list[Any], mode: str) -> None:
         console.print(f"  - {program.title} ({program.slug}) [{program.years}]")
 
 
+def print_program_download_suggestion() -> None:
+    console.print("")
+    console.print("Download:")
+    console.print("  raiplaysound-cli download <program_slug>", soft_wrap=True)
+
+
+def print_season_download_suggestions(slug: str, season_keys: list[str]) -> None:
+    console.print("")
+    console.print("Download:")
+    console.print(f"  all episodes:  raiplaysound-cli download {slug}", soft_wrap=True)
+    console.print(
+        f"  all seasons:   raiplaysound-cli download {slug} --season all",
+        soft_wrap=True,
+    )
+    if season_keys:
+        console.print(
+            f"  one season:    raiplaysound-cli download {slug} --season {season_keys[0]}",
+            soft_wrap=True,
+        )
+    if len(season_keys) >= 2:
+        console.print(
+            f"  some seasons:  raiplaysound-cli download {slug} --season "
+            f"{','.join(season_keys[:2])}",
+            soft_wrap=True,
+        )
+
+
+def print_group_download_suggestions(slug: str, groups: list[Any]) -> None:
+    console.print("")
+    console.print("Download:")
+    console.print(f"  all program episodes: raiplaysound-cli download {slug}")
+    for group in groups:
+        console.print(
+            f"  {group.key}: raiplaysound-cli download {slug} --group {group.key}",
+            soft_wrap=True,
+        )
+
+
+def print_episode_download_suggestions(
+    slug: str,
+    filtered: list[Episode],
+    selected_seasons: set[str],
+    request_all: bool,
+    has_seasons: bool,
+) -> None:
+    console.print("")
+    console.print("Download:")
+    if has_seasons:
+        if request_all:
+            console.print(
+                f"  all seasons:   raiplaysound-cli download {slug} --season all",
+                soft_wrap=True,
+            )
+        elif selected_seasons:
+            ordered = sorted(selected_seasons, key=int)
+            console.print(
+                f"  listed season(s): raiplaysound-cli download {slug} --season "
+                f"{','.join(ordered)}",
+                soft_wrap=True,
+            )
+        else:
+            console.print(
+                f"  current/default season: raiplaysound-cli download {slug}",
+                soft_wrap=True,
+            )
+        console.print(
+            f"  all program episodes:   raiplaysound-cli download {slug} --season all",
+            soft_wrap=True,
+        )
+    else:
+        console.print(
+            f"  all program episodes:   raiplaysound-cli download {slug}",
+            soft_wrap=True,
+        )
+    if filtered:
+        console.print(
+            f"  one episode:    raiplaysound-cli download {slug} --episode-ids "
+            f"{filtered[0].episode_id}",
+            soft_wrap=True,
+        )
+    if len(filtered) >= 2:
+        console.print(
+            f"  some episodes:  raiplaysound-cli download {slug} --episode-ids "
+            f"{filtered[0].episode_id},{filtered[1].episode_id}",
+            soft_wrap=True,
+        )
+
+
 def load_show_context(
     settings: Settings,
     input_value: str,
@@ -102,17 +490,18 @@ def load_show_context(
     request_all_seasons: bool,
     *,
     for_list_seasons: bool = False,
+    sources_override: list[str] | None = None,
+    source_groups_override: list[GroupSource] | None = None,
 ) -> tuple[str, str, list[Any], Any, Path]:
-    slug, program_url = detect_slug(input_value)
-    target_dir = settings.target_base / slug
-    metadata_cache_file = target_dir / ".metadata-cache.tsv"
-    sources = discover_feed_sources(
-        slug,
+    slug, program_url, sources, episodes, metadata_cache_file = _collect_episode_context(
+        settings,
+        input_value,
         selected_seasons,
         request_all_seasons,
-        for_list_seasons,
+        for_list_seasons=for_list_seasons,
+        sources_override=sources_override,
+        source_groups_override=source_groups_override,
     )
-    episodes = collect_episodes_from_sources(sources)
     cache: dict[str, tuple[str, str, str]] = {}
     if not settings.force_refresh_metadata and cache_file_is_fresh(
         metadata_cache_file, settings.metadata_max_age_hours
@@ -126,6 +515,56 @@ def load_show_context(
         write_metadata_cache(metadata_cache_file, cache)
     summary = normalize_episode_metadata(episodes, cache)
     return slug, program_url, episodes, summary, metadata_cache_file
+
+
+def load_list_episode_context(
+    settings: Settings,
+    input_value: str,
+    selected_seasons: set[str],
+    request_all_seasons: bool,
+    *,
+    sources_override: list[str] | None = None,
+    source_groups_override: list[GroupSource] | None = None,
+) -> tuple[str, str, list[Any], Any]:
+    slug, program_url, _sources, episodes, metadata_cache_file = _collect_episode_context(
+        settings,
+        input_value,
+        selected_seasons,
+        request_all_seasons,
+        for_list_seasons=False,
+        sources_override=sources_override,
+        source_groups_override=source_groups_override,
+    )
+    cache = load_metadata_cache(metadata_cache_file)
+    summary = normalize_episode_metadata(episodes, cache)
+    return slug, program_url, episodes, summary
+
+
+def load_cached_show_context(
+    settings: Settings,
+    input_value: str,
+    selected_seasons: set[str],
+    request_all_seasons: bool,
+    *,
+    sources_override: list[str] | None = None,
+    source_groups_override: list[GroupSource] | None = None,
+) -> tuple[str, str, list[Any], Any, Path, dict[str, tuple[str, str, str]]]:
+    slug, program_url, _sources, episodes, metadata_cache_file = _collect_episode_context(
+        settings,
+        input_value,
+        selected_seasons,
+        request_all_seasons,
+        for_list_seasons=False,
+        sources_override=sources_override,
+        source_groups_override=source_groups_override,
+    )
+    cache: dict[str, tuple[str, str, str]] = {}
+    if not settings.force_refresh_metadata and cache_file_is_fresh(
+        metadata_cache_file, settings.metadata_max_age_hours
+    ):
+        cache = load_metadata_cache(metadata_cache_file)
+    summary = normalize_episode_metadata(episodes, cache)
+    return slug, program_url, episodes, summary, metadata_cache_file, cache
 
 
 def list_stations(_settings: Settings, args: argparse.Namespace) -> int:
@@ -186,78 +625,167 @@ def list_programs(settings: Settings, args: argparse.Namespace) -> int:
         )
         return 0
     print_programs_text(programs, mode)
+    print_program_download_suggestion()
     return 0
 
 
 def list_seasons(settings: Settings, args: argparse.Namespace) -> int:
     selected_seasons, request_all = build_requested_set(args.season or settings.seasons_arg)
-    slug, program_url, episodes, summary, _metadata_cache = load_show_context(
-        settings,
-        args.input,
-        selected_seasons,
-        request_all,
-        for_list_seasons=True,
+    slug, program_url = detect_slug(args.input)
+    payload = load_season_listing_payload(settings, slug)
+    program_url = str(payload["program_url"])
+    items = [dict(item) for item in payload["items"]]
+    has_groups = bool(payload["has_groups"])
+    all_seasons = bool(payload["has_seasons"]) and all(
+        str(item["kind"]) == "season" for item in items
     )
+    if has_groups:
+        if not all_seasons and (selected_seasons or request_all):
+            raise CLIError("this program does not expose seasons, so --season cannot be used.")
+        if all_seasons and selected_seasons and not request_all:
+            available = {str(item["key"]) for item in items}
+            missing = sorted(selected_seasons - available, key=int)
+            if missing:
+                raise CLIError(f"season {missing[0]} is not available.")
+            items = [item for item in items if str(item["key"]) in selected_seasons]
     if args.json:
-        seasons = []
-        if not summary.has_seasons:
-            seasons.append(
-                {
-                    "season": "1",
-                    "episodes": len(episodes),
-                    "published": year_span(summary.show_year_min, summary.show_year_max),
-                }
-            )
-        else:
-            for season in sorted(summary.counts, key=lambda item: int(item)):
-                seasons.append(
-                    {
-                        "season": season,
-                        "episodes": summary.counts[season],
-                        "published": year_span(
-                            summary.year_min.get(season, ""),
-                            summary.year_max.get(season, ""),
-                        ),
-                    }
-                )
+        has_seasons = bool(payload["has_seasons"])
+        if not has_groups and not has_seasons and (selected_seasons or request_all):
+            raise CLIError("this program does not expose seasons, so --season cannot be used.")
+        if not has_groups and has_seasons and selected_seasons and not request_all:
+            available = {str(item["key"]) for item in items}
+            missing = sorted(selected_seasons - available, key=int)
+            if missing:
+                raise CLIError(f"season {missing[0]} is not available.")
+            items = [item for item in items if str(item["key"]) in selected_seasons]
         json_dump(
             {
                 "mode": "seasons",
                 "slug": slug,
                 "program_url": program_url,
-                "has_seasons": summary.has_seasons,
-                "total_episodes": len(episodes),
-                "seasons": seasons,
+                "has_seasons": has_seasons,
+                "has_groups": has_groups,
+                "items": items,
             }
         )
         return 0
-    if not summary.has_seasons:
+    if has_groups:
+        if all_seasons:
+            console.print(f"Available seasons for {slug} ({program_url}):")
+            sorted_items = sorted(items, key=lambda item: int(str(item["key"])))
+            for item in sorted_items:
+                console.print(
+                    f"  - Season {item['key']}: {item['episodes']} episodes "
+                    f"(published: {item['published']})"
+                )
+            print_season_download_suggestions(slug, [str(item["key"]) for item in sorted_items])
+            return 0
+        console.print(f"Available groupings for {slug} ({program_url}):")
+        for item in items:
+            console.print(
+                f"  - {item['label']}: {item['episodes']} episodes "
+                f"({item['kind']}; select with --group {item['key']}; "
+                f"published: {item['published']})"
+            )
+        print_group_download_suggestions(
+            slug,
+            [
+                type(
+                    "GroupSummaryProxy",
+                    (),
+                    {
+                        "key": item["key"],
+                        "label": item["label"],
+                        "url": item["url"],
+                        "kind": item["kind"],
+                    },
+                )()
+                for item in items
+            ],
+        )
+        return 0
+    has_seasons = bool(payload["has_seasons"])
+    if not has_seasons:
+        if selected_seasons or request_all:
+            raise CLIError("this program does not expose seasons, so --season cannot be used.")
         console.print(f"No seasons detected for {slug} ({program_url}).")
         console.print(
-            f"  - Episodes: {len(episodes)} "
-            f"(published: {year_span(summary.show_year_min, summary.show_year_max)})"
+            f"  - Episodes: {items[0]['episodes']} " f"(published: {items[0]['published']})"
         )
         return 0
     console.print(f"Available seasons for {slug} ({program_url}):")
-    for season in sorted(summary.counts, key=lambda item: int(item)):
-        published = year_span(
-            summary.year_min.get(season, ""),
-            summary.year_max.get(season, ""),
-        )
+    available = {str(item["key"]) for item in items}
+    if selected_seasons and not request_all:
+        missing = sorted(selected_seasons - available, key=int)
+        if missing:
+            raise CLIError(f"season {missing[0]} is not available.")
+    sorted_items = [
+        item
+        for item in sorted(items, key=lambda entry: int(str(entry["key"])))
+        if not selected_seasons or request_all or str(item["key"]) in selected_seasons
+    ]
+    for item in sorted_items:
         console.print(
-            f"  - Season {season}: {summary.counts[season]} episodes " f"(published: {published})"
+            f"  - Season {item['key']}: {item['episodes']} episodes "
+            f"(published: {item['published']})"
         )
+    print_season_download_suggestions(slug, [str(item["key"]) for item in sorted_items])
     return 0
 
 
 def list_episodes(settings: Settings, args: argparse.Namespace) -> int:
     selected_seasons, request_all = build_requested_set(args.season or settings.seasons_arg)
-    slug, program_url, episodes, summary, _metadata_cache = load_show_context(
-        settings,
-        args.input,
+    selected_groups = build_requested_groups(args.group or settings.groups_arg)
+    input_value = args.input
+    slug, program_url = detect_slug(input_value)
+    sources_override, groups, non_season_groups = discover_grouped_episode_sources(
+        slug,
         selected_seasons,
         request_all,
+        selected_groups,
     )
+    slug, program_url, cache_sources = _episode_listing_cache_sources(
+        input_value,
+        selected_seasons,
+        request_all,
+        sources_override=sources_override,
+        source_groups_override=groups,
+    )
+    cache_file = _episode_list_cache_file(settings, slug, cache_sources)
+    if cache_file_is_fresh(cache_file, LIST_CACHE_MAX_AGE_HOURS):
+        try:
+            payload = _load_json_cache(cache_file)
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            payload = {}
+        if payload.get("version") == LIST_CACHE_VERSION:
+            slug, program_url, episodes, summary = _context_from_episode_payload(payload)
+        else:
+            slug, program_url, episodes, summary = load_list_episode_context(
+                settings,
+                input_value,
+                selected_seasons,
+                request_all,
+                sources_override=sources_override,
+                source_groups_override=groups,
+            )
+            _write_json_cache(
+                cache_file, _episode_payload_from_context(slug, program_url, summary, episodes)
+            )
+    else:
+        slug, program_url, episodes, summary = load_list_episode_context(
+            settings,
+            input_value,
+            selected_seasons,
+            request_all,
+            sources_override=sources_override,
+            source_groups_override=groups,
+        )
+        _write_json_cache(
+            cache_file,
+            _episode_payload_from_context(slug, program_url, summary, episodes),
+        )
+    if non_season_groups:
+        summary.has_seasons = False
     filtered = filter_episodes_for_list_or_download(
         episodes,
         summary,
@@ -277,7 +805,9 @@ def list_episodes(settings: Settings, args: argparse.Namespace) -> int:
                 "show_urls": args.show_urls,
                 "episodes": [
                     {
-                        "season": episode.season,
+                        "group": episode.group_label,
+                        "group_kind": episode.group_kind,
+                        "season": episode.season if summary.has_seasons else None,
                         "date": episode.pretty_date,
                         "title": episode.title,
                         "id": episode.episode_id,
@@ -291,6 +821,8 @@ def list_episodes(settings: Settings, args: argparse.Namespace) -> int:
     table = Table(show_header=True)
     if summary.has_seasons:
         table.add_column("Season")
+    elif non_season_groups:
+        table.add_column("Group")
     table.add_column("Date")
     table.add_column("Episode")
     table.add_column("ID")
@@ -300,58 +832,230 @@ def list_episodes(settings: Settings, args: argparse.Namespace) -> int:
         row = []
         if summary.has_seasons:
             row.append(f"S{episode.season}")
+        elif non_season_groups:
+            row.append(episode.group_label or episode.group_kind or "default")
         row.extend([episode.pretty_date, episode.title, episode.episode_id])
         if args.show_urls:
             row.append(episode.url)
         table.add_row(*row)
     console.print(f"Episodes for {slug} ({program_url}):")
     console.print(table)
+    print_episode_download_suggestions(
+        slug,
+        filtered,
+        selected_seasons,
+        request_all,
+        summary.has_seasons,
+    )
     return 0
 
 
 def build_list_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="raiplaysound-cli list")
-    parser.add_argument("positional_a", nargs="?")
-    parser.add_argument("positional_b", nargs="?")
-    parser.add_argument("--json", action="store_true")
-    parser.add_argument("--stations", action="store_true")
-    parser.add_argument("--programs", action="store_true")
-    parser.add_argument("--seasons", action="store_true")
-    parser.add_argument("--episodes", action="store_true")
-    parser.add_argument("--detailed", action="store_true")
-    parser.add_argument("--group-by", choices=["auto", "alpha", "station"], default="auto")
-    parser.add_argument("--filter", default="")
-    parser.add_argument("--sorted", action="store_true")
-    parser.add_argument("--refresh-catalog", action="store_true")
-    parser.add_argument("--catalog-max-age-hours", type=int, default=2160)
-    parser.add_argument("--show-urls", action="store_true")
-    parser.add_argument("--season", default="")
+    parser = make_argument_parser(
+        prog="raiplaysound-cli list",
+        usage="raiplaysound-cli list <stations|programs|seasons|episodes> [INPUT] [options]",
+        description="Inspect RaiPlaySound stations, programs, seasons, or episodes.",
+        color=False,
+    )
+    parser.add_argument(
+        "positional_a",
+        nargs="?",
+        metavar="TARGET_OR_INPUT",
+        help=(
+            "Preferred positional target (`stations`, `programs`, `seasons`, `episodes`) "
+            "or program input."
+        ),
+    )
+    parser.add_argument(
+        "positional_b",
+        nargs="?",
+        metavar="INPUT",
+        help="Optional program slug or program URL when the target is given positionally.",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print machine-readable JSON output.",
+    )
+    parser.add_argument(
+        "--detailed",
+        action="store_true",
+        help="Show extra station details with `list stations`.",
+    )
+    parser.add_argument(
+        "--group-by",
+        choices=["auto", "alpha", "station"],
+        default="auto",
+        help="Program grouping mode for `list programs`.",
+    )
+    parser.add_argument(
+        "--filter",
+        default="",
+        help="Filter programs by station slug.",
+    )
+    parser.add_argument(
+        "--sorted",
+        action="store_true",
+        help="Sort program output alphabetically.",
+    )
+    parser.add_argument(
+        "--refresh-catalog",
+        action="store_true",
+        help="Refresh the cached program catalog.",
+    )
+    parser.add_argument(
+        "--catalog-max-age-hours",
+        type=int,
+        default=2160,
+        help="Maximum catalog cache age in hours before refresh.",
+    )
+    parser.add_argument(
+        "--show-urls",
+        action="store_true",
+        help="Show episode URLs in `list episodes` output.",
+    )
+    parser.add_argument(
+        "--season",
+        default="",
+        help="Restrict listing to one or more seasons.",
+    )
+    parser.add_argument(
+        "--group",
+        default="",
+        help="Restrict `list episodes` to one or more discovered grouping keys or labels.",
+    )
     return parser
 
 
 def build_download_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="raiplaysound-cli download")
-    parser.add_argument("input", nargs="?")
-    parser.add_argument("-f", "--format", default=None)
-    parser.add_argument("-j", "--jobs", type=int, default=None)
-    parser.add_argument("-s", "--season", default="")
-    parser.add_argument("--seasons", dest="season_alias", default="")
-    parser.add_argument("--episode-ids", default="")
-    parser.add_argument("--episodes", dest="episodes_legacy", default="")
-    parser.add_argument("--episode-url", action="append", default=[])
-    parser.add_argument("--episode-urls", default="")
-    parser.add_argument("-m", "--missing", action="store_true")
-    parser.add_argument("--log", nargs="?", const="__enable__", default=None)
-    parser.add_argument("--debug-pids", action="store_true")
-    parser.add_argument("--refresh-metadata", action="store_true")
-    parser.add_argument("--clear-metadata-cache", action="store_true")
-    parser.add_argument("--metadata-max-age-hours", type=int, default=None)
-    parser.add_argument("--rss", dest="rss", action="store_true")
-    parser.add_argument("--no-rss", dest="rss", action="store_false")
+    parser = make_argument_parser(
+        prog="raiplaysound-cli download",
+        usage="raiplaysound-cli download [options] <program_slug|program_url>",
+        description="Download RaiPlaySound episodes into the local music library.",
+        color=False,
+    )
+    parser.add_argument(
+        "input",
+        nargs="?",
+        metavar="INPUT",
+        help="Program slug or full program URL.",
+    )
+    parser.add_argument(
+        "-f",
+        "--format",
+        default=None,
+        help="Target audio format.",
+    )
+    parser.add_argument(
+        "-j",
+        "--jobs",
+        type=int,
+        default=None,
+        help="Number of concurrent download jobs.",
+    )
+    parser.add_argument(
+        "-s",
+        "--season",
+        default="",
+        help="Restrict downloads to one or more seasons.",
+    )
+    parser.add_argument(
+        "--group",
+        default="",
+        help="Restrict downloads to one or more discovered grouping keys or labels.",
+    )
+    parser.add_argument(
+        "--seasons",
+        dest="season_alias",
+        default="",
+        help="Legacy alias for `--season`.",
+    )
+    parser.add_argument(
+        "--episode-ids",
+        default="",
+        help="Comma-separated episode IDs to download.",
+    )
+    parser.add_argument(
+        "--episodes",
+        dest="episodes_legacy",
+        default="",
+        help="Legacy alias for `--episode-ids`.",
+    )
+    parser.add_argument(
+        "--episode-url",
+        action="append",
+        default=[],
+        help="Download a specific episode URL.",
+    )
+    parser.add_argument(
+        "--episode-urls",
+        default="",
+        help="Comma-separated episode URLs to download.",
+    )
+    parser.add_argument(
+        "-m",
+        "--missing",
+        action="store_true",
+        help="Re-download archive-marked files missing locally.",
+    )
+    parser.add_argument(
+        "--log",
+        nargs="?",
+        const="__enable__",
+        default=None,
+        help="Enable run logging, optionally to a specific path.",
+    )
+    parser.add_argument(
+        "--debug-pids",
+        action="store_true",
+        help="Log worker and yt-dlp PID transitions.",
+    )
+    parser.add_argument(
+        "--refresh-metadata",
+        action="store_true",
+        help="Refresh the per-show metadata cache.",
+    )
+    parser.add_argument(
+        "--clear-metadata-cache",
+        action="store_true",
+        help="Delete the per-show metadata cache before refresh.",
+    )
+    parser.add_argument(
+        "--metadata-max-age-hours",
+        type=int,
+        default=None,
+        help="Maximum metadata cache age in hours.",
+    )
+    parser.add_argument(
+        "--rss",
+        dest="rss",
+        action="store_true",
+        help="Generate `feed.xml` after the download run.",
+    )
+    parser.add_argument(
+        "--no-rss",
+        dest="rss",
+        action="store_false",
+        help="Disable RSS generation.",
+    )
     parser.set_defaults(rss=None)
-    parser.add_argument("--rss-base-url", default=None)
-    parser.add_argument("--playlist", dest="playlist", action="store_true")
-    parser.add_argument("--no-playlist", dest="playlist", action="store_false")
+    parser.add_argument(
+        "--rss-base-url",
+        default=None,
+        help="Public base URL used for RSS enclosure links.",
+    )
+    parser.add_argument(
+        "--playlist",
+        dest="playlist",
+        action="store_true",
+        help="Generate `playlist.m3u` after the download run.",
+    )
+    parser.add_argument(
+        "--no-playlist",
+        dest="playlist",
+        action="store_false",
+        help="Disable playlist generation.",
+    )
     parser.set_defaults(playlist=None)
     return parser
 
@@ -389,17 +1093,6 @@ def apply_download_overrides(settings: Settings, args: argparse.Namespace) -> Se
 
 
 def apply_list_defaults(settings: Settings, args: argparse.Namespace) -> argparse.Namespace:
-    if settings.list_target and not any(
-        (args.stations, args.programs, args.seasons, args.episodes)
-    ):
-        if settings.list_target == "stations":
-            args.stations = True
-        elif settings.list_target == "programs":
-            args.programs = True
-        elif settings.list_target == "seasons":
-            args.seasons = True
-        elif settings.list_target == "episodes":
-            args.episodes = True
     if settings.show_urls and not args.show_urls:
         args.show_urls = True
     if settings.stations_detailed and not args.detailed:
@@ -458,6 +1151,7 @@ def predicted_media_exists(episode_url: str, output_template: str, audio_format:
 def download_command(settings: Settings, args: argparse.Namespace) -> int:
     slug, program_url = detect_slug(args.input or settings.input_value)
     selected_seasons, request_all = build_requested_set(args.season or settings.seasons_arg)
+    selected_groups = build_requested_groups(args.group or settings.groups_arg)
     requested_episode_ids, requested_episode_urls = build_requested_episode_filters(
         args.episode_ids or settings.episodes_arg,
         ",".join(args.episode_url or [])
@@ -470,12 +1164,22 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
     metadata_cache_file = target_dir / ".metadata-cache.tsv"
     if settings.clear_metadata_cache and metadata_cache_file.exists():
         metadata_cache_file.unlink()
-    slug, program_url, episodes, summary, metadata_cache_file = load_show_context(
+    sources_override, groups, non_season_groups = discover_grouped_episode_sources(
+        slug,
+        selected_seasons,
+        request_all,
+        selected_groups,
+    )
+    slug, program_url, episodes, summary, metadata_cache_file, cache = load_cached_show_context(
         settings,
         args.input or settings.input_value,
         selected_seasons,
         request_all,
+        sources_override=sources_override,
+        source_groups_override=groups,
     )
+    if non_season_groups:
+        summary.has_seasons = False
     filtered = filter_episodes_for_list_or_download(
         episodes,
         summary,
@@ -487,7 +1191,16 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
     )
     if not filtered:
         raise CLIError("No episodes selected for download.")
-    if summary.has_seasons:
+    need_refresh = settings.force_refresh_metadata or any(
+        not cache_entry_is_complete(cache.get(episode.episode_id)) for episode in filtered
+    )
+    if need_refresh:
+        cache.update(collect_metadata([episode.url for episode in filtered], single_entries=True))
+        write_metadata_cache(metadata_cache_file, cache)
+    filtered_summary = normalize_episode_metadata(filtered, cache)
+    if non_season_groups:
+        filtered_summary.has_seasons = False
+    if filtered_summary.has_seasons:
         season_template = (
             "%(series,playlist_title,uploader)s - "
             "S%(season_number|0)02d%(episode_number|0)02d - "
@@ -509,7 +1222,7 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
             if len(parts) >= 2
         }
     missing_archived_ids: set[str] = set()
-    if archived_ids:
+    if archived_ids and settings.auto_redownload_missing:
         with concurrent.futures.ThreadPoolExecutor(max_workers=settings.check_jobs) as executor:
             check_futures: dict[
                 concurrent.futures.Future[bool],
@@ -527,7 +1240,7 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
             for check_future in concurrent.futures.as_completed(check_futures):
                 if not check_future.result():
                     missing_archived_ids.add(check_futures[check_future].episode_id)
-        if missing_archived_ids and settings.auto_redownload_missing:
+        if missing_archived_ids:
             remove_missing_ids_from_archive(archive_file, missing_archived_ids)
     log_file = resolve_log_file(
         enable_log=settings.enable_log,
@@ -612,16 +1325,14 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    if not argv:
+        console.print(format_main_help())
+        return 0
     if "--version" in argv:
         console.print(f"raiplaysound-cli {__version__}")
         return 0
     if "-h" in argv or "--help" in argv:
-        command, _rest = choose_command(
-            [arg for arg in argv if arg not in {"-h", "--help"}],
-            parse_env_file(Path.home() / ".raiplaysound-cli.conf"),
-        )
-        parser = build_list_parser() if command == "list" else build_download_parser()
-        parser.print_help()
+        console.print(format_main_help())
         return 0
     config = parse_env_file(Path.home() / ".raiplaysound-cli.conf")
     if not config:
@@ -638,36 +1349,25 @@ def main(argv: list[str] | None = None) -> int:
             if args.positional_a in {"stations", "programs", "seasons", "episodes"}:
                 target = args.positional_a
                 input_value = args.positional_b
-            else:
-                target = (
-                    "stations"
-                    if args.stations
-                    else (
-                        "programs"
-                        if args.programs
-                        else "seasons" if args.seasons else "episodes" if args.episodes else ""
-                    )
+            elif settings.list_target in {"stations", "programs", "seasons", "episodes"}:
+                target = settings.list_target
+            args.input = input_value or settings.input_value
+            if target not in {"stations", "programs", "seasons", "episodes"}:
+                raise CLIError(
+                    "list mode requires exactly one positional target: "
+                    "stations, programs, seasons, or episodes."
                 )
             if target == "stations":
-                args.stations = True
-            elif target == "programs":
-                args.programs = True
-            elif target == "seasons":
-                args.seasons = True
-            elif target == "episodes":
-                args.episodes = True
-            args.input = input_value or settings.input_value
-            targets = sum([args.stations, args.programs, args.seasons, args.episodes])
-            if targets != 1:
-                raise CLIError(
-                    "list mode requires exactly one target: "
-                    "--stations, --programs, --seasons, or --episodes."
-                )
-            if args.stations:
+                if args.group:
+                    raise CLIError("--group can only be used with list episodes.")
                 return list_stations(settings, args)
-            if args.programs:
+            if target == "programs":
+                if args.group:
+                    raise CLIError("--group can only be used with list episodes.")
                 return list_programs(settings, args)
-            if args.seasons:
+            if target == "seasons":
+                if args.group:
+                    raise CLIError("--group can only be used with list episodes.")
                 if not args.input:
                     raise CLIError("list seasons requires <program_slug|program_url>.")
                 return list_seasons(settings, args)
@@ -684,3 +1384,6 @@ def main(argv: list[str] | None = None) -> int:
     except CLIError as exc:
         err_console.print(f"Error: {exc}")
         return 1
+    except SystemExit as exc:
+        code = exc.code
+        return code if isinstance(code, int) else 1
