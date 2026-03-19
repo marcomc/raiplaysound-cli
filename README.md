@@ -291,12 +291,20 @@ also reports those groupings instead of incorrectly collapsing everything into a
 flat episode list. For example, programs may expose specials, named thematic
 collections, or year and period buckets instead of numbered seasons.
 
+Grouping discovery is now filter-first: when RaiPlaySound exposes selector
+filters in the program JSON, the CLI treats those filters as the authoritative
+group source even if the site uses custom route names such as `cicli`,
+`clip`, or other product-specific paths.
+
 `list seasons` is also the long-term grouping inspector name for the CLI, even
 when the discovered program structure uses non-season collections.
 
 When a program exposes real seasons, `list seasons <program> --season <n>` narrows the
 output to the requested season. For non-season groupings or flat programs,
 `--season` is rejected instead of being silently ignored.
+
+Season selectors can be ordinary season numbers or year-style season keys such
+as `2025` when RaiPlaySound models seasons that way.
 
 `list episodes <program>` also aggregates episodes across discovered
 groupings for grouped programs, instead of only listing the currently selected

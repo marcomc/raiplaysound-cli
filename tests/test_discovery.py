@@ -431,8 +431,8 @@ def test_discover_group_listing_sources_supports_year_and_series_buckets(monkeyp
     _program_url, groups = episodes.discover_group_listing_sources("wikiradio")
 
     assert [(group.label, group.kind, group.url) for group in groups] == [
-        ("2026", "bucket", "https://www.raiplaysound.it/programmi/wikiradio"),
-        ("2025", "bucket", "https://www.raiplaysound.it/programmi/wikiradio/episodi-/2025"),
+        ("2026", "year", "https://www.raiplaysound.it/programmi/wikiradio"),
+        ("2025", "year", "https://www.raiplaysound.it/programmi/wikiradio/episodi-/2025"),
     ]
 
     _program_url, groups = episodes.discover_group_listing_sources("3sullaluna")
@@ -440,7 +440,7 @@ def test_discover_group_listing_sources_supports_year_and_series_buckets(monkeyp
     assert [(group.label, group.kind, group.url) for group in groups] == [
         (
             "Destinazione Luna",
-            "series",
+            "group",
             "https://www.raiplaysound.it/programmi/3sullaluna/puntate-e-podcast/destinazione-luna",
         )
     ]
@@ -538,6 +538,202 @@ def test_discover_group_listing_sources_uses_program_json_filters(monkeypatch) -
             "season",
             "https://www.raiplaysound.it/programmi/afroamerica-blackmusicrevolution/episodi/2-stagione",
         )
+    ]
+
+
+def test_discover_group_listing_sources_supports_cycle_filters_from_program_json(
+    monkeypatch,
+) -> None:
+    def fake_http_get(url: str) -> str:
+        if url == "https://www.raiplaysound.it/programmi/radio2afumetti":
+            return ""
+        if url == "https://www.raiplaysound.it/programmi/radio2afumetti.json":
+            return """
+            {
+              "filters": [
+                {
+                  "active": true,
+                  "path": "diabolik---vampiri-a-clerville",
+                  "label": "Diabolik - Vampiri a Clerville",
+                  "weblink": "/programmi/radio2afumetti/cicli/diabolik---vampiri-a-clerville"
+                },
+                {
+                  "active": false,
+                  "path": "tex-willer---mefisto",
+                  "label": "Tex Willer - Mefisto",
+                  "weblink": "/programmi/radio2afumetti/cicli/tex-willer---mefisto"
+                }
+              ]
+            }
+            """
+        raise RuntimeError("not found")
+
+    monkeypatch.setattr(episodes, "http_get", fake_http_get)
+
+    program_url, groups = episodes.discover_group_listing_sources("radio2afumetti")
+
+    assert program_url == "https://www.raiplaysound.it/programmi/radio2afumetti"
+    assert [(group.key, group.label, group.kind, group.url) for group in groups] == [
+        (
+            "diabolik---vampiri-a-clerville",
+            "Diabolik - Vampiri a Clerville",
+            "group",
+            "https://www.raiplaysound.it/programmi/radio2afumetti/cicli/diabolik---vampiri-a-clerville",
+        ),
+        (
+            "tex-willer---mefisto",
+            "Tex Willer - Mefisto",
+            "group",
+            "https://www.raiplaysound.it/programmi/radio2afumetti/cicli/tex-willer---mefisto",
+        ),
+    ]
+
+
+def test_discover_group_listing_sources_supports_custom_season_sections_from_program_json(
+    monkeypatch,
+) -> None:
+    def fake_http_get(url: str) -> str:
+        if url == "https://www.raiplaysound.it/programmi/lafisicadellamore":
+            return ""
+        if url == "https://www.raiplaysound.it/programmi/lafisicadellamore.json":
+            return (
+                "{"
+                '"filters": ['
+                "{"
+                '"active": true,'
+                '"path": "seconda-stagione",'
+                '"label": "Seconda stagione",'
+                '"weblink": "/programmi/lafisicadellamore/'
+                'la-fisica-dellamore---puntate-block/seconda-stagione"'
+                "},"
+                "{"
+                '"active": false,'
+                '"path": "prima-stagione",'
+                '"label": "Prima stagione",'
+                '"weblink": "/programmi/lafisicadellamore/'
+                'la-fisica-dellamore---puntate-block/prima-stagione"'
+                "}"
+                "]"
+                "}"
+            )
+        raise RuntimeError("not found")
+
+    monkeypatch.setattr(episodes, "http_get", fake_http_get)
+
+    _program_url, groups = episodes.discover_group_listing_sources("lafisicadellamore")
+
+    assert [(group.key, group.label, group.kind) for group in groups] == [
+        ("2", "Seconda stagione", "season"),
+        ("1", "Prima stagione", "season"),
+    ]
+
+
+def test_discover_group_listing_sources_supports_year_range_seasons(monkeypatch) -> None:
+    def fake_http_get(url: str) -> str:
+        if url == "https://www.raiplaysound.it/programmi/moviemag":
+            return "<button data-filters-current><span>Stagione 2025-2026</span></button>"
+        if url == "https://www.raiplaysound.it/programmi/moviemag.json":
+            return """
+            {
+              "filters": [
+                {
+                  "active": true,
+                  "path": "stagione-2025-2026",
+                  "label": "Stagione 2025-2026",
+                  "weblink": "/programmi/moviemag/stagioni/stagione-2025-2026"
+                },
+                {
+                  "active": false,
+                  "path": "stagione-2024-2025",
+                  "label": "Stagione 2024-2025",
+                  "weblink": "/programmi/moviemag/stagioni/stagione-2024-2025"
+                }
+              ]
+            }
+            """
+        raise RuntimeError("not found")
+
+    monkeypatch.setattr(episodes, "http_get", fake_http_get)
+
+    _program_url, groups = episodes.discover_group_listing_sources("moviemag")
+
+    assert [(group.key, group.label, group.kind) for group in groups] == [
+        ("2025-2026", "Stagione 2025-2026", "season"),
+        ("2024-2025", "Stagione 2024-2025", "season"),
+    ]
+
+
+def test_discover_group_listing_sources_supports_clip_buckets_from_program_json(
+    monkeypatch,
+) -> None:
+    def fake_http_get(url: str) -> str:
+        if url == "https://www.raiplaysound.it/programmi/lelunatiche":
+            return ""
+        if url == "https://www.raiplaysound.it/programmi/lelunatiche.json":
+            return """
+            {
+              "filters": [
+                {
+                  "active": true,
+                  "path": "ultime-inserite",
+                  "label": "Ultime inserite",
+                  "weblink": "/programmi/lelunatiche/clip/ultime-inserite"
+                },
+                {
+                  "active": false,
+                  "path": "interviste",
+                  "label": "Interviste",
+                  "weblink": "/programmi/lelunatiche/clip/interviste"
+                }
+              ]
+            }
+            """
+        raise RuntimeError("not found")
+
+    monkeypatch.setattr(episodes, "http_get", fake_http_get)
+
+    _program_url, groups = episodes.discover_group_listing_sources("lelunatiche")
+
+    assert [(group.key, group.label, group.kind) for group in groups] == [
+        ("ultime-inserite", "Ultime inserite", "group"),
+        ("interviste", "Interviste", "group"),
+    ]
+
+
+def test_discover_group_listing_sources_supports_mixed_special_and_generic_filters(
+    monkeypatch,
+) -> None:
+    def fake_http_get(url: str) -> str:
+        if url == "https://www.raiplaysound.it/programmi/ipodcastdellarmadeicarabinieri":
+            return ""
+        if url == "https://www.raiplaysound.it/programmi/ipodcastdellarmadeicarabinieri.json":
+            return """
+            {
+              "filters": [
+                {
+                  "active": true,
+                  "path": "speciali",
+                  "label": "Speciali",
+                  "weblink": "/programmi/ipodcastdellarmadeicarabinieri/sezioni/speciali"
+                },
+                {
+                  "active": false,
+                  "path": "storia-dellarma",
+                  "label": "Storia dell'Arma",
+                  "weblink": "/programmi/ipodcastdellarmadeicarabinieri/sezioni/storia-dellarma"
+                }
+              ]
+            }
+            """
+        raise RuntimeError("not found")
+
+    monkeypatch.setattr(episodes, "http_get", fake_http_get)
+
+    _program_url, groups = episodes.discover_group_listing_sources("ipodcastdellarmadeicarabinieri")
+
+    assert [(group.key, group.label, group.kind) for group in groups] == [
+        ("speciali", "Speciali", "special"),
+        ("storia-dellarma", "Storia dell'Arma", "group"),
     ]
 
 

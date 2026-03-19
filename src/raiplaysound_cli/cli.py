@@ -56,6 +56,7 @@ from .episodes import (
     filter_episodes_for_list_or_download,
     load_metadata_cache,
     normalize_episode_metadata,
+    season_sort_key,
     write_metadata_cache,
     year_span,
 )
@@ -67,7 +68,7 @@ from .runtime import acquire_lock, http_get, release_lock, run_yt_dlp
 console = Console()
 err_console = Console(stderr=True)
 LIST_CACHE_MAX_AGE_HOURS = 24
-LIST_CACHE_VERSION = 3
+LIST_CACHE_VERSION = 4
 
 
 def json_dump(data: Any) -> None:
@@ -187,7 +188,7 @@ def _build_season_listing_payload(settings: Settings, slug: str) -> dict[str, An
                 ),
                 "url": season_urls.get(season, f"{program_url}/stagione-{season}"),
             }
-            for season in sorted(summary.counts, key=lambda item: int(item))
+            for season in sorted(summary.counts, key=season_sort_key)
         ]
     return _season_summary_items_to_payload(
         slug=slug,
@@ -494,7 +495,7 @@ def print_episode_download_suggestions(
                 soft_wrap=True,
             )
         elif selected_seasons:
-            ordered = sorted(selected_seasons, key=int)
+            ordered = sorted(selected_seasons, key=season_sort_key)
             console.print(
                 f"  listed season(s): raiplaysound-cli download {slug} --season "
                 f"{','.join(ordered)}",
@@ -733,7 +734,7 @@ def list_seasons(settings: Settings, args: argparse.Namespace) -> int:
             raise CLIError("this program does not expose seasons, so --season cannot be used.")
         if all_seasons and selected_seasons and not request_all:
             available = {str(item["key"]) for item in items}
-            missing = sorted(selected_seasons - available, key=int)
+            missing = sorted(selected_seasons - available, key=season_sort_key)
             if missing:
                 raise CLIError(f"season {missing[0]} is not available.")
             items = [item for item in items if str(item["key"]) in selected_seasons]
@@ -743,7 +744,7 @@ def list_seasons(settings: Settings, args: argparse.Namespace) -> int:
             raise CLIError("this program does not expose seasons, so --season cannot be used.")
         if not has_groups and has_seasons and selected_seasons and not request_all:
             available = {str(item["key"]) for item in items}
-            missing = sorted(selected_seasons - available, key=int)
+            missing = sorted(selected_seasons - available, key=season_sort_key)
             if missing:
                 raise CLIError(f"season {missing[0]} is not available.")
             items = [item for item in items if str(item["key"]) in selected_seasons]
@@ -762,7 +763,7 @@ def list_seasons(settings: Settings, args: argparse.Namespace) -> int:
         if has_groups:
             if all_seasons:
                 console.print(f"Available seasons for {slug} ({program_url}):")
-                sorted_items = sorted(items, key=lambda item: int(str(item["key"])))
+                sorted_items = sorted(items, key=lambda item: season_sort_key(str(item["key"])))
                 print_grouping_table(slug, sorted_items, all_seasons=True)
                 print_season_download_suggestions(slug, [str(item["key"]) for item in sorted_items])
                 return 0
@@ -797,12 +798,12 @@ def list_seasons(settings: Settings, args: argparse.Namespace) -> int:
         console.print(f"Available seasons for {slug} ({program_url}):")
         available = {str(item["key"]) for item in items}
         if selected_seasons and not request_all:
-            missing = sorted(selected_seasons - available, key=int)
+            missing = sorted(selected_seasons - available, key=season_sort_key)
             if missing:
                 raise CLIError(f"season {missing[0]} is not available.")
         sorted_items = [
             item
-            for item in sorted(items, key=lambda entry: int(str(entry["key"])))
+            for item in sorted(items, key=lambda entry: season_sort_key(str(entry["key"])))
             if not selected_seasons or request_all or str(item["key"]) in selected_seasons
         ]
         print_grouping_table(slug, sorted_items, all_seasons=True)

@@ -10,7 +10,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from raiplaysound_cli.episodes import discover_group_listing_sources
+from raiplaysound_cli.episodes import _classify_group, _season_key_from_label
 
 USER_AGENT = "raiplaysound-cli-audit/1.0"
 OUTPUT_DIR = Path("docs/audits")
@@ -148,8 +148,11 @@ def analyze_program(slug: str) -> dict[str, Any]:
             "missed_by_current": False,
             "fetch_error": "program-json-unavailable",
         }
-    title = str(payload.get("title") or slug)
+    podcast_info = payload.get("podcast_info") if isinstance(payload.get("podcast_info"), dict) else {}
+    title = str(payload.get("title") or podcast_info.get("title") or slug)
     channel = payload.get("channel") if isinstance(payload.get("channel"), dict) else {}
+    if not channel and isinstance(podcast_info.get("channel"), dict):
+        channel = podcast_info["channel"]
     station = str(channel.get("category_path") or "")
     filters = payload.get("filters") if isinstance(payload.get("filters"), list) else []
 
@@ -194,15 +197,33 @@ def analyze_program(slug: str) -> dict[str, Any]:
             sections.add(section)
         kinds.add(kind)
 
-    try:
-        _program_url, current_groups = discover_group_listing_sources(slug)
-        detected_by_current = bool(current_groups)
-        current_group_count = len(current_groups)
-        current_group_kinds = sorted({group.kind for group in current_groups})
-    except Exception as exc:  # pragma: no cover - live audit helper
-        detected_by_current = False
-        current_group_count = -1
-        current_group_kinds = [f"error:{type(exc).__name__}"]
+    has_season_filters = any(_season_key_from_label(group["label"]) for group in raw_groups)
+    current_groups: list[dict[str, str]] = []
+    seen_current_urls: set[str] = set()
+    for group in raw_groups:
+        weblink = str(group["weblink"])
+        section = str(group["section"])
+        tail = str(group["tail"])
+        path = str(group["path"]).lower()
+        label = str(group["label"])
+        if not weblink or not section or not tail:
+            continue
+        classified = None
+        if has_season_filters and path in {"episodi", "puntate"}:
+            continue
+        classified = _classify_group(section, tail, label)
+        if classified is None and has_season_filters:
+            season = _season_key_from_label(label)
+            if season is not None:
+                classified = ("season", season)
+        if classified is None or weblink in seen_current_urls:
+            continue
+        kind, key = classified
+        current_groups.append({"kind": kind, "key": key, "url": weblink})
+        seen_current_urls.add(weblink)
+    detected_by_current = bool(current_groups)
+    current_group_count = len(current_groups)
+    current_group_kinds = sorted({group["kind"] for group in current_groups})
 
     grouped = any(group["weblink"] and group["key"] for group in raw_groups)
     multi_group = sum(1 for group in raw_groups if group["weblink"] and group["key"]) > 1

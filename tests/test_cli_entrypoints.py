@@ -413,7 +413,7 @@ def test_list_episodes_uses_cached_payload(monkeypatch, tmp_path: Path, capsys) 
     cache_file.write_text(
         """
 {
-  "version": 3,
+  "version": 4,
   "slug": "profili",
   "program_url": "https://www.raiplaysound.it/programmi/profili",
   "summary": {
@@ -814,7 +814,7 @@ def test_list_seasons_uses_cached_summary_payload(monkeypatch, tmp_path: Path, c
     cache_file.write_text(
         """
 {
-  "version": 3,
+  "version": 4,
   "slug": "america7",
   "program_url": "https://www.raiplaysound.it/programmi/america7",
   "has_seasons": true,
@@ -1000,6 +1000,86 @@ def test_list_seasons_prints_groupings_for_special_collections(
     )
     assert (
         "some groupings:       raiplaysound-cli download profili --group "
+        "<selector1>,<selector2>" in captured.out
+    )
+
+
+def test_list_seasons_prints_groupings_for_generic_filter_groups(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    settings = Settings()
+    settings.catalog_cache_file = tmp_path / "state" / "program-catalog.tsv"
+
+    monkeypatch.setattr(cli, "parse_env_file", lambda _path: {"COMMAND": "list"})
+    monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
+    monkeypatch.setattr(
+        cli,
+        "discover_group_listing_sources",
+        lambda slug: (
+            f"https://www.raiplaysound.it/programmi/{slug}",
+            [
+                GroupSource(
+                    key="diabolik---vampiri-a-clerville",
+                    label="Diabolik - Vampiri a Clerville",
+                    url=(
+                        f"https://www.raiplaysound.it/programmi/{slug}/cicli/"
+                        "diabolik---vampiri-a-clerville"
+                    ),
+                    kind="group",
+                ),
+                GroupSource(
+                    key="tex-willer---mefisto",
+                    label="Tex Willer - Mefisto",
+                    url=f"https://www.raiplaysound.it/programmi/{slug}/cicli/tex-willer---mefisto",
+                    kind="group",
+                ),
+            ],
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "collect_group_summaries",
+        lambda _groups: [
+            type(
+                "GroupSummary",
+                (),
+                {
+                    "key": "diabolik---vampiri-a-clerville",
+                    "label": "Diabolik - Vampiri a Clerville",
+                    "url": (
+                        "https://www.raiplaysound.it/programmi/radio2afumetti/cicli/"
+                        "diabolik---vampiri-a-clerville"
+                    ),
+                    "kind": "group",
+                    "episodes": 3,
+                    "year_min": "2018",
+                    "year_max": "2018",
+                },
+            )(),
+            type(
+                "GroupSummary",
+                (),
+                {
+                    "key": "tex-willer---mefisto",
+                    "label": "Tex Willer - Mefisto",
+                    "url": "https://www.raiplaysound.it/programmi/radio2afumetti/cicli/tex-willer---mefisto",
+                    "kind": "group",
+                    "episodes": 1,
+                    "year_min": "2018",
+                    "year_max": "2018",
+                },
+            )(),
+        ],
+    )
+
+    result = cli.main(["list", "seasons", "radio2afumetti"])
+    captured = capsys.readouterr()
+
+    assert result == 0
+    assert "Available groupings for radio2afumetti" in captured.out
+    assert "Group" in captured.out
+    assert (
+        "some groupings:       raiplaysound-cli download radio2afumetti --group "
         "<selector1>,<selector2>" in captured.out
     )
 

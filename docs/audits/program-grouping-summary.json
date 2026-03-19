@@ -1,0 +1,568 @@
+{
+  "program_count": 1969,
+  "grouped_count": 314,
+  "multi_group_count": 314,
+  "missed_by_current_count": 40,
+  "unreachable_count": 0,
+  "mode_counter": {
+    "flat": 1655,
+    "seasonal": 128,
+    "bucket": 81,
+    "mixed": 42,
+    "year": 33,
+    "other": 25,
+    "series": 3,
+    "special": 1,
+    "cycle": 1
+  },
+  "top_sections": [
+    [
+      "puntate",
+      139
+    ],
+    [
+      "episodi",
+      107
+    ],
+    [
+      "raiplaysound-puntate-block",
+      21
+    ],
+    [
+      "clip",
+      6
+    ],
+    [
+      "puntate-e-podcast",
+      5
+    ],
+    [
+      "puntate-",
+      5
+    ],
+    [
+      "stagioni",
+      2
+    ],
+    [
+      "a-spasso-con-radic-",
+      1
+    ],
+    [
+      "bookcrossing---porta-il-tuo-libro---puntate-block",
+      1
+    ],
+    [
+      "podcast-",
+      1
+    ],
+    [
+      "che-ci-faccio-qui-raiplaysound-puntate-block",
+      1
+    ],
+    [
+      "colpo-di-luna-puntate-block",
+      1
+    ],
+    [
+      "delitti-in-famiglia---puntate-block",
+      1
+    ],
+    [
+      "futuradio",
+      1
+    ],
+    [
+      "ultime-edizioni",
+      1
+    ],
+    [
+      "inimitabili-raiplaysound-puntate-block",
+      1
+    ],
+    [
+      "sezioni",
+      1
+    ],
+    [
+      "la-fisica-dellamore---puntate-block",
+      1
+    ],
+    [
+      "clip-",
+      1
+    ],
+    [
+      "la-tv-delle-ragazze---puntate-block",
+      1
+    ]
+  ],
+  "top_missed_sections": [
+    [
+      "raiplaysound-puntate-block",
+      11
+    ],
+    [
+      "clip",
+      6
+    ],
+    [
+      "a-spasso-con-radic-",
+      1
+    ],
+    [
+      "podcast-",
+      1
+    ],
+    [
+      "che-ci-faccio-qui-raiplaysound-puntate-block",
+      1
+    ],
+    [
+      "colpo-di-luna-puntate-block",
+      1
+    ],
+    [
+      "futuradio",
+      1
+    ],
+    [
+      "ultime-edizioni",
+      1
+    ],
+    [
+      "sezioni",
+      1
+    ],
+    [
+      "la-fisica-dellamore---puntate-block",
+      1
+    ],
+    [
+      "clip-",
+      1
+    ],
+    [
+      "la-tv-delle-ragazze---puntate-block",
+      1
+    ],
+    [
+      "la-tv-delle-ragazze---gli-stati-generali---puntate-block",
+      1
+    ],
+    [
+      "mito---puntate-integrali",
+      1
+    ],
+    [
+      "radiocronache",
+      1
+    ],
+    [
+      "stagioni",
+      1
+    ],
+    [
+      "estratti",
+      1
+    ],
+    [
+      "episodi",
+      1
+    ],
+    [
+      "tematiche",
+      1
+    ],
+    [
+      "questo-nostro-amore-raiplaysound-puntate-block",
+      1
+    ]
+  ],
+  "examples_missed": [
+    {
+      "slug": "amorecriminale",
+      "title": "Amore Criminale",
+      "sections": [
+        "raiplaysound-puntate-block"
+      ],
+      "kinds": [
+        "season"
+      ],
+      "sample_labels": [
+        "Stagione 2025",
+        "Stagione 2024",
+        "Stagione 2023",
+        "Stagione 2022",
+        "Stagione 2021"
+      ]
+    },
+    {
+      "slug": "aspassoconradic",
+      "title": "A spasso con Radic",
+      "sections": [
+        "a-spasso-con-radic-"
+      ],
+      "kinds": [
+        "season"
+      ],
+      "sample_labels": [
+        "Stagione 2022",
+        "Stagione 2020"
+      ]
+    },
+    {
+      "slug": "back2back",
+      "title": "Back2Back",
+      "sections": [
+        "clip"
+      ],
+      "kinds": [
+        "other"
+      ],
+      "sample_labels": [
+        "Clip",
+        "Archivio"
+      ]
+    },
+    {
+      "slug": "centogiornicondante",
+      "title": "Cento giorni con Dante",
+      "sections": [
+        "podcast-"
+      ],
+      "kinds": [
+        "other"
+      ],
+      "sample_labels": [
+        "Inferno",
+        "Purgatorio",
+        "Paradiso"
+      ]
+    },
+    {
+      "slug": "checifaccioqui",
+      "title": "Che ci faccio qui",
+      "sections": [
+        "che-ci-faccio-qui-raiplaysound-puntate-block"
+      ],
+      "kinds": [
+        "other"
+      ],
+      "sample_labels": [
+        "Storie di vita",
+        "Periferie d'Italia",
+        "Viaggio tra gli invisibili"
+      ]
+    },
+    {
+      "slug": "colpodiluna",
+      "title": "Colpo di Luna",
+      "sections": [
+        "colpo-di-luna-puntate-block"
+      ],
+      "kinds": [
+        "other"
+      ],
+      "sample_labels": [
+        "Puntata del 26/01/2024",
+        "Puntata del 19/01/2024",
+        "Puntata del 12/01/2024"
+      ]
+    },
+    {
+      "slug": "commissari-sulletraccedelmale",
+      "title": "Commissari - Sulle tracce del male",
+      "sections": [
+        "raiplaysound-puntate-block"
+      ],
+      "kinds": [
+        "season"
+      ],
+      "sample_labels": [
+        "Stagione 2019/2020",
+        "Stagione 2018/2019"
+      ]
+    },
+    {
+      "slug": "dilemmi",
+      "title": "Dilemmi",
+      "sections": [
+        "raiplaysound-puntate-block"
+      ],
+      "kinds": [
+        "season"
+      ],
+      "sample_labels": [
+        "Stagione 2025",
+        "Stagione 2024",
+        "Stagione 2023",
+        "Stagione 2022"
+      ]
+    },
+    {
+      "slug": "futuradio-lafestadirairadio3abolzano",
+      "title": "Futuradio - La festa di Rai Radio 3 a Bolzano",
+      "sections": [
+        "futuradio"
+      ],
+      "kinds": [
+        "other"
+      ],
+      "sample_labels": [
+        "Futuradio 2025",
+        "Futuradio 2024",
+        "Futuradio 2023"
+      ]
+    },
+    {
+      "slug": "gr1",
+      "title": "GR 1",
+      "sections": [
+        "ultime-edizioni"
+      ],
+      "kinds": [
+        "other"
+      ],
+      "sample_labels": [
+        "Ultime edizioni",
+        "Archivio edizioni"
+      ]
+    },
+    {
+      "slug": "iluoghidellascienza",
+      "title": "I Luoghi della Scienza",
+      "sections": [
+        "raiplaysound-puntate-block"
+      ],
+      "kinds": [
+        "season"
+      ],
+      "sample_labels": [
+        "Stagione 2021/2022",
+        "Stagione 2016/2017"
+      ]
+    },
+    {
+      "slug": "invitoallalettura",
+      "title": "Invito alla Lettura",
+      "sections": [
+        "raiplaysound-puntate-block"
+      ],
+      "kinds": [
+        "other"
+      ],
+      "sample_labels": [
+        "Media Literacy contro la disinformazione",
+        "Biblioteche scolastiche e Lettura Aumentata",
+        "Formare lettori indipendenti",
+        "Educare alla Literacy"
+      ]
+    },
+    {
+      "slug": "ipodcastdellarmadeicarabinieri",
+      "title": "I podcast dell'Arma dei Carabinieri",
+      "sections": [
+        "sezioni"
+      ],
+      "kinds": [
+        "other",
+        "special"
+      ],
+      "sample_labels": [
+        "Speciali",
+        "Calendario storico 2020",
+        "Calendario storico 2021",
+        "Calendario storico 2022",
+        "Storia dell'Arma"
+      ]
+    },
+    {
+      "slug": "lafisicadellamore",
+      "title": "La fisica dell'amore",
+      "sections": [
+        "la-fisica-dellamore---puntate-block"
+      ],
+      "kinds": [
+        "other"
+      ],
+      "sample_labels": [
+        "Seconda stagione",
+        "Prima stagione"
+      ]
+    },
+    {
+      "slug": "lanottediradio3",
+      "title": "La notte di Radio3",
+      "sections": [
+        "clip-"
+      ],
+      "kinds": [
+        "other"
+      ],
+      "sample_labels": [
+        "Le strade della memoria",
+        "Una regione alla volta - Roma e il Lazio",
+        "Memorie",
+        "Un secolo con Moravia",
+        "Biografie"
+      ]
+    },
+    {
+      "slug": "latvdelleragazze",
+      "title": "La TV delle ragazze",
+      "sections": [
+        "la-tv-delle-ragazze---puntate-block"
+      ],
+      "kinds": [
+        "season"
+      ],
+      "sample_labels": [
+        "Stagione 1988",
+        "Stagione 1989"
+      ]
+    },
+    {
+      "slug": "latvdelleragazze-glistatigenerali",
+      "title": "La tv delle ragazze - Gli Stati generali",
+      "sections": [
+        "la-tv-delle-ragazze---gli-stati-generali---puntate-block"
+      ],
+      "kinds": [
+        "other"
+      ],
+      "sample_labels": [
+        "Sketch",
+        "Pubblicità",
+        "Collegamenti",
+        "Monologhi",
+        "Interviste"
+      ]
+    },
+    {
+      "slug": "laversionedelledue",
+      "title": "La Versione delle Due",
+      "sections": [
+        "clip"
+      ],
+      "kinds": [
+        "other"
+      ],
+      "sample_labels": [
+        "Clip",
+        "La versione di Comandini",
+        "Cosa succede in città Radio2",
+        "La Donna del Giorno",
+        "Ridotti all'Osso"
+      ]
+    },
+    {
+      "slug": "lelunatiche",
+      "title": "Le Lunatiche",
+      "sections": [
+        "clip"
+      ],
+      "kinds": [
+        "other"
+      ],
+      "sample_labels": [
+        "Ultime inserite",
+        "Interviste",
+        "Le Signore in Giallo",
+        "Cuochi di Notte",
+        "Ospiti"
+      ]
+    },
+    {
+      "slug": "mito",
+      "title": "MiTo",
+      "sections": [
+        "mito---puntate-integrali"
+      ],
+      "kinds": [
+        "year"
+      ],
+      "sample_labels": [
+        "2023",
+        "2022"
+      ]
+    },
+    {
+      "slug": "motomondiale",
+      "title": "Motomondiale",
+      "sections": [
+        "radiocronache"
+      ],
+      "kinds": [
+        "year"
+      ],
+      "sample_labels": [
+        "2024",
+        "2023",
+        "2022"
+      ]
+    },
+    {
+      "slug": "moviemag",
+      "title": "Movie Mag",
+      "sections": [
+        "stagioni"
+      ],
+      "kinds": [
+        "season"
+      ],
+      "sample_labels": [
+        "Stagione 2025-2026",
+        "Stagione 2024-2025"
+      ]
+    },
+    {
+      "slug": "noneunpaesepergiovani",
+      "title": "Non è un Paese per Giovani",
+      "sections": [
+        "clip"
+      ],
+      "kinds": [
+        "other"
+      ],
+      "sample_labels": [
+        "I Fiorlabelli",
+        "Più recenti",
+        "Extra"
+      ]
+    },
+    {
+      "slug": "numeriuni",
+      "title": "Numeri Uni",
+      "sections": [
+        "clip"
+      ],
+      "kinds": [
+        "other"
+      ],
+      "sample_labels": [
+        "Radio2 Comedy",
+        "2020-21",
+        "2019-20",
+        "2018-19"
+      ]
+    },
+    {
+      "slug": "onorevoliconfessioni",
+      "title": "Onorevoli Confessioni",
+      "sections": [
+        "raiplaysound-puntate-block"
+      ],
+      "kinds": [
+        "season"
+      ],
+      "sample_labels": [
+        "Stagione 2025",
+        "Stagione 2024",
+        "Stagione 2022",
+        "Stagione 2021",
+        "Stagione 2020"
+      ]
+    }
+  ]
+}

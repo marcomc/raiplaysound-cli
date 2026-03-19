@@ -35,6 +35,11 @@ All notable changes to this project are documented in this file.
 - Fixed program-catalog station enrichment to prefer Rai's `podcast_info`
   metadata, so station slugs and `list stations` program counts populate again
   after a catalog refresh.
+- Reworked grouping discovery to treat `program.json` filters as the primary
+  source of truth, so grouped shows with custom route names such as
+  `radio2afumetti` under `cicli`, editorial `clip` buckets, and custom
+  season-block sections are now exposed correctly instead of collapsing back to
+  flat listings.
 
 ## [2.1.1] - 2026-03-19 - download progress and startup visibility improvements
 

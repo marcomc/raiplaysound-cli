@@ -51,6 +51,12 @@ def test_requested_seasons() -> None:
     selected, all_flag = build_requested_set("1,2")
     assert selected == {"1", "2"}
     assert all_flag is False
+    selected, all_flag = build_requested_set("2025")
+    assert selected == {"2025"}
+    assert all_flag is False
+    selected, all_flag = build_requested_set("2024-2025")
+    assert selected == {"2024-2025"}
+    assert all_flag is False
     selected, all_flag = build_requested_set("all")
     assert selected == set()
     assert all_flag is True
