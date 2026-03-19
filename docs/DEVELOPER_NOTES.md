@@ -47,7 +47,10 @@ The implementation is intentionally split into focused Python modules:
   resolves program slugs, discovers season/feed sources, enumerates episodes,
   and normalizes season and episode metadata.
 - [`src/raiplaysound_cli/downloads.py`](/Users/mmassari/Development/raiplaysound-cli/src/raiplaysound_cli/downloads.py)
-  runs `yt-dlp`, parses progress, and manages archive cleanup for missing files.
+  runs staged downloads: `yt-dlp` fetches source audio into a hidden work
+  directory, a separate `ffmpeg` queue converts into the requested final
+  format, progress is parsed for both stages, and archive cleanup for missing
+  files is managed there too.
 - [`src/raiplaysound_cli/outputs.py`](/Users/mmassari/Development/raiplaysound-cli/src/raiplaysound_cli/outputs.py)
   generates RSS and M3U outputs from local files and cached metadata.
 - [`src/raiplaysound_cli/runtime.py`](/Users/mmassari/Development/raiplaysound-cli/src/raiplaysound_cli/runtime.py)
@@ -455,10 +458,12 @@ Location:
 
 - `~/Music/RaiPlaySound/<slug>/.download-archive.txt`
 
-Used by `yt-dlp --download-archive` for idempotent runs.
+Used by the CLI for idempotent runs.
 
 Important note:
 
+- archive entries are appended only after the separate conversion stage
+  succeeds
 - archive/file existence scans now happen only when missing-file recovery is
   enabled
 

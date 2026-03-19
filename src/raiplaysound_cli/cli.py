@@ -5,10 +5,11 @@ import concurrent.futures
 import dataclasses
 import hashlib
 import json
+import shutil
 import signal
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from rich.console import Console
 from rich.progress import (
@@ -1272,6 +1273,7 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
     downloader: Downloader | None = None
     previous_sigint = signal.getsignal(signal.SIGINT)
     previous_sigterm = signal.getsignal(signal.SIGTERM)
+    work_root = target_dir / ".run-work"
     try:
         console.print(f"Starting downloads for {slug} ({len(filtered)} episode(s))")
         with progress:
@@ -1285,6 +1287,7 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
             downloader = Downloader(
                 archive_file=archive_file,
                 output_template=output_template,
+                work_root=work_root,
                 audio_format=settings.audio_format,
                 log_file=log_file,
                 rich_progress=progress,
@@ -1314,20 +1317,64 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
                 for episode in filtered
             ]
             done_count = skip_count = error_count = 0
-            with concurrent.futures.ThreadPoolExecutor(max_workers=settings.jobs) as executor:
-                download_futures: dict[
-                    concurrent.futures.Future[tuple[str, str]],
-                    DownloadTask,
-                ] = {executor.submit(downloader.download_one, task): task for task in tasks}
-                for future in concurrent.futures.as_completed(download_futures):
-                    state, _detail = future.result()
-                    progress.advance(overall, 1)
-                    if state == "DONE":
-                        done_count += 1
-                    elif state == "SKIP":
+            conversion_workers = max(1, min(settings.jobs, 2))
+            with (
+                concurrent.futures.ThreadPoolExecutor(
+                    max_workers=settings.jobs
+                ) as download_executor,
+                concurrent.futures.ThreadPoolExecutor(
+                    max_workers=conversion_workers
+                ) as convert_executor,
+            ):
+                pending_downloads: dict[concurrent.futures.Future[Any], DownloadTask] = {}
+                pending_conversions: dict[concurrent.futures.Future[Any], DownloadTask] = {}
+                for task in tasks:
+                    if (
+                        task.episode_id in archived_ids
+                        and task.episode_id not in missing_archived_ids
+                    ):
+                        progress.update(
+                            task.task_id,
+                            description=f"skip {task.episode_label}",
+                            completed=100,
+                            total=100,
+                            size_text="",
+                            speed_text="",
+                        )
+                        progress.remove_task(task.task_id)
+                        progress.advance(overall, 1)
                         skip_count += 1
-                    else:
-                        error_count += 1
+                        continue
+                    future = download_executor.submit(downloader.download_source, task)
+                    pending_downloads[future] = task
+                while pending_downloads or pending_conversions:
+                    completed, _pending = concurrent.futures.wait(
+                        [*pending_downloads, *pending_conversions],
+                        return_when=concurrent.futures.FIRST_COMPLETED,
+                    )
+                    for future in completed:
+                        if future in pending_downloads:
+                            task = pending_downloads.pop(future)
+                            state, _detail, prepared = future.result()
+                            if state == "READY" and prepared is not None:
+                                convert_future = convert_executor.submit(
+                                    downloader.convert_one, task, prepared
+                                )
+                                pending_conversions[convert_future] = task
+                                continue
+                            progress.advance(overall, 1)
+                            error_count += 1
+                            continue
+                        task = pending_conversions.pop(future)
+                        conversion_future = cast(concurrent.futures.Future[tuple[str, str]], future)
+                        state, _detail = conversion_future.result()
+                        progress.advance(overall, 1)
+                        if state == "DONE":
+                            done_count += 1
+                        elif state == "SKIP":
+                            skip_count += 1
+                        else:
+                            error_count += 1
             console.print(
                 f"Completed: done={done_count}, skipped={skip_count}, errors={error_count}"
             )
@@ -1337,6 +1384,7 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
         signal.signal(signal.SIGINT, previous_sigint)
         signal.signal(signal.SIGTERM, previous_sigterm)
         release_lock(lock_dir)
+        shutil.rmtree(work_root, ignore_errors=True)
     if settings.rss_feed:
         generate_rss_feed(target_dir, slug, program_url, metadata_cache_file, settings.rss_base_url)
     if settings.playlist:
