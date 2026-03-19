@@ -22,7 +22,7 @@ def test_main_version_prints_cli_version() -> None:
         cwd=Path(__file__).resolve().parents[1],
     )
     assert result.returncode == 0
-    assert "raiplaysound-cli 2.1.0" in result.stdout
+    assert "raiplaysound-cli 2.1.1" in result.stdout
 
 
 def test_main_without_args_prints_extensive_help(capsys) -> None:
@@ -1559,6 +1559,11 @@ def test_download_refreshes_metadata_only_for_filtered_episodes(
     assert result == 0
     assert captured_targets == [["https://www.raiplaysound.it/audio/ep-2.html"]]
     assert written_cache == {"ep-2": ("20260306", "2", "Episode Two")}
+    assert "Preparing: discovering groupings and sources" in captured.out
+    assert "Preparing: enumerating episodes and loading cached metadata" in captured.out
+    assert "Preparing: selected 1 episode(s) for download" in captured.out
+    assert "Preparing: refreshing metadata for selected episodes" in captured.out
+    assert "Starting downloads for america7 (1 episode(s))" in captured.out
     assert "Completed: done=1, skipped=0, errors=0" in captured.out
 
 

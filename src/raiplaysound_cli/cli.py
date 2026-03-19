@@ -483,6 +483,10 @@ def print_episode_download_suggestions(
         )
 
 
+def print_download_prep_step(message: str) -> None:
+    console.print(f"[dim]Preparing:[/dim] {message}")
+
+
 def load_show_context(
     settings: Settings,
     input_value: str,
@@ -1164,12 +1168,14 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
     metadata_cache_file = target_dir / ".metadata-cache.tsv"
     if settings.clear_metadata_cache and metadata_cache_file.exists():
         metadata_cache_file.unlink()
+    print_download_prep_step("discovering groupings and sources")
     sources_override, groups, non_season_groups = discover_grouped_episode_sources(
         slug,
         selected_seasons,
         request_all,
         selected_groups,
     )
+    print_download_prep_step("enumerating episodes and loading cached metadata")
     slug, program_url, episodes, summary, metadata_cache_file, cache = load_cached_show_context(
         settings,
         args.input or settings.input_value,
@@ -1191,10 +1197,12 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
     )
     if not filtered:
         raise CLIError("No episodes selected for download.")
+    print_download_prep_step(f"selected {len(filtered)} episode(s) for download")
     need_refresh = settings.force_refresh_metadata or any(
         not cache_entry_is_complete(cache.get(episode.episode_id)) for episode in filtered
     )
     if need_refresh:
+        print_download_prep_step("refreshing metadata for selected episodes")
         cache.update(collect_metadata([episode.url for episode in filtered], single_entries=True))
         write_metadata_cache(metadata_cache_file, cache)
     filtered_summary = normalize_episode_metadata(filtered, cache)
@@ -1223,6 +1231,7 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
         }
     missing_archived_ids: set[str] = set()
     if archived_ids and settings.auto_redownload_missing:
+        print_download_prep_step("checking archived entries for missing local files")
         with concurrent.futures.ThreadPoolExecutor(max_workers=settings.check_jobs) as executor:
             check_futures: dict[
                 concurrent.futures.Future[bool],
@@ -1265,6 +1274,7 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
     previous_sigint = signal.getsignal(signal.SIGINT)
     previous_sigterm = signal.getsignal(signal.SIGTERM)
     try:
+        console.print(f"Starting downloads for {slug} ({len(filtered)} episode(s))")
         with progress:
             overall_label = f"[bold]Total ({len(filtered)} episode(s))[/bold]"
             overall = progress.add_task(overall_label, total=len(filtered), size_text="")

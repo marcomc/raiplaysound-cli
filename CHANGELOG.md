@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.1.1] - 2026-03-19 - download progress and startup visibility improvements
+
+### Changed
+
+- Added byte-aware per-episode download progress so active transfers now show
+  size progress in megabytes while the progress bar advances gradually.
+- Added explicit pre-download status messages so grouped or otherwise slow
+  startup phases show what the CLI is doing before transfers begin.
+
 ## [2.1.0] - 2026-03-19 - speed improvements, grouping enhancements, and documentation additions
 
 ### Changed
