@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "raiplaysound-cli"
-version = "2.1.0"
+version = "2.1.1"
 description = "Python CLI for RaiPlaySound program discovery and episode downloads"
 readme = "README.md"
 requires-python = ">=3.10"

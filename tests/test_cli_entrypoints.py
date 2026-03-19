@@ -22,7 +22,7 @@ def test_main_version_prints_cli_version() -> None:
         cwd=Path(__file__).resolve().parents[1],
     )
     assert result.returncode == 0
-    assert "raiplaysound-cli 2.1.0" in result.stdout
+    assert "raiplaysound-cli 2.1.1" in result.stdout
 
 
 def test_main_without_args_prints_extensive_help(capsys) -> None:
@@ -1437,8 +1437,12 @@ def test_download_uses_grouped_episode_sources(monkeypatch, tmp_path: Path, caps
         def __init__(self, **_kwargs) -> None:
             self.tasks: list[object] = []
 
-        def download_one(self, task: object) -> tuple[str, str]:
+        def download_source(self, task: object) -> tuple[str, str, object]:
             self.tasks.append(task)
+            return "READY", "downloaded", object()
+
+        def convert_one(self, task: object, prepared: object) -> tuple[str, str]:
+            self.tasks.append((task, prepared))
             return "DONE", "done"
 
         def terminate_all(self) -> None:
@@ -1545,7 +1549,10 @@ def test_download_refreshes_metadata_only_for_filtered_episodes(
         def __init__(self, **_kwargs) -> None:
             return None
 
-        def download_one(self, task: object) -> tuple[str, str]:
+        def download_source(self, task: object) -> tuple[str, str, object]:
+            return "READY", "downloaded", object()
+
+        def convert_one(self, task: object, prepared: object) -> tuple[str, str]:
             return "DONE", "done"
 
         def terminate_all(self) -> None:
@@ -1559,6 +1566,11 @@ def test_download_refreshes_metadata_only_for_filtered_episodes(
     assert result == 0
     assert captured_targets == [["https://www.raiplaysound.it/audio/ep-2.html"]]
     assert written_cache == {"ep-2": ("20260306", "2", "Episode Two")}
+    assert "Preparing: discovering groupings and sources" in captured.out
+    assert "Preparing: enumerating episodes and loading cached metadata" in captured.out
+    assert "Preparing: selected 1 episode(s) for download" in captured.out
+    assert "Preparing: refreshing metadata for selected episodes" in captured.out
+    assert "Starting downloads for america7 (1 episode(s))" in captured.out
     assert "Completed: done=1, skipped=0, errors=0" in captured.out
 
 
@@ -1641,7 +1653,10 @@ def test_download_skips_missing_scan_when_missing_not_enabled(
         def __init__(self, **_kwargs) -> None:
             return None
 
-        def download_one(self, task: object) -> tuple[str, str]:
+        def download_source(self, task: object) -> tuple[str, str, object]:
+            return "READY", "downloaded", object()
+
+        def convert_one(self, task: object, prepared: object) -> tuple[str, str]:
             return "DONE", "done"
 
         def terminate_all(self) -> None:
@@ -1653,4 +1668,4 @@ def test_download_skips_missing_scan_when_missing_not_enabled(
     captured = capsys.readouterr()
 
     assert result == 0
-    assert "Completed: done=1, skipped=0, errors=0" in captured.out
+    assert "Completed: done=0, skipped=1, errors=0" in captured.out

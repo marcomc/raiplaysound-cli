@@ -110,7 +110,8 @@ Uninstalling:
 - Supports audio formats `mp3`, `m4a`, `aac`, `ogg`, `opus`, `flac`, and `wav`
 - Supports season filtering, episode ID filtering, and episode URL filtering
 - Supports automatic re-download of archive-marked but missing local files
-- Generates Rich-based live per-episode download progress
+- Generates Rich-based live per-episode download progress with megabyte size
+  tracking and aggregate transfer speed
 - Caches program catalog metadata and per-show episode metadata
 - Generates optional `feed.xml` RSS output and `playlist.m3u` playlist output
 - Preserves the existing `KEY=VALUE` dot-config format at
@@ -314,6 +315,30 @@ the selected program or grouping, but metadata refresh is deferred until after
 episode filtering. When you use selectors like `--group`, `--episode-ids`, or
 `--episode-urls`, the CLI refreshes metadata only for the episodes that will
 actually be downloaded.
+
+During that preparation phase, the CLI now prints explicit startup steps such
+as source discovery, episode enumeration, metadata refresh, and archive-file
+checks so long grouped downloads are not silent before transfer starts.
+
+Once transfers begin, each per-episode progress row now shows downloaded size
+in megabytes, for example `5.0/10.0 MB`, while the overall row shows aggregate
+transfer speed.
+
+Download workers are now split into two stages:
+
+- `yt-dlp` workers fetch source audio plus sidecar metadata and thumbnails into
+  a hidden per-run workspace
+- a separate `ffmpeg` queue converts those completed downloads into the final
+  requested audio format and appends the archive entry only after conversion
+  succeeds
+
+That means long local conversion or thumbnail-embedding work no longer blocks
+the next network download from starting as soon as a download worker becomes
+free.
+
+The staged conversion path also preserves richer embedded tags for seasonal
+shows by restoring episode titles plus season and episode numbering from the
+downloaded sidecar metadata.
 
 When `--missing` is not enabled, the CLI now skips the archive/file existence
 scan entirely instead of paying that startup cost on every download.

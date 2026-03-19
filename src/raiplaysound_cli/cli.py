@@ -5,15 +5,15 @@ import concurrent.futures
 import dataclasses
 import hashlib
 import json
+import shutil
 import signal
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from rich.console import Console
 from rich.progress import (
     BarColumn,
-    MofNCompleteColumn,
     Progress,
     SpinnerColumn,
     TaskProgressColumn,
@@ -481,6 +481,10 @@ def print_episode_download_suggestions(
             f"{filtered[0].episode_id},{filtered[1].episode_id}",
             soft_wrap=True,
         )
+
+
+def print_download_prep_step(message: str) -> None:
+    console.print(f"[dim]Preparing:[/dim] {message}")
 
 
 def load_show_context(
@@ -1164,12 +1168,14 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
     metadata_cache_file = target_dir / ".metadata-cache.tsv"
     if settings.clear_metadata_cache and metadata_cache_file.exists():
         metadata_cache_file.unlink()
+    print_download_prep_step("discovering groupings and sources")
     sources_override, groups, non_season_groups = discover_grouped_episode_sources(
         slug,
         selected_seasons,
         request_all,
         selected_groups,
     )
+    print_download_prep_step("enumerating episodes and loading cached metadata")
     slug, program_url, episodes, summary, metadata_cache_file, cache = load_cached_show_context(
         settings,
         args.input or settings.input_value,
@@ -1191,10 +1197,12 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
     )
     if not filtered:
         raise CLIError("No episodes selected for download.")
+    print_download_prep_step(f"selected {len(filtered)} episode(s) for download")
     need_refresh = settings.force_refresh_metadata or any(
         not cache_entry_is_complete(cache.get(episode.episode_id)) for episode in filtered
     )
     if need_refresh:
+        print_download_prep_step("refreshing metadata for selected episodes")
         cache.update(collect_metadata([episode.url for episode in filtered], single_entries=True))
         write_metadata_cache(metadata_cache_file, cache)
     filtered_summary = normalize_episode_metadata(filtered, cache)
@@ -1223,6 +1231,7 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
         }
     missing_archived_ids: set[str] = set()
     if archived_ids and settings.auto_redownload_missing:
+        print_download_prep_step("checking archived entries for missing local files")
         with concurrent.futures.ThreadPoolExecutor(max_workers=settings.check_jobs) as executor:
             check_futures: dict[
                 concurrent.futures.Future[bool],
@@ -1256,24 +1265,34 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
         TextColumn("[bold]{task.description}"),
         BarColumn(bar_width=None),
         TaskProgressColumn(),
-        MofNCompleteColumn(),
+        TextColumn("{task.fields[size_text]}"),
+        TextColumn("{task.fields[speed_text]}"),
         TimeRemainingColumn(),
         console=console,
     )
     downloader: Downloader | None = None
     previous_sigint = signal.getsignal(signal.SIGINT)
     previous_sigterm = signal.getsignal(signal.SIGTERM)
+    work_root = target_dir / ".run-work"
     try:
+        console.print(f"Starting downloads for {slug} ({len(filtered)} episode(s))")
         with progress:
             overall_label = f"[bold]Total ({len(filtered)} episode(s))[/bold]"
-            overall = progress.add_task(overall_label, total=len(filtered))
+            overall = progress.add_task(
+                overall_label,
+                total=len(filtered),
+                size_text="",
+                speed_text="",
+            )
             downloader = Downloader(
                 archive_file=archive_file,
                 output_template=output_template,
+                work_root=work_root,
                 audio_format=settings.audio_format,
                 log_file=log_file,
                 rich_progress=progress,
                 debug_pids=settings.debug_pids,
+                overall_task_id=overall,
             )
 
             def _handle_signal(signum: int, _frame: Any) -> None:
@@ -1288,25 +1307,74 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
                     episode_id=episode.episode_id,
                     episode_url=episode.url,
                     episode_label=episode.label,
-                    task_id=progress.add_task(f"download {episode.label}", total=100),
+                    task_id=progress.add_task(
+                        f"download {episode.label}",
+                        total=100,
+                        size_text="0.0 MB",
+                        speed_text="",
+                    ),
                 )
                 for episode in filtered
             ]
             done_count = skip_count = error_count = 0
-            with concurrent.futures.ThreadPoolExecutor(max_workers=settings.jobs) as executor:
-                download_futures: dict[
-                    concurrent.futures.Future[tuple[str, str]],
-                    DownloadTask,
-                ] = {executor.submit(downloader.download_one, task): task for task in tasks}
-                for future in concurrent.futures.as_completed(download_futures):
-                    state, _detail = future.result()
-                    progress.advance(overall, 1)
-                    if state == "DONE":
-                        done_count += 1
-                    elif state == "SKIP":
+            conversion_workers = max(1, min(settings.jobs, 2))
+            with (
+                concurrent.futures.ThreadPoolExecutor(
+                    max_workers=settings.jobs
+                ) as download_executor,
+                concurrent.futures.ThreadPoolExecutor(
+                    max_workers=conversion_workers
+                ) as convert_executor,
+            ):
+                pending_downloads: dict[concurrent.futures.Future[Any], DownloadTask] = {}
+                pending_conversions: dict[concurrent.futures.Future[Any], DownloadTask] = {}
+                for task in tasks:
+                    if (
+                        task.episode_id in archived_ids
+                        and task.episode_id not in missing_archived_ids
+                    ):
+                        progress.update(
+                            task.task_id,
+                            description=f"skip {task.episode_label}",
+                            completed=100,
+                            total=100,
+                            size_text="",
+                            speed_text="",
+                        )
+                        progress.remove_task(task.task_id)
+                        progress.advance(overall, 1)
                         skip_count += 1
-                    else:
-                        error_count += 1
+                        continue
+                    future = download_executor.submit(downloader.download_source, task)
+                    pending_downloads[future] = task
+                while pending_downloads or pending_conversions:
+                    completed, _pending = concurrent.futures.wait(
+                        [*pending_downloads, *pending_conversions],
+                        return_when=concurrent.futures.FIRST_COMPLETED,
+                    )
+                    for future in completed:
+                        if future in pending_downloads:
+                            task = pending_downloads.pop(future)
+                            state, _detail, prepared = future.result()
+                            if state == "READY" and prepared is not None:
+                                convert_future = convert_executor.submit(
+                                    downloader.convert_one, task, prepared
+                                )
+                                pending_conversions[convert_future] = task
+                                continue
+                            progress.advance(overall, 1)
+                            error_count += 1
+                            continue
+                        task = pending_conversions.pop(future)
+                        conversion_future = cast(concurrent.futures.Future[tuple[str, str]], future)
+                        state, _detail = conversion_future.result()
+                        progress.advance(overall, 1)
+                        if state == "DONE":
+                            done_count += 1
+                        elif state == "SKIP":
+                            skip_count += 1
+                        else:
+                            error_count += 1
             console.print(
                 f"Completed: done={done_count}, skipped={skip_count}, errors={error_count}"
             )
@@ -1316,6 +1384,7 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
         signal.signal(signal.SIGINT, previous_sigint)
         signal.signal(signal.SIGTERM, previous_sigterm)
         release_lock(lock_dir)
+        shutil.rmtree(work_root, ignore_errors=True)
     if settings.rss_feed:
         generate_rss_feed(target_dir, slug, program_url, metadata_cache_file, settings.rss_base_url)
     if settings.playlist:

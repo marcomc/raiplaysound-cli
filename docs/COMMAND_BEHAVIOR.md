@@ -166,8 +166,9 @@ raiplaysound-cli list episodes america7
   enabled, the CLI removes those IDs from the archive and re-downloads them
 - if `AUTO_REDOWNLOAD_MISSING` is not enabled, it skips the archive/file
   existence scan entirely
-- uses `JOBS` workers for downloads and `CHECK_JOBS` workers for archive/file
-  checks
+- uses `JOBS` workers for source downloads, a separate internal `ffmpeg`
+  conversion queue, and `CHECK_JOBS` workers for archive/file checks
+- appends archive entries only after the conversion stage succeeds
 - uses a recoverable `.run-lock` directory
 - only supports these audio formats:
   - `mp3`

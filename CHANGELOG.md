@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.1.1] - 2026-03-19 - download progress and startup visibility improvements
+
+### Changed
+
+- Added byte-aware per-episode download progress so active transfers now show
+  size progress in megabytes while the progress bar advances gradually.
+- Added explicit pre-download status messages so grouped or otherwise slow
+  startup phases show what the CLI is doing before transfers begin.
+- Reworked download execution into separate `yt-dlp` fetch and `ffmpeg`
+  conversion stages, so completed downloads can move into a post-processing
+  queue without blocking the next network download worker.
+- Preserved richer seasonal audio tags in the staged conversion path by
+  restoring episode titles plus season and episode numbering from the
+  downloaded sidecar metadata.
+
 ## [2.1.0] - 2026-03-19 - speed improvements, grouping enhancements, and documentation additions
 
 ### Changed
