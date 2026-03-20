@@ -27,6 +27,14 @@ def test_main_version_prints_cli_version() -> None:
     assert "raiplaysound-cli 2.1.2" in result.stdout
 
 
+def test_main_version_prints_when_present_anywhere(capsys) -> None:
+    result = cli.main(["list", "--version"])
+    captured = capsys.readouterr()
+
+    assert result == 0
+    assert "raiplaysound-cli 2.1.2" in captured.out
+
+
 def test_main_without_args_prints_focused_help(capsys) -> None:
     result = cli.main([])
     captured = capsys.readouterr()

@@ -1530,7 +1530,7 @@ def main(argv: list[str] | None = None) -> int:
     if not argv:
         console.print(format_main_help())
         return 0
-    if len(argv) == 1 and argv[0] == "--version":
+    if "--version" in argv:
         console.print(f"raiplaysound-cli {__version__}")
         return 0
     if len(argv) == 1 and argv[0] in {"-h", "--help"}:
