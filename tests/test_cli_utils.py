@@ -142,12 +142,15 @@ def test_normalize_episode_metadata_preserves_year_range_seasons() -> None:
 def test_program_cache_format_is_current(tmp_path: Path) -> None:
     current = tmp_path / "current.tsv"
     current.write_text(
-        "slug\ttitle\tNo station\tnone\t2024\thttps://example.com/programmi/slug\tExcerpt\t2\n",
+        "slug\ttitle\tNo station\tnone\t2024\thttps://example.com/programmi/slug\tExcerpt\t2\t2\n",
         encoding="utf-8",
     )
     assert program_cache_format_is_current(current) is True
     legacy = tmp_path / "legacy.tsv"
-    legacy.write_text("slug\ttitle\tNo station\tunknown\t2024\n", encoding="utf-8")
+    legacy.write_text(
+        "slug\ttitle\tNo station\tnone\t2024\thttps://example.com/programmi/slug\tExcerpt\t2\n",
+        encoding="utf-8",
+    )
     assert program_cache_format_is_current(legacy) is False
 
 
@@ -155,7 +158,7 @@ def test_load_cached_programs_skips_malformed_rows(tmp_path: Path) -> None:
     cache = tmp_path / "program-catalog.tsv"
     cache.write_text(
         "broken-row\n"
-        "slug\ttitle\tNo station\tnone\t2024\thttps://example.com/programmi/slug\tExcerpt\tx\n",
+        "slug\ttitle\tNo station\tnone\t2024\thttps://example.com/programmi/slug\tExcerpt\tx\t2\n",
         encoding="utf-8",
     )
     programs = load_cached_programs(cache)

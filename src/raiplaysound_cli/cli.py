@@ -72,7 +72,8 @@ LIST_CACHE_VERSION = 6
 
 
 def json_dump(data: Any) -> None:
-    console.print(json.dumps(data, indent=2, ensure_ascii=False))
+    sys.stdout.write(json.dumps(data, indent=2, ensure_ascii=False))
+    sys.stdout.write("\n")
 
 
 def _state_cache_dir(settings: Settings) -> Path:

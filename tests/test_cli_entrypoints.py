@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -253,8 +254,11 @@ def test_main_list_programs_uses_config_filter_and_json(
                 station_name="Radio 2",
                 station_short="radio2",
                 years="2024",
-                page_url="https://www.raiplaysound.it/programmi/show-a",
-                description_excerpt="Excerpt A",
+                page_url=(
+                    "https://www.raiplaysound.it/programmi/show-a/"
+                    "very-long-program-path-for-json-regression-check"
+                ),
+                description_excerpt="Excerpt A " * 20,
                 grouping_count=2,
             ),
             Program(
@@ -272,11 +276,11 @@ def test_main_list_programs_uses_config_filter_and_json(
 
     result = cli.main(["list", "programs", "--json"])
     captured = capsys.readouterr()
+    payload = json.loads(captured.out)
 
     assert result == 0
-    assert '"station_filter": "radio2"' in captured.out
-    assert '"slug": "show-a"' in captured.out
-    assert '"slug": "show-b"' not in captured.out
+    assert payload["station_filter"] == "radio2"
+    assert [item["slug"] for item in payload["programs"]] == ["show-a"]
 
 
 def test_list_programs_text_prints_table_and_navigation_suggestions(

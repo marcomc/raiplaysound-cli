@@ -56,6 +56,25 @@ def test_fetch_program_metadata_prefers_podcast_info(monkeypatch) -> None:
     )
 
 
+def test_fetch_program_metadata_counts_discoverable_groupings(monkeypatch) -> None:
+    monkeypatch.setattr(
+        catalog,
+        "http_get",
+        lambda _url, timeout=20.0: (
+            '{"title":"Show C","podcast_info":{"channel":{"name":"Radio 3",'
+            '"category_path":"radio3"}},"filters":[{"label":"Speciale Uno",'
+            '"weblink":"/programmi/show-c/speciali/speciale-uno","path":"speciali"}],'
+            '"tab_menu":[{"label":"Episodi","weblink":"/programmi/show-c","active":true},'
+            '{"label":"Extra","weblink":"/programmi/show-c/extra","content_type":"extra"}]}'
+        ),
+    )
+
+    program = catalog.fetch_program_metadata("show-c", "2026")
+
+    assert program is not None
+    assert program.grouping_count == 3
+
+
 def test_discover_feed_sources_extracts_program_and_selected_season(monkeypatch) -> None:
     monkeypatch.setattr(
         episodes,

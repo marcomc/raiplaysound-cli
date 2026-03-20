@@ -6,8 +6,11 @@ import re
 import time
 from pathlib import Path
 
+from .episodes import discover_groups_from_program_payload
 from .models import Program, Station
 from .runtime import http_get
+
+PROGRAM_CACHE_VERSION = "2"
 
 
 def _normalize_program_excerpt(value: str) -> str:
@@ -66,9 +69,11 @@ def program_cache_format_is_current(path: Path) -> bool:
             if not line.strip():
                 continue
             parts = line.split("\t")
-            if len(parts) < 8:
+            if len(parts) < 9:
                 return False
             if parts[2] == "No station" and parts[3].lower() != "none":
+                return False
+            if parts[8] != PROGRAM_CACHE_VERSION:
                 return False
         return True
     except OSError:
@@ -112,7 +117,6 @@ def fetch_program_metadata(slug: str, last_year: str = "") -> Program | None:
             or ""
         )
     )
-    filters = payload.get("filters") if isinstance(payload.get("filters"), list) else []
     year = str(info.get("year") or payload.get("year") or "")
     create_date = str(info.get("create_date") or payload.get("create_date") or "")
     if not re.fullmatch(r"\d{4}", year):
@@ -134,7 +138,7 @@ def fetch_program_metadata(slug: str, last_year: str = "") -> Program | None:
         years=years,
         page_url=f"https://www.raiplaysound.it/programmi/{slug}",
         description_excerpt=description_excerpt,
-        grouping_count=len(filters),
+        grouping_count=len(discover_groups_from_program_payload(slug, payload)),
     )
 
 
@@ -174,8 +178,8 @@ def load_cached_programs(path: Path) -> list[Program]:
     for line in lines:
         if not line.strip():
             continue
-        parts = line.split("\t", 7)
-        if len(parts) < 8:
+        parts = line.split("\t", 8)
+        if len(parts) < 9:
             continue
         (
             slug,
@@ -186,6 +190,7 @@ def load_cached_programs(path: Path) -> list[Program]:
             page_url,
             description_excerpt,
             grouping_count,
+            _cache_version,
         ) = parts
         normalized_grouping_count = grouping_count or "0"
         programs.append(
@@ -211,7 +216,7 @@ def write_program_cache(path: Path, programs: list[Program]) -> None:
         "".join(
             f"{item.slug}\t{item.title}\t{item.station_name}\t{item.station_short}\t"
             f"{item.years}\t{item.page_url}\t{item.description_excerpt}\t"
-            f"{item.grouping_count}\n"
+            f"{item.grouping_count}\t{PROGRAM_CACHE_VERSION}\n"
             for item in programs
         ),
         encoding="utf-8",

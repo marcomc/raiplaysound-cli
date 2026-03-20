@@ -56,6 +56,14 @@ All notable changes to this project are documented in this file.
   metadata now show those groupings in `list seasons`.
 - Refined mixed tab-menu discovery so programs with both the default `Episodi`
   surface and extra tabs show both groupings after the list cache rebuilds.
+- Fixed the `Groupings` column in `list programs` so it counts the same
+  discoverable groupings used by `list seasons`, including `tab_menu`-only
+  tabs such as `Extra`, instead of only counting legacy `filters` entries.
+- Bumped the program-catalog cache format so existing long-lived caches are
+  rebuilt automatically and pick up corrected station and grouping metadata.
+- Fixed `--json` output to write directly to stdout instead of through Rich, so
+  piped or redirected JSON listings remain valid and are no longer corrupted by
+  terminal line wrapping.
 
 ## [2.1.1] - 2026-03-19 - download progress and startup visibility improvements
 

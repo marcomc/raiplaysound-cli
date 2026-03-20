@@ -113,6 +113,9 @@ raiplaysound-cli list episodes america7
   - `Groupings`
   - `Description`
   - `Page`
+- the `Groupings` column reflects the same discoverable grouping surfaces used
+  by `list seasons`, including tab-based entries such as `Extra`, not just
+  legacy `filters` metadata
 - `--refresh-catalog` and `--catalog-max-age-hours` apply only to `list programs`
 - `--pager` can route text output through a pager without changing JSON output
 - the `Page` column is a clickable terminal link in Rich-capable terminals

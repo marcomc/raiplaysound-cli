@@ -323,11 +323,7 @@ def _program_json_url(slug: str) -> str:
     return f"https://www.raiplaysound.it/programmi/{slug}.json"
 
 
-def _discover_groups_from_program_json(slug: str) -> list[GroupSource]:
-    try:
-        payload = json.loads(http_get(_program_json_url(slug)))
-    except Exception:
-        return []
+def discover_groups_from_program_payload(slug: str, payload: object) -> list[GroupSource]:
     if not isinstance(payload, dict):
         return []
     raw_filters = payload.get("filters")
@@ -398,6 +394,14 @@ def _discover_groups_from_program_json(slug: str) -> list[GroupSource]:
         groups.append(GroupSource(key=key, label=label, url=href, kind=kind))
         seen_urls.add(href)
     return groups
+
+
+def _discover_groups_from_program_json(slug: str) -> list[GroupSource]:
+    try:
+        payload = json.loads(http_get(_program_json_url(slug)))
+    except Exception:
+        return []
+    return discover_groups_from_program_payload(slug, payload)
 
 
 def discover_group_listing_sources(slug: str) -> tuple[str, list[GroupSource]]:
