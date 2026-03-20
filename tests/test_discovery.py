@@ -977,7 +977,7 @@ def test_discover_grouped_episode_sources_keeps_season_mode_for_mixed_groups(
     assert has_non_season_groups is False
 
 
-def test_discover_grouped_episode_sources_defaults_to_seasons_for_mixed_groups(
+def test_discover_grouped_episode_sources_defaults_to_all_groups_for_mixed_groups(
     monkeypatch,
 ) -> None:
     groups = [
@@ -1008,9 +1008,12 @@ def test_discover_grouped_episode_sources_defaults_to_seasons_for_mixed_groups(
         set(),
     )
 
-    assert sources == ["https://www.raiplaysound.it/programmi/show/episodi/stagione-1"]
-    assert selected_groups == [groups[0]]
-    assert has_non_season_groups is False
+    assert sources == [
+        "https://www.raiplaysound.it/programmi/show/episodi/stagione-1",
+        "https://www.raiplaysound.it/programmi/show/extra",
+    ]
+    assert selected_groups == groups
+    assert has_non_season_groups is True
 
 
 def test_collect_group_summaries_preserves_input_order(monkeypatch) -> None:

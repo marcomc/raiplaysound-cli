@@ -504,10 +504,10 @@ def discover_grouped_episode_sources(
     selected_sources: list[GroupSource]
     if requested_groups:
         selected_sources = []
-    elif has_seasons:
-        selected_sources = list(season_groups)
     else:
         selected_sources = list(groups)
+    if has_seasons and (selected_seasons or include_all_seasons):
+        selected_sources = list(season_groups)
     if has_seasons and selected_seasons and not include_all_seasons:
         available_seasons = {group.key for group in season_groups}
         missing = sorted(selected_seasons - available_seasons, key=season_sort_key)
