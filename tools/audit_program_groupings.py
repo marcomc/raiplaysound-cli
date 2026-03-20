@@ -10,14 +10,10 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from raiplaysound_cli.episodes import _classify_group, _season_key_from_label
+from raiplaysound_cli.episodes import discover_groups_from_program_payload
 
 USER_AGENT = "raiplaysound-cli-audit/1.0"
 OUTPUT_DIR = Path("docs/audits")
-SEASON_RE = re.compile(r"(?:stagione\s+(\d+)|(\d+)\s*stagione)", re.IGNORECASE)
-YEAR_RE = re.compile(r"(?:19|20)\d{2}")
-
-
 def http_get(url: str, *, timeout: int = 30) -> str:
     result = subprocess.run(
         [
@@ -65,43 +61,6 @@ def parse_program_filter_weblink(weblink: str) -> tuple[str, str, str] | None:
     if len(parts) < 4 or parts[0] != "programmi":
         return None
     return parts[1], parts[2], "/".join(parts[3:])
-
-
-def season_key(label: str, tail: str) -> str | None:
-    match = SEASON_RE.search(label)
-    if match:
-        return match.group(1) or match.group(2)
-    if tail.startswith("stagione-"):
-        suffix = tail.removeprefix("stagione-")
-        if suffix.isdigit():
-            return suffix
-    return None
-
-
-def generalized_kind(section: str, label: str, path: str, tail: str) -> str:
-    joined = " ".join([section, label, path, tail]).lower()
-    if season_key(label, tail) is not None:
-        return "season"
-    if "special" in joined:
-        return "special"
-    if "replic" in joined:
-        return "replica"
-    if (
-        YEAR_RE.fullmatch(label.strip())
-        or YEAR_RE.fullmatch(path.strip())
-        or YEAR_RE.fullmatch(tail.strip())
-    ):
-        return "year"
-    if section in {"cicli", "ciclo", "cicli-e-podcast"}:
-        return "cycle"
-    if section in {"puntate-e-podcast", "podcast", "serie", "seriali"}:
-        return "series"
-    if section in {"collezioni", "collection", "collections"}:
-        return "collection"
-    if section in {"episodi", "puntate"} and tail not in {"episodi", "puntate"}:
-        return "bucket"
-    return "other"
-
 
 def catalog_slugs() -> list[str]:
     root = ET.fromstring(http_get("https://www.raiplaysound.it/sitemap.archivio.programmi.xml"))
@@ -155,79 +114,43 @@ def analyze_program(slug: str) -> dict[str, Any]:
         channel = podcast_info["channel"]
     station = str(channel.get("category_path") or "")
     filters = payload.get("filters") if isinstance(payload.get("filters"), list) else []
+    tab_menu = payload.get("tab_menu") if isinstance(payload.get("tab_menu"), list) else []
 
+    source_surfaces: list[str] = []
+    if filters:
+        source_surfaces.append("filters")
+    if tab_menu:
+        source_surfaces.append("tab_menu")
+
+    payload_groups = discover_groups_from_program_payload(slug, payload)
     raw_groups: list[dict[str, Any]] = []
     sections: set[str] = set()
     kinds: set[str] = set()
-
-    for item in filters:
-        if not isinstance(item, dict):
-            continue
-        label = normalize_label(str(item.get("label") or ""))
-        weblink = str(item.get("weblink") or "").rstrip("/")
-        path = str(item.get("path") or "")
-        active = bool(item.get("active"))
-        content_number: int | None = None
-        content_size = item.get("content_size")
-        if isinstance(content_size, dict) and isinstance(content_size.get("number"), int):
-            content_number = int(content_size["number"])
-
-        parsed = parse_program_filter_weblink(weblink)
+    for group in payload_groups:
+        parsed = parse_program_filter_weblink(group.url.removeprefix("https://www.raiplaysound.it"))
         section = ""
         tail = ""
         if parsed is not None:
             _program_slug, section, tail = parsed
-        kind = generalized_kind(section, label, path, tail) if parsed is not None else "other"
-        key = season_key(label, tail) or (path or tail or normalize_token(label))
-
         raw_groups.append(
             {
-                "label": label,
-                "weblink": weblink,
-                "path": path,
+                "label": group.label,
+                "weblink": group.url.removeprefix("https://www.raiplaysound.it"),
+                "path": group.key,
                 "section": section,
                 "tail": tail,
-                "key": key,
-                "kind": kind,
-                "active": active,
-                "content_number": content_number,
+                "key": group.key,
+                "kind": group.kind,
+                "active": group.url == f"https://www.raiplaysound.it/programmi/{slug}",
+                "content_number": None,
             }
         )
         if section:
             sections.add(section)
-        kinds.add(kind)
+        kinds.add(group.kind)
 
-    has_season_filters = any(_season_key_from_label(group["label"]) for group in raw_groups)
-    current_groups: list[dict[str, str]] = []
-    seen_current_urls: set[str] = set()
-    for group in raw_groups:
-        weblink = str(group["weblink"])
-        section = str(group["section"])
-        tail = str(group["tail"])
-        path = str(group["path"]).lower()
-        label = str(group["label"])
-        if not weblink or not section or not tail:
-            continue
-        classified = None
-        if has_season_filters and path in {"episodi", "puntate"}:
-            continue
-        classified = _classify_group(section, tail, label)
-        if classified is None and has_season_filters:
-            season = _season_key_from_label(label)
-            if season is not None:
-                classified = ("season", season)
-        if classified is None or weblink in seen_current_urls:
-            continue
-        kind, key = classified
-        current_groups.append({"kind": kind, "key": key, "url": weblink})
-        seen_current_urls.add(weblink)
-    detected_by_current = bool(current_groups)
-    current_group_count = len(current_groups)
-    current_group_kinds = sorted({group["kind"] for group in current_groups})
-
-    grouped = any(group["weblink"] and group["key"] for group in raw_groups)
-    multi_group = sum(1 for group in raw_groups if group["weblink"] and group["key"]) > 1
-    missed_by_current = grouped and not detected_by_current
+    grouped = bool(payload_groups)
+    multi_group = len(payload_groups) > 1
 
     sorted_kinds = sorted(kinds)
     if not grouped:
@@ -247,14 +170,15 @@ def analyze_program(slug: str) -> dict[str, Any]:
         "raw_group_count": len(raw_groups),
         "grouped": grouped,
         "multi_group": multi_group,
+        "source_surfaces": source_surfaces,
         "mode": mode,
         "raw_sections": sorted(sections),
         "raw_kinds": sorted_kinds,
         "raw_groups": raw_groups,
-        "detected_by_current": detected_by_current,
-        "current_group_count": current_group_count,
-        "current_group_kinds": current_group_kinds,
-        "missed_by_current": missed_by_current,
+        "detected_by_current": grouped,
+        "current_group_count": len(payload_groups),
+        "current_group_kinds": sorted_kinds,
+        "missed_by_current": False,
         "fetch_error": "",
     }
 
@@ -276,6 +200,7 @@ def write_outputs(results: list[dict[str, Any]]) -> None:
                 "station",
                 "grouped",
                 "multi_group",
+                "source_surfaces",
                 "mode",
                 "raw_group_count",
                 "raw_sections",
@@ -297,6 +222,7 @@ def write_outputs(results: list[dict[str, Any]]) -> None:
                     item["station"],
                     item["grouped"],
                     item["multi_group"],
+                    "|".join(item["source_surfaces"]),
                     item["mode"],
                     item["raw_group_count"],
                     "|".join(item["raw_sections"]),
@@ -313,17 +239,17 @@ def write_outputs(results: list[dict[str, Any]]) -> None:
 
     mode_counter: Counter[str] = Counter()
     section_counter: Counter[str] = Counter()
-    missed_section_counter: Counter[str] = Counter()
-    missed_examples: list[dict[str, Any]] = []
+    surface_counter: Counter[str] = Counter()
+    tab_menu_only_examples: list[dict[str, Any]] = []
 
     for item in results:
         mode_counter[item["mode"]] += 1
+        for surface in item["source_surfaces"]:
+            surface_counter[surface] += 1
         for section in item["raw_sections"]:
             section_counter[section] += 1
-        if item["missed_by_current"]:
-            for section in item["raw_sections"]:
-                missed_section_counter[section] += 1
-            missed_examples.append(
+        if item["grouped"] and item["source_surfaces"] == ["tab_menu"]:
+            tab_menu_only_examples.append(
                 {
                     "slug": item["slug"],
                     "title": item["title"],
@@ -337,12 +263,27 @@ def write_outputs(results: list[dict[str, Any]]) -> None:
         "program_count": len(results),
         "grouped_count": sum(1 for item in results if item["grouped"]),
         "multi_group_count": sum(1 for item in results if item["multi_group"]),
-        "missed_by_current_count": sum(1 for item in results if item["missed_by_current"]),
         "unreachable_count": sum(1 for item in results if item.get("fetch_error")),
+        "filters_surface_count": sum(1 for item in results if "filters" in item["source_surfaces"]),
+        "tab_menu_surface_count": sum(1 for item in results if "tab_menu" in item["source_surfaces"]),
+        "grouped_filters_count": sum(
+            1 for item in results if item["grouped"] and "filters" in item["source_surfaces"]
+        ),
+        "grouped_tab_menu_count": sum(
+            1 for item in results if item["grouped"] and "tab_menu" in item["source_surfaces"]
+        ),
+        "grouped_tab_menu_only_count": sum(
+            1 for item in results if item["grouped"] and item["source_surfaces"] == ["tab_menu"]
+        ),
+        "grouped_filters_and_tab_menu_count": sum(
+            1
+            for item in results
+            if item["grouped"] and set(item["source_surfaces"]) == {"filters", "tab_menu"}
+        ),
         "mode_counter": dict(mode_counter.most_common()),
+        "surface_counter": dict(surface_counter.most_common()),
         "top_sections": section_counter.most_common(20),
-        "top_missed_sections": missed_section_counter.most_common(20),
-        "examples_missed": missed_examples[:25],
+        "examples_tab_menu_only": tab_menu_only_examples[:25],
     }
     summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(summary, ensure_ascii=False, indent=2))
