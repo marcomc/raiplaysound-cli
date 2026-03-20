@@ -10,10 +10,16 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from raiplaysound_cli.episodes import discover_groups_from_program_payload
+from raiplaysound_cli import episodes as episodes_module
+from raiplaysound_cli.episodes import (
+    discover_group_listing_sources,
+    discover_groups_from_program_payload,
+)
 
 USER_AGENT = "raiplaysound-cli-audit/1.0"
 OUTPUT_DIR = Path("docs/audits")
+
+
 def http_get(url: str, *, timeout: int = 30) -> str:
     result = subprocess.run(
         [
@@ -36,6 +42,9 @@ def http_get(url: str, *, timeout: int = 30) -> str:
         encoding="utf-8",
     )
     return result.stdout
+
+
+episodes_module.http_get = http_get
 
 
 def normalize_label(value: str) -> str:
@@ -61,6 +70,36 @@ def parse_program_filter_weblink(weblink: str) -> tuple[str, str, str] | None:
     if len(parts) < 4 or parts[0] != "programmi":
         return None
     return parts[1], parts[2], "/".join(parts[3:])
+
+
+def group_to_dict(slug: str, label: str, url: str, key: str, kind: str) -> dict[str, Any]:
+    parsed = parse_program_filter_weblink(url.removeprefix("https://www.raiplaysound.it"))
+    section = ""
+    tail = ""
+    if parsed is not None:
+        _program_slug, section, tail = parsed
+    return {
+        "label": label,
+        "weblink": url.removeprefix("https://www.raiplaysound.it"),
+        "path": key,
+        "section": section,
+        "tail": tail,
+        "key": key,
+        "kind": kind,
+        "active": url == f"https://www.raiplaysound.it/programmi/{slug}",
+        "content_number": None,
+    }
+
+
+def derive_mode(groups: list[dict[str, Any]]) -> str:
+    kinds = sorted({str(group["kind"]) for group in groups})
+    if not groups:
+        return "flat"
+    if kinds and all(kind == "season" for kind in kinds):
+        return "seasonal"
+    if len(kinds) == 1:
+        return kinds[0]
+    return "mixed"
 
 def catalog_slugs() -> list[str]:
     root = ET.fromstring(http_get("https://www.raiplaysound.it/sitemap.archivio.programmi.xml"))
@@ -95,12 +134,16 @@ def analyze_program(slug: str) -> dict[str, Any]:
             "station": "",
             "program_url": f"https://www.raiplaysound.it/programmi/{slug}",
             "raw_group_count": 0,
+            "effective_group_count": 0,
             "grouped": False,
             "multi_group": False,
             "mode": "unreachable",
             "raw_sections": [],
             "raw_kinds": [],
             "raw_groups": [],
+            "effective_sections": [],
+            "effective_kinds": [],
+            "effective_groups": [],
             "detected_by_current": False,
             "current_group_count": -1,
             "current_group_kinds": [],
@@ -123,44 +166,35 @@ def analyze_program(slug: str) -> dict[str, Any]:
         source_surfaces.append("tab_menu")
 
     payload_groups = discover_groups_from_program_payload(slug, payload)
-    raw_groups: list[dict[str, Any]] = []
-    sections: set[str] = set()
-    kinds: set[str] = set()
-    for group in payload_groups:
-        parsed = parse_program_filter_weblink(group.url.removeprefix("https://www.raiplaysound.it"))
-        section = ""
-        tail = ""
-        if parsed is not None:
-            _program_slug, section, tail = parsed
-        raw_groups.append(
-            {
-                "label": group.label,
-                "weblink": group.url.removeprefix("https://www.raiplaysound.it"),
-                "path": group.key,
-                "section": section,
-                "tail": tail,
-                "key": group.key,
-                "kind": group.kind,
-                "active": group.url == f"https://www.raiplaysound.it/programmi/{slug}",
-                "content_number": None,
-            }
-        )
-        if section:
-            sections.add(section)
-        kinds.add(group.kind)
+    raw_groups = [
+        group_to_dict(slug, group.label, group.url, group.key, group.kind) for group in payload_groups
+    ]
+    raw_sections = sorted({str(group["section"]) for group in raw_groups if group["section"]})
+    raw_kinds = sorted({str(group["kind"]) for group in raw_groups})
+
+    if payload_groups:
+        try:
+            _program_url, live_groups = discover_group_listing_sources(slug)
+            effective_groups = [
+                group_to_dict(slug, group.label, group.url, group.key, group.kind)
+                for group in live_groups
+            ]
+            fetch_error = ""
+        except Exception as exc:
+            effective_groups = list(raw_groups)
+            fetch_error = f"live-discovery-failed: {type(exc).__name__}: {exc}"
+    else:
+        effective_groups = list(raw_groups)
+        fetch_error = ""
+
+    effective_sections = sorted(
+        {str(group["section"]) for group in effective_groups if group["section"]}
+    )
+    effective_kinds = sorted({str(group["kind"]) for group in effective_groups})
 
     grouped = bool(payload_groups)
     multi_group = len(payload_groups) > 1
-
-    sorted_kinds = sorted(kinds)
-    if not grouped:
-        mode = "flat"
-    elif sorted_kinds and all(kind == "season" for kind in sorted_kinds):
-        mode = "seasonal"
-    elif len(sorted_kinds) == 1:
-        mode = sorted_kinds[0]
-    else:
-        mode = "mixed"
+    mode = derive_mode(raw_groups)
 
     return {
         "slug": slug,
@@ -168,18 +202,23 @@ def analyze_program(slug: str) -> dict[str, Any]:
         "station": station,
         "program_url": f"https://www.raiplaysound.it/programmi/{slug}",
         "raw_group_count": len(raw_groups),
+        "effective_group_count": len(effective_groups),
         "grouped": grouped,
         "multi_group": multi_group,
         "source_surfaces": source_surfaces,
         "mode": mode,
-        "raw_sections": sorted(sections),
-        "raw_kinds": sorted_kinds,
+        "raw_sections": raw_sections,
+        "raw_kinds": raw_kinds,
         "raw_groups": raw_groups,
-        "detected_by_current": grouped,
-        "current_group_count": len(payload_groups),
-        "current_group_kinds": sorted_kinds,
-        "missed_by_current": False,
-        "fetch_error": "",
+        "effective_mode": derive_mode(effective_groups),
+        "effective_sections": effective_sections,
+        "effective_kinds": effective_kinds,
+        "effective_groups": effective_groups,
+        "detected_by_current": bool(effective_groups),
+        "current_group_count": len(effective_groups),
+        "current_group_kinds": effective_kinds,
+        "missed_by_current": bool(raw_groups and not effective_groups),
+        "fetch_error": fetch_error,
     }
 
 
@@ -203,14 +242,18 @@ def write_outputs(results: list[dict[str, Any]]) -> None:
                 "source_surfaces",
                 "mode",
                 "raw_group_count",
+                "effective_group_count",
                 "raw_sections",
+                "effective_sections",
                 "raw_kinds",
+                "effective_kinds",
                 "detected_by_current",
                 "current_group_count",
                 "current_group_kinds",
                 "missed_by_current",
                 "program_url",
                 "sample_labels",
+                "effective_sample_labels",
                 "fetch_error",
             ]
         )
@@ -225,14 +268,18 @@ def write_outputs(results: list[dict[str, Any]]) -> None:
                     "|".join(item["source_surfaces"]),
                     item["mode"],
                     item["raw_group_count"],
+                    item["effective_group_count"],
                     "|".join(item["raw_sections"]),
+                    "|".join(item["effective_sections"]),
                     "|".join(item["raw_kinds"]),
+                    "|".join(item["effective_kinds"]),
                     item["detected_by_current"],
                     item["current_group_count"],
                     "|".join(item["current_group_kinds"]),
                     item["missed_by_current"],
                     item["program_url"],
                     " | ".join(group["label"] for group in item["raw_groups"][:5]),
+                    " | ".join(group["label"] for group in item["effective_groups"][:5]),
                     item.get("fetch_error", ""),
                 ]
             )
@@ -262,8 +309,14 @@ def write_outputs(results: list[dict[str, Any]]) -> None:
     summary = {
         "program_count": len(results),
         "grouped_count": sum(1 for item in results if item["grouped"]),
+        "effective_grouped_count": sum(1 for item in results if item["effective_groups"]),
         "multi_group_count": sum(1 for item in results if item["multi_group"]),
         "unreachable_count": sum(1 for item in results if item.get("fetch_error")),
+        "effective_extra_root_groupings_count": sum(
+            1
+            for item in results
+            if item["effective_group_count"] > item["raw_group_count"]
+        ),
         "filters_surface_count": sum(1 for item in results if "filters" in item["source_surfaces"]),
         "tab_menu_surface_count": sum(1 for item in results if "tab_menu" in item["source_surfaces"]),
         "grouped_filters_count": sum(
@@ -295,9 +348,16 @@ def write_outputs(results: list[dict[str, Any]]) -> None:
 def main() -> int:
     slugs = catalog_slugs()
     results: list[dict[str, Any]] = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
-        for item in executor.map(analyze_program, slugs):
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        future_map = {executor.submit(analyze_program, slug): slug for slug in slugs}
+        total = len(future_map)
+        completed = 0
+        for future in concurrent.futures.as_completed(future_map):
+            item = future.result()
             results.append(item)
+            completed += 1
+            if completed % 100 == 0 or completed == total:
+                print(f"progress {completed}/{total}", flush=True)
     results.sort(key=lambda item: str(item["slug"]))
     write_outputs(results)
     return 0

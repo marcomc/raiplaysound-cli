@@ -64,6 +64,10 @@ All notable changes to this project are documented in this file.
 - Fixed `--json` output to write directly to stdout instead of through Rich, so
   piped or redirected JSON listings remain valid and are no longer corrupted by
   terminal line wrapping.
+- Updated the program-grouping audit tooling and regenerated audit artifacts so
+  they now record both strict payload-derived groups and the effective live
+  discovery groups accepted by `list seasons`, including the small set of
+  redundant default root groupings such as `episodi` or `puntate`.
 
 ## [2.1.1] - 2026-03-19 - download progress and startup visibility improvements
 

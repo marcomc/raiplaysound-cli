@@ -1,0 +1,232 @@
+{
+  "summary": {
+    "grouped_programs": 418,
+    "initial_parallel_errors": 82,
+    "retry_successes": 81,
+    "remaining_errors": 0,
+    "final_exact_matches": 408,
+    "final_mismatches": 10,
+    "final_mismatch_slugs": [
+      "fueddudemaistu",
+      "kulturnidogodki-kulturneknjineinliterarnenovosti",
+      "lapennicanza",
+      "lasveglianza",
+      "nativa",
+      "senzaconfini",
+      "vivarai2",
+      "vivarai2vivasanremo",
+      "zborovskaglasba",
+      "biaxadorainsutempus"
+    ],
+    "remaining_error_slugs": []
+  },
+  "mismatches": [
+    {
+      "slug": "fueddudemaistu",
+      "expected": [
+        [
+          "fueddu-de-maistu-ii",
+          "group"
+        ]
+      ],
+      "actual": [
+        [
+          "episodi",
+          "group"
+        ],
+        [
+          "fueddu-de-maistu-ii",
+          "group"
+        ]
+      ]
+    },
+    {
+      "slug": "kulturnidogodki-kulturneknjineinliterarnenovosti",
+      "expected": [
+        [
+          "intervjuji",
+          "group"
+        ]
+      ],
+      "actual": [
+        [
+          "episodi",
+          "group"
+        ],
+        [
+          "intervjuji",
+          "group"
+        ]
+      ]
+    },
+    {
+      "slug": "lapennicanza",
+      "expected": [
+        [
+          "clip",
+          "group"
+        ],
+        [
+          "episodi",
+          "group"
+        ],
+        [
+          "radio2-radio-show-la-pennicanza",
+          "group"
+        ]
+      ],
+      "actual": [
+        [
+          "clip",
+          "group"
+        ],
+        [
+          "episodi",
+          "group"
+        ],
+        [
+          "puntate",
+          "group"
+        ],
+        [
+          "radio2-radio-show-la-pennicanza",
+          "group"
+        ]
+      ]
+    },
+    {
+      "slug": "lasveglianza",
+      "expected": [
+        [
+          "radio2-radio-show-la-sveglianza",
+          "group"
+        ]
+      ],
+      "actual": [
+        [
+          "puntate",
+          "group"
+        ],
+        [
+          "radio2-radio-show-la-sveglianza",
+          "group"
+        ]
+      ]
+    },
+    {
+      "slug": "nativa",
+      "expected": [
+        [
+          "edizione-2021",
+          "group"
+        ]
+      ],
+      "actual": [
+        [
+          "edizione-2021",
+          "group"
+        ],
+        [
+          "episodi",
+          "group"
+        ]
+      ]
+    },
+    {
+      "slug": "senzaconfini",
+      "expected": [
+        [
+          "viaggiare-in-sicurezza-",
+          "group"
+        ]
+      ],
+      "actual": [
+        [
+          "episodi",
+          "group"
+        ],
+        [
+          "viaggiare-in-sicurezza-",
+          "group"
+        ]
+      ]
+    },
+    {
+      "slug": "vivarai2",
+      "expected": [
+        [
+          "i-stagione",
+          "group"
+        ]
+      ],
+      "actual": [
+        [
+          "episodi",
+          "group"
+        ],
+        [
+          "i-stagione",
+          "group"
+        ]
+      ]
+    },
+    {
+      "slug": "vivarai2vivasanremo",
+      "expected": [
+        [
+          "edizione-2023",
+          "group"
+        ]
+      ],
+      "actual": [
+        [
+          "edizione-2023",
+          "group"
+        ],
+        [
+          "puntate",
+          "group"
+        ]
+      ]
+    },
+    {
+      "slug": "zborovskaglasba",
+      "expected": [
+        [
+          "zborovski-utrip",
+          "group"
+        ]
+      ],
+      "actual": [
+        [
+          "puntate",
+          "group"
+        ],
+        [
+          "zborovski-utrip",
+          "group"
+        ]
+      ]
+    },
+    {
+      "slug": "biaxadorainsutempus",
+      "expected": [
+        [
+          "biaxadora-in-su-tempus-ii",
+          "group"
+        ]
+      ],
+      "actual": [
+        [
+          "biaxadora-in-su-tempus-ii",
+          "group"
+        ],
+        [
+          "puntate",
+          "group"
+        ]
+      ]
+    }
+  ],
+  "remaining_errors": []
+}

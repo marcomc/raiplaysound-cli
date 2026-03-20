@@ -1,8 +1,10 @@
 {
   "program_count": 1969,
   "grouped_count": 418,
+  "effective_grouped_count": 418,
   "multi_group_count": 376,
   "unreachable_count": 0,
+  "effective_extra_root_groupings_count": 10,
   "filters_surface_count": 314,
   "tab_menu_surface_count": 1928,
   "grouped_filters_count": 313,

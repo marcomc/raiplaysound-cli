@@ -39,8 +39,17 @@ This matters because many live programs expose usable groupings only through
 with additional tab-backed groupings such as `Extra`, `Clip`, `Audiolibri`, or
 `Playlist`.
 
-The audit helper now uses the same discovery entry point as the CLI:
-`discover_groups_from_program_payload()`.
+The audit artifacts now preserve two views:
+
+- `raw_groups`: strict payload-derived grouping surfaces from
+  `discover_groups_from_program_payload()`
+- `effective_groups`: the accepted live discovery view used by `list seasons`,
+  which can also include redundant default root groupings such as `Episodi` or
+  `Puntate`
+
+This matters for the handful of programs where the live CLI intentionally shows
+an extra default root grouping in addition to the stricter payload-derived
+custom grouping.
 
 ## Distribution
 
@@ -70,6 +79,8 @@ Important nuance:
 - `tab_menu` is present on most programs, but in many cases it only exposes the
   root `Episodi` surface.
 - The meaningful grouped-program count is `418`, not `1928`.
+- `10` grouped programs currently gain an extra accepted default root grouping
+  in `effective_groups` compared with `raw_groups`.
 
 The most common routed sections for discovered groups were:
 
