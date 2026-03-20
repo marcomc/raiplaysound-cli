@@ -40,6 +40,20 @@ All notable changes to this project are documented in this file.
   `radio2afumetti` under `cicli`, editorial `clip` buckets, and custom
   season-block sections are now exposed correctly instead of collapsing back to
   flat listings.
+- Fixed year-range season handling so labels such as `2025-2026` no longer
+  crash season discovery or collapse back to `Season 1` during summary and
+  episode normalization.
+- Fixed missing-program handling so commands such as
+  `raiplaysound-cli list seasons PROGRAM_SLUG` now report a normal CLI error
+  instead of leaking a Python traceback when RaiPlaySound returns `404`.
+- Hardened shared HTTP handling so RaiPlaySound network failures and non-404
+  HTTP responses now surface as normal CLI errors instead of raw Python
+  exceptions.
+- Hardened local catalog and metadata cache loading so malformed rows are
+  skipped instead of aborting listings or output generation with tracebacks.
+- Extended grouping discovery to read top-level `tab_menu` entries from program
+  JSON, so programs that expose tabs such as `Extra` without `filters`
+  metadata now show those groupings in `list seasons`.
 
 ## [2.1.1] - 2026-03-19 - download progress and startup visibility improvements
 

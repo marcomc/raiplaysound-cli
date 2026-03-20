@@ -8,6 +8,7 @@ from pathlib import Path
 from raiplaysound_cli import cli
 from raiplaysound_cli import episodes as episode_module
 from raiplaysound_cli.config import Settings
+from raiplaysound_cli.errors import HTTPRequestError
 from raiplaysound_cli.models import GroupSource, Program
 
 
@@ -161,6 +162,60 @@ def test_main_list_episodes_requires_input(capsys) -> None:
 
     assert result == 1
     assert "list episodes requires <program_slug|program_url>." in captured.err
+
+
+def test_main_list_seasons_reports_missing_program_slug(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    settings = Settings()
+    settings.catalog_cache_file = tmp_path / "state" / "program-catalog.tsv"
+
+    def fake_http_get(_url: str, **_kwargs: object) -> str:
+        raise HTTPRequestError(
+            "https://www.raiplaysound.it/programmi/sophia",
+            "RaiPlaySound returned HTTP 404 for https://www.raiplaysound.it/programmi/sophia.",
+            code=404,
+        )
+
+    monkeypatch.setattr(cli, "parse_env_file", lambda _path: {})
+    monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
+    monkeypatch.setattr(episode_module, "http_get", fake_http_get)
+
+    result = cli.main(["list", "seasons", "sophia"])
+    captured = capsys.readouterr()
+
+    assert result == 1
+    assert "program 'sophia' was not found on RaiPlaySound." in captured.err
+
+
+def test_main_list_stations_reports_network_failure(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        cli,
+        "http_get",
+        lambda _url: (_ for _ in ()).throw(
+            HTTPRequestError(
+                "https://www.raiplaysound.it/dirette.json",
+                "network request failed for https://www.raiplaysound.it/dirette.json: offline",
+            )
+        ),
+    )
+
+    result = cli.main(["list", "stations"])
+    captured = capsys.readouterr()
+
+    assert result == 1
+    assert "network request failed for https://www.raiplaysound.it/dirette.json:" in captured.err
+    assert "offline" in captured.err
+
+
+def test_main_list_stations_reports_invalid_payload(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(cli, "http_get", lambda _url: "{")
+
+    result = cli.main(["list", "stations"])
+    captured = capsys.readouterr()
+
+    assert result == 1
+    assert "invalid RaiPlaySound station payload." in captured.err
 
 
 def test_main_rejects_legacy_list_target_flags(capsys) -> None:
@@ -413,7 +468,7 @@ def test_list_episodes_uses_cached_payload(monkeypatch, tmp_path: Path, capsys) 
     cache_file.write_text(
         """
 {
-  "version": 4,
+  "version": 5,
   "slug": "profili",
   "program_url": "https://www.raiplaysound.it/programmi/profili",
   "summary": {
@@ -814,7 +869,7 @@ def test_list_seasons_uses_cached_summary_payload(monkeypatch, tmp_path: Path, c
     cache_file.write_text(
         """
 {
-  "version": 4,
+  "version": 5,
   "slug": "america7",
   "program_url": "https://www.raiplaysound.it/programmi/america7",
   "has_seasons": true,

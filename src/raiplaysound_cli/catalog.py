@@ -20,7 +20,10 @@ def _normalize_program_excerpt(value: str) -> str:
 
 
 def parse_stations(raw_json: str) -> list[Station]:
-    payload = json.loads(raw_json)
+    try:
+        payload = json.loads(raw_json)
+    except json.JSONDecodeError as exc:
+        raise ValueError("invalid stations payload") from exc
     if isinstance(payload, dict):
         items = payload.get("contents") or []
     elif isinstance(payload, list):
@@ -164,8 +167,15 @@ def load_cached_programs(path: Path) -> list[Program]:
     programs: list[Program] = []
     if not path.exists():
         return programs
-    for line in path.read_text(encoding="utf-8").splitlines():
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return programs
+    for line in lines:
         if not line.strip():
+            continue
+        parts = line.split("\t", 7)
+        if len(parts) < 8:
             continue
         (
             slug,
@@ -176,7 +186,8 @@ def load_cached_programs(path: Path) -> list[Program]:
             page_url,
             description_excerpt,
             grouping_count,
-        ) = line.split("\t", 7)
+        ) = parts
+        normalized_grouping_count = grouping_count or "0"
         programs.append(
             Program(
                 slug=slug,
@@ -186,7 +197,9 @@ def load_cached_programs(path: Path) -> list[Program]:
                 years=years,
                 page_url=page_url,
                 description_excerpt=description_excerpt,
-                grouping_count=int(grouping_count or "0"),
+                grouping_count=(
+                    int(normalized_grouping_count) if normalized_grouping_count.isdigit() else 0
+                ),
             )
         )
     return programs

@@ -68,7 +68,7 @@ from .runtime import acquire_lock, http_get, release_lock, run_yt_dlp
 console = Console()
 err_console = Console(stderr=True)
 LIST_CACHE_MAX_AGE_HOURS = 24
-LIST_CACHE_VERSION = 4
+LIST_CACHE_VERSION = 5
 
 
 def json_dump(data: Any) -> None:
@@ -660,7 +660,10 @@ def load_cached_show_context(
 
 
 def list_stations(_settings: Settings, args: argparse.Namespace) -> int:
-    stations = parse_stations(http_get("https://www.raiplaysound.it/dirette.json"))
+    try:
+        stations = parse_stations(http_get("https://www.raiplaysound.it/dirette.json"))
+    except ValueError as exc:
+        raise CLIError("invalid RaiPlaySound station payload.") from exc
     counts = _load_station_program_counts(_settings)
     if args.json:
         json_dump(

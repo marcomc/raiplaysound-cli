@@ -663,6 +663,22 @@ def test_discover_group_listing_sources_supports_year_range_seasons(monkeypatch)
     ]
 
 
+def test_discover_season_listing_sources_ignores_non_numeric_year_range_probing(
+    monkeypatch,
+) -> None:
+    def fake_http_get(url: str) -> str:
+        if url == "https://www.raiplaysound.it/programmi/moviemag":
+            return "<button data-filters-current><span>Stagione 2025-2026</span></button>"
+        raise RuntimeError("not found")
+
+    monkeypatch.setattr(episodes, "http_get", fake_http_get)
+
+    program_url, sources = episodes.discover_season_listing_sources("moviemag")
+
+    assert program_url == "https://www.raiplaysound.it/programmi/moviemag"
+    assert sources == [program_url]
+
+
 def test_discover_group_listing_sources_supports_clip_buckets_from_program_json(
     monkeypatch,
 ) -> None:
@@ -735,6 +751,96 @@ def test_discover_group_listing_sources_supports_mixed_special_and_generic_filte
         ("speciali", "Speciali", "special"),
         ("storia-dellarma", "Storia dell'Arma", "group"),
     ]
+
+
+def test_discover_group_listing_sources_supports_extra_tabs_from_program_json(
+    monkeypatch,
+) -> None:
+    def fake_http_get(url: str) -> str:
+        if url == "https://www.raiplaysound.it/programmi/sophialiberaenciclopediadiradio3":
+            return ""
+        if url == "https://www.raiplaysound.it/programmi/sophialiberaenciclopediadiradio3.json":
+            return """
+            {
+              "tab_menu": [
+                {
+                  "content_type": "episodi",
+                  "label": "Episodi",
+                  "weblink": "/programmi/sophialiberaenciclopediadiradio3",
+                  "active": true
+                },
+                {
+                  "content_type": "extra",
+                  "label": "Extra",
+                  "weblink": "/programmi/sophialiberaenciclopediadiradio3/extra",
+                  "active": false
+                }
+              ]
+            }
+            """
+        raise RuntimeError("not found")
+
+    monkeypatch.setattr(episodes, "http_get", fake_http_get)
+
+    _program_url, groups = episodes.discover_group_listing_sources(
+        "sophialiberaenciclopediadiradio3"
+    )
+
+    assert [(group.key, group.label, group.kind, group.url) for group in groups] == [
+        (
+            "extra",
+            "Extra",
+            "group",
+            "https://www.raiplaysound.it/programmi/sophialiberaenciclopediadiradio3/extra",
+        )
+    ]
+
+
+def test_collect_episodes_from_sources_falls_back_to_page_json_block(monkeypatch) -> None:
+    def fake_run_yt_dlp(*_args, **_kwargs):
+        class Result:
+            stdout = ""
+
+        return Result()
+
+    def fake_http_get(url: str) -> str:
+        if (
+            url
+            == "https://www.raiplaysound.it/programmi/sophialiberaenciclopediadiradio3/extra.json"
+        ):
+            return """
+            {
+              "block": {
+                "cards": [
+                  {
+                    "uniquename": "ContentItem-1575a5e7-4c41-49bd-9576-01f45c7ce32d",
+                    "title": "Le parole dell'amore - Gli speciali di Radio3 del 14/02/2026",
+                    "episode_title": "I live di Sophia - Le parole dell’amore",
+                    "weblink": "/audio/1575a5e7-4c41-49bd-9576-01f45c7ce32d.html"
+                  }
+                ]
+              }
+            }
+            """
+        raise RuntimeError("not found")
+
+    monkeypatch.setattr(episodes, "run_yt_dlp", fake_run_yt_dlp)
+    monkeypatch.setattr(episodes, "http_get", fake_http_get)
+
+    grouped_source = GroupSource(
+        key="extra",
+        label="Extra",
+        url="https://www.raiplaysound.it/programmi/sophialiberaenciclopediadiradio3/extra",
+        kind="group",
+    )
+    result = episodes.collect_episodes_from_sources(
+        [grouped_source.url],
+        source_groups={grouped_source.url: grouped_source},
+    )
+
+    assert len(result) == 1
+    assert result[0].episode_id == "1575a5e7-4c41-49bd-9576-01f45c7ce32d"
+    assert result[0].group_label == "Extra"
 
 
 def test_collect_group_summaries_preserves_input_order(monkeypatch) -> None:

@@ -8,7 +8,7 @@ import sys
 import urllib.parse
 from pathlib import Path
 
-from .errors import CLIError
+from .errors import CLIError, HTTPRequestError
 from .models import Episode, GroupSource, GroupSummary, SeasonSummary
 from .runtime import http_get, run_yt_dlp
 
@@ -33,7 +33,7 @@ CURRENT_FILTER_LABEL_RE = re.compile(
     r"data-filters-current[^>]*>.*?<span[^>]*>(?P<label>[^<]+)</span>",
     re.IGNORECASE | re.DOTALL,
 )
-SKIP_GROUP_SECTIONS = {"extra", "playlist", "novita"}
+SKIP_GROUP_SECTIONS = {"playlist", "novita"}
 ORDINAL_SEASON_MAP = {
     "prima": "1",
     "primo": "1",
@@ -126,14 +126,23 @@ def build_requested_groups(raw: str) -> set[str]:
     return selected
 
 
+def load_program_page(slug: str) -> tuple[str, str]:
+    program_url = f"https://www.raiplaysound.it/programmi/{slug}"
+    try:
+        return program_url, http_get(program_url)
+    except HTTPRequestError as exc:
+        if exc.code == 404:
+            raise CLIError(f"program '{slug}' was not found on RaiPlaySound.") from exc
+        raise
+
+
 def discover_feed_sources(
     slug: str,
     selected_seasons: set[str],
     include_all_seasons: bool,
     for_list_seasons: bool,
 ) -> list[str]:
-    program_url = f"https://www.raiplaysound.it/programmi/{slug}"
-    html = http_get(program_url)
+    program_url, html = load_program_page(slug)
     season_urls = sorted(
         {
             f"https://www.raiplaysound.it{match.group(0)}"
@@ -150,8 +159,7 @@ def discover_feed_sources(
 
 
 def discover_season_listing_sources(slug: str) -> tuple[str, list[str]]:
-    program_url = f"https://www.raiplaysound.it/programmi/{slug}"
-    html = http_get(program_url)
+    program_url, html = load_program_page(slug)
     linked_matches = [
         match
         for match in SEASON_PAGE_RE.finditer(html)
@@ -162,7 +170,9 @@ def discover_season_listing_sources(slug: str) -> tuple[str, list[str]]:
     for label_match in SEASON_LABEL_RE.findall(html):
         for value in label_match:
             if value:
-                known_numbers.add(int(value))
+                normalized = normalize_season_key(value)
+                if normalized and normalized.isdigit():
+                    known_numbers.add(int(normalized))
     linked_sections = {match.group("section") for match in linked_matches}
     sections = linked_sections or {"episodi", "puntate"}
     if known_numbers and not linked_matches:
@@ -234,6 +244,18 @@ def _season_key_from_route_part(value: str) -> str | None:
         if normalized in {f"stagione-{word}", f"{word}-stagione"}:
             return number
     return None
+
+
+def normalize_season_key(value: str) -> str | None:
+    raw = value.strip()
+    if not raw:
+        return None
+    normalized = raw.replace("/", "-")
+    if normalized.isdigit() and int(normalized) > 0:
+        return normalized
+    if re.fullmatch(r"\d{1,4}(?:-\d{1,4})+", normalized):
+        return normalized
+    return _season_key_from_label(raw) or _season_key_from_route_part(raw)
 
 
 def _build_group_key(path: str, tail: str, label: str, kind: str) -> str:
@@ -309,8 +331,11 @@ def _discover_groups_from_program_json(slug: str) -> list[GroupSource]:
     if not isinstance(payload, dict):
         return []
     raw_filters = payload.get("filters")
+    raw_tab_menu = payload.get("tab_menu")
     if not isinstance(raw_filters, list):
-        return []
+        raw_filters = []
+    if not isinstance(raw_tab_menu, list):
+        raw_tab_menu = []
 
     filter_entries: list[tuple[str, str, str]] = []
     for item in raw_filters:
@@ -323,6 +348,18 @@ def _discover_groups_from_program_json(slug: str) -> list[GroupSource]:
             continue
         filter_entries.append((label, weblink.rstrip("/"), path))
 
+    for item in raw_tab_menu:
+        if not isinstance(item, dict):
+            continue
+        label = _normalize_group_label(str(item.get("label") or ""))
+        weblink = str(item.get("weblink") or "").strip().rstrip("/")
+        path = str(item.get("content_type") or item.get("path_id") or "").strip()
+        if not label or not weblink.startswith("/programmi/"):
+            continue
+        if item.get("active") and weblink == f"/programmi/{slug}":
+            continue
+        filter_entries.append((label, weblink, path))
+
     has_season_filters = any(
         _season_key_from_label(label) for label, _weblink, _path in filter_entries
     )
@@ -333,12 +370,13 @@ def _discover_groups_from_program_json(slug: str) -> list[GroupSource]:
         if href in seen_urls:
             continue
         match = re.match(
-            r"^/programmi/(?P<slug>[A-Za-z0-9-]+)/(?P<section>[^/]+)/(?P<tail>.+)$", weblink
+            r"^/programmi/(?P<slug>[A-Za-z0-9-]+)(?:/(?P<section>[^/]+)(?:/(?P<tail>.+))?)?$",
+            weblink,
         )
         classified: tuple[str, str] | None = None
         if match and match.group("slug").lower() == slug.lower():
-            section = match.group("section")
-            tail = match.group("tail")
+            section = match.group("section") or ""
+            tail = match.group("tail") or ""
             if has_season_filters and path.lower() in {"episodi", "puntate"}:
                 continue
             classified = _classify_group(section, tail, label, path)
@@ -355,8 +393,7 @@ def _discover_groups_from_program_json(slug: str) -> list[GroupSource]:
 
 
 def discover_group_listing_sources(slug: str) -> tuple[str, list[GroupSource]]:
-    program_url = f"https://www.raiplaysound.it/programmi/{slug}"
-    html_text = http_get(program_url)
+    program_url, html_text = load_program_page(slug)
     groups: list[GroupSource] = []
     seen_urls: set[str] = set()
     linked_groups: list[GroupSource] = []
@@ -413,9 +450,8 @@ def discover_group_listing_sources(slug: str) -> tuple[str, list[GroupSource]]:
     if season_urls != [program_url]:
         season_groups: list[GroupSource] = []
         for url in season_urls:
-            season_match = re.search(r"stagione-(\d+)$", url)
-            if season_match:
-                season_number = season_match.group(1)
+            season_number = _season_key_from_route_part(url.rsplit("/", 1)[-1])
+            if season_number:
                 season_groups.append(
                     GroupSource(
                         key=season_number,
@@ -506,6 +542,7 @@ def collect_episodes_from_sources(
             ],
             allow_partial_failure=True,
         )
+        source_episode_count = 0
         for line in result.stdout.splitlines():
             parts = line.split("\t")
             if len(parts) < 2:
@@ -534,6 +571,19 @@ def collect_episodes_from_sources(
             )
             seen[episode_id] = episode
             episodes.append(episode)
+            source_episode_count += 1
+        if source_episode_count == 0:
+            for episode in _collect_episodes_from_page_json(source, season_hint, group_source):
+                existing = seen.get(episode.episode_id)
+                if existing is not None:
+                    if not existing.season and episode.season:
+                        existing.season = episode.season
+                    if not existing.group_label and episode.group_label:
+                        existing.group_label = episode.group_label
+                        existing.group_kind = episode.group_kind
+                    continue
+                seen[episode.episode_id] = episode
+                episodes.append(episode)
     if not episodes:
         raise CLIError("No episodes found.")
     return episodes
@@ -549,7 +599,7 @@ def collect_season_summary_from_sources(sources: list[str]) -> tuple[list[Episod
     explicit_seasons = any("stagione-" in source for source in sources)
 
     for episode in episodes:
-        season = episode.season if episode.season.isdigit() else "1"
+        season = normalize_season_key(episode.season) or "1"
         episode.season = season
         episode.year = extract_year_from_url(episode.url)
         season_counts[season] = season_counts.get(season, 0) + 1
@@ -565,9 +615,7 @@ def collect_season_summary_from_sources(sources: list[str]) -> tuple[list[Episod
             if current_max is None or episode.year > current_max:
                 season_year_max[season] = episode.year
 
-    latest_season = (
-        sorted(season_counts, key=lambda value: int(value))[-1] if season_counts else "1"
-    )
+    latest_season = sorted(season_counts, key=season_sort_key)[-1] if season_counts else "1"
     return episodes, SeasonSummary(
         counts=season_counts,
         year_min=season_year_min,
@@ -620,10 +668,17 @@ def load_metadata_cache(path: Path) -> dict[str, tuple[str, str, str]]:
     cache: dict[str, tuple[str, str, str]] = {}
     if not path.exists():
         return cache
-    for line in path.read_text(encoding="utf-8").splitlines():
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return cache
+    for line in lines:
         if not line.strip():
             continue
-        episode_id, upload, season, title = line.split("\t", 3)
+        parts = line.split("\t", 3)
+        if len(parts) < 4:
+            continue
+        episode_id, upload, season, title = parts
         cache[episode_id] = (upload, season, title)
     return cache
 
@@ -647,6 +702,69 @@ def _episode_json_url(url: str) -> str:
     return normalized + ".json"
 
 
+def _episode_id_from_payload(payload: dict[str, object]) -> str:
+    raw_id = str(payload.get("uniquename") or "")
+    match = re.search(r"ContentItem-([0-9a-fA-F-]{8,})$", raw_id)
+    if match:
+        return match.group(1)
+    path_id = str(payload.get("path_id") or payload.get("weblink") or "")
+    match = EPISODE_ID_FROM_URL_RE.search(path_id)
+    if match:
+        return match.group(1)
+    raise CLIError("episode metadata did not include an ID")
+
+
+def _collect_episodes_from_page_json(
+    source: str,
+    season_hint: str,
+    group_source: GroupSource | None,
+) -> list[Episode]:
+    payload = json.loads(http_get(_episode_json_url(source)))
+    if not isinstance(payload, dict):
+        return []
+    block = payload.get("block")
+    if not isinstance(block, dict):
+        return []
+    cards = block.get("cards")
+    if not isinstance(cards, list):
+        return []
+    episodes: list[Episode] = []
+    seen_ids: set[str] = set()
+    for item in cards:
+        if not isinstance(item, dict):
+            continue
+        try:
+            episode_id = _episode_id_from_payload(item)
+        except CLIError:
+            continue
+        if episode_id in seen_ids:
+            continue
+        weblink = str(item.get("weblink") or "").strip()
+        path_id = str(item.get("path_id") or "").strip()
+        if weblink.startswith("/"):
+            episode_url = f"https://www.raiplaysound.it{weblink}".rstrip("/")
+        elif path_id.startswith("/"):
+            episode_url = f"https://www.raiplaysound.it{path_id}".removesuffix(".json").rstrip("/")
+        else:
+            continue
+        label = (
+            str(item.get("episode_title") or item.get("title") or episode_id).strip() or episode_id
+        )
+        item_season = normalize_season_key(str(item.get("season") or "")) or season_hint
+        episodes.append(
+            Episode(
+                episode_id=episode_id,
+                url=episode_url,
+                label=label,
+                season=item_season,
+                group_label=group_source.label if group_source is not None else "",
+                group_kind=group_source.kind if group_source is not None else "",
+            )
+        )
+        seen_ids.add(episode_id)
+    return episodes
+
+
 def _normalize_episode_upload_date(payload: dict[str, object]) -> str:
     date_tracking = str(payload.get("date_tracking") or "").strip()
     match = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})", date_tracking)
@@ -664,16 +782,7 @@ def _collect_metadata_from_episode_json(source: str) -> dict[str, tuple[str, str
     payload = json.loads(http_get(_episode_json_url(source)))
     if not isinstance(payload, dict):
         raise CLIError("invalid episode payload")
-    raw_id = str(payload.get("uniquename") or "")
-    match = re.search(r"ContentItem-([0-9a-fA-F-]{8,})$", raw_id)
-    if match:
-        episode_id = match.group(1)
-    else:
-        path_id = str(payload.get("path_id") or payload.get("weblink") or "")
-        match = EPISODE_ID_FROM_URL_RE.search(path_id)
-        if not match:
-            raise CLIError("episode metadata did not include an ID")
-        episode_id = match.group(1)
+    episode_id = _episode_id_from_payload(payload)
     title = str(payload.get("title") or payload.get("episode_title") or "NA")
     season = str(payload.get("season") or payload.get("season_number") or "NA")
     return {episode_id: (_normalize_episode_upload_date(payload), season, title)}
@@ -748,18 +857,20 @@ def normalize_episode_metadata(
         episode.title = title if title and title != "NA" else episode.label.replace("-", " ")
         episode.upload_date = upload_date or "NA"
         season_candidate = "NA"
-        if meta_season.isdigit():
-            season_candidate = meta_season
+        normalized_meta_season = normalize_season_key(meta_season)
+        normalized_episode_season = normalize_season_key(episode.season)
+        if normalized_meta_season is not None:
+            season_candidate = normalized_meta_season
             detected_season_evidence = True
-        elif episode.season.isdigit():
-            season_candidate = episode.season
+        elif normalized_episode_season is not None:
+            season_candidate = normalized_episode_season
             detected_season_evidence = True
         else:
             inferred = infer_season_from_text(episode.title)
             if inferred:
                 season_candidate = inferred
                 detected_season_evidence = True
-        if not season_candidate.isdigit():
+        if normalize_season_key(season_candidate) is None:
             season_candidate = "1"
         episode.season = season_candidate
         if re.fullmatch(r"\d{8}", episode.upload_date):
@@ -778,9 +889,7 @@ def normalize_episode_metadata(
                 season_year_min[season_candidate] = episode.year
             if current_max is None or episode.year > current_max:
                 season_year_max[season_candidate] = episode.year
-    latest_season = (
-        sorted(season_counts, key=lambda value: int(value))[-1] if season_counts else "1"
-    )
+    latest_season = sorted(season_counts, key=season_sort_key)[-1] if season_counts else "1"
     has_seasons = detected_season_evidence or len(season_counts) > 1
     return SeasonSummary(
         counts=season_counts,

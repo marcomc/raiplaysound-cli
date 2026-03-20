@@ -4,10 +4,11 @@ import contextlib
 import os
 import shutil
 import subprocess
+import urllib.error
 import urllib.request
 from pathlib import Path
 
-from .errors import CLIError
+from .errors import CLIError, HTTPRequestError
 
 
 def http_get(url: str, *, timeout: float = 30.0) -> str:
@@ -18,8 +19,18 @@ def http_get(url: str, *, timeout: float = 30.0) -> str:
             "Accept": "*/*",
         },
     )
-    with urllib.request.urlopen(req, timeout=timeout) as response:
-        return response.read().decode("utf-8", errors="replace")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            return response.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        raise HTTPRequestError(
+            url,
+            f"RaiPlaySound returned HTTP {exc.code} for {url}.",
+            code=exc.code,
+        ) from exc
+    except urllib.error.URLError as exc:
+        reason = getattr(exc, "reason", exc)
+        raise HTTPRequestError(url, f"network request failed for {url}: {reason}") from exc
 
 
 def run_yt_dlp(
