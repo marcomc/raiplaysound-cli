@@ -935,6 +935,84 @@ def test_collect_episodes_from_sources_ignores_broken_page_json_fallback(monkeyp
     assert result[0].episode_id == "ep-1"
 
 
+def test_discover_grouped_episode_sources_keeps_season_mode_for_mixed_groups(
+    monkeypatch,
+) -> None:
+    groups = [
+        GroupSource(
+            key="1",
+            label="Stagione 1",
+            url="https://www.raiplaysound.it/programmi/show/episodi/stagione-1",
+            kind="season",
+        ),
+        GroupSource(
+            key="2",
+            label="Stagione 2",
+            url="https://www.raiplaysound.it/programmi/show/episodi/stagione-2",
+            kind="season",
+        ),
+        GroupSource(
+            key="extra",
+            label="Extra",
+            url="https://www.raiplaysound.it/programmi/show/extra",
+            kind="group",
+        ),
+    ]
+
+    monkeypatch.setattr(
+        episodes,
+        "discover_group_listing_sources",
+        lambda _slug: ("https://www.raiplaysound.it/programmi/show", groups),
+    )
+
+    sources, selected_groups, has_non_season_groups = episodes.discover_grouped_episode_sources(
+        "show",
+        {"2"},
+        False,
+        set(),
+    )
+
+    assert sources == ["https://www.raiplaysound.it/programmi/show/episodi/stagione-2"]
+    assert selected_groups == [groups[1]]
+    assert has_non_season_groups is False
+
+
+def test_discover_grouped_episode_sources_defaults_to_seasons_for_mixed_groups(
+    monkeypatch,
+) -> None:
+    groups = [
+        GroupSource(
+            key="1",
+            label="Stagione 1",
+            url="https://www.raiplaysound.it/programmi/show/episodi/stagione-1",
+            kind="season",
+        ),
+        GroupSource(
+            key="extra",
+            label="Extra",
+            url="https://www.raiplaysound.it/programmi/show/extra",
+            kind="group",
+        ),
+    ]
+
+    monkeypatch.setattr(
+        episodes,
+        "discover_group_listing_sources",
+        lambda _slug: ("https://www.raiplaysound.it/programmi/show", groups),
+    )
+
+    sources, selected_groups, has_non_season_groups = episodes.discover_grouped_episode_sources(
+        "show",
+        set(),
+        False,
+        set(),
+    )
+
+    assert sources == ["https://www.raiplaysound.it/programmi/show/episodi/stagione-1"]
+    assert selected_groups == [groups[0]]
+    assert has_non_season_groups is False
+
+
 def test_collect_group_summaries_preserves_input_order(monkeypatch) -> None:
     groups = [
         GroupSource(

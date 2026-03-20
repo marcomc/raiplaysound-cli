@@ -493,18 +493,27 @@ def discover_grouped_episode_sources(
         if requested_groups:
             raise CLIError("this program does not expose groupings, so --group cannot be used.")
         return None, None, False
-    all_seasons = all(group.kind == "season" for group in groups)
+    season_groups = [group for group in groups if group.kind == "season"]
+    non_season_groups = [group for group in groups if group.kind != "season"]
+    has_seasons = bool(season_groups)
+    all_seasons = has_seasons and not non_season_groups
     if all_seasons and requested_groups:
         raise CLIError("this program exposes seasons, so use --season instead of --group.")
-    if not all_seasons and (selected_seasons or include_all_seasons):
+    if not has_seasons and (selected_seasons or include_all_seasons):
         raise CLIError("this program does not expose seasons, so --season cannot be used.")
-    selected_sources: list[GroupSource] = list(groups)
-    if all_seasons and selected_seasons and not include_all_seasons:
-        available_seasons = {group.key for group in groups}
+    selected_sources: list[GroupSource]
+    if requested_groups:
+        selected_sources = []
+    elif has_seasons:
+        selected_sources = list(season_groups)
+    else:
+        selected_sources = list(groups)
+    if has_seasons and selected_seasons and not include_all_seasons:
+        available_seasons = {group.key for group in season_groups}
         missing = sorted(selected_seasons - available_seasons, key=season_sort_key)
         if missing:
             raise CLIError(f"season {missing[0]} is not available.")
-        selected_sources = [group for group in groups if group.key in selected_seasons]
+        selected_sources = [group for group in season_groups if group.key in selected_seasons]
     elif requested_groups:
         available: dict[str, GroupSource] = {}
         for group in groups:
@@ -525,7 +534,12 @@ def discover_grouped_episode_sources(
                 continue
             selected_sources.append(group)
             seen_urls.add(group.url)
-    return [group.url for group in selected_sources], selected_sources, not all_seasons
+    selected_has_non_season_groups = any(group.kind != "season" for group in selected_sources)
+    return (
+        [group.url for group in selected_sources],
+        selected_sources,
+        selected_has_non_season_groups,
+    )
 
 
 def collect_episodes_from_sources(

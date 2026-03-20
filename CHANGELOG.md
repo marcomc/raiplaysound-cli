@@ -58,6 +58,9 @@ All notable changes to this project are documented in this file.
   metadata now show those groupings in `list seasons`.
 - Refined mixed tab-menu discovery so programs with both the default `Episodi`
   surface and extra tabs show both groupings after the list cache rebuilds.
+- Preserved season-based list and download behavior for mixed season-plus-tab
+  programs, so real seasons remain selectable through `--season` even when
+  extra tabs such as `Extra` are also exposed through `--group`.
 - Fixed the `Groupings` column in `list programs` so it counts the same
   discoverable groupings used by `list seasons`, including `tab_menu`-only
   tabs such as `Extra`, instead of only counting legacy `filters` entries.
