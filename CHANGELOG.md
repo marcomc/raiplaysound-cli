@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [2.1.2] - 2026-03-20 - TUI, grouping audit, and CLI robustness improvements
+
 ### Changed
 
 - Made `raiplaysound-cli list seasons <program>` render seasons and non-season

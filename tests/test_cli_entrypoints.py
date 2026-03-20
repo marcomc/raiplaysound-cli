@@ -24,7 +24,7 @@ def test_main_version_prints_cli_version() -> None:
         cwd=Path(__file__).resolve().parents[1],
     )
     assert result.returncode == 0
-    assert "raiplaysound-cli 2.1.1" in result.stdout
+    assert "raiplaysound-cli 2.1.2" in result.stdout
 
 
 def test_main_without_args_prints_focused_help(capsys) -> None:
