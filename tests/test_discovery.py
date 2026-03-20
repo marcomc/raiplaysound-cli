@@ -3,6 +3,7 @@ from __future__ import annotations
 import subprocess
 
 from raiplaysound_cli import catalog, episodes
+from raiplaysound_cli.errors import HTTPRequestError
 from raiplaysound_cli.models import Episode, GroupSource, Program
 
 
@@ -866,6 +867,72 @@ def test_collect_episodes_from_sources_falls_back_to_page_json_block(monkeypatch
     assert len(result) == 1
     assert result[0].episode_id == "1575a5e7-4c41-49bd-9576-01f45c7ce32d"
     assert result[0].group_label == "Extra"
+
+
+def test_collect_episodes_from_sources_does_not_fallback_for_duplicate_only_source(
+    monkeypatch,
+) -> None:
+    calls: list[str] = []
+
+    def fake_run_yt_dlp(args: list[str], **_kwargs):
+        class Result:
+            stdout = (
+                "ep-1\thttps://www.raiplaysound.it/audio/ep-1.html\n"
+                "ep-1\thttps://www.raiplaysound.it/audio/ep-1.html\n"
+            )
+
+        calls.append(args[-1])
+        return Result()
+
+    def fake_http_get(_url: str) -> str:
+        raise AssertionError("page-json fallback should not be used")
+
+    monkeypatch.setattr(episodes, "run_yt_dlp", fake_run_yt_dlp)
+    monkeypatch.setattr(episodes, "http_get", fake_http_get)
+
+    result = episodes.collect_episodes_from_sources(
+        [
+            "https://www.raiplaysound.it/programmi/show",
+            "https://www.raiplaysound.it/programmi/show/extra",
+        ]
+    )
+
+    assert calls == [
+        "https://www.raiplaysound.it/programmi/show",
+        "https://www.raiplaysound.it/programmi/show/extra",
+    ]
+    assert len(result) == 1
+    assert result[0].episode_id == "ep-1"
+
+
+def test_collect_episodes_from_sources_ignores_broken_page_json_fallback(monkeypatch) -> None:
+    def fake_run_yt_dlp(args: list[str], **_kwargs):
+        class Result:
+            stdout = (
+                "ep-1\thttps://www.raiplaysound.it/audio/ep-1.html\n"
+                if args[-1].endswith("/good")
+                else ""
+            )
+
+        return Result()
+
+    def fake_http_get(url: str) -> str:
+        if url.endswith("/bad.json"):
+            raise HTTPRequestError(url, "boom")
+        raise AssertionError(f"unexpected url {url}")
+
+    monkeypatch.setattr(episodes, "run_yt_dlp", fake_run_yt_dlp)
+    monkeypatch.setattr(episodes, "http_get", fake_http_get)
+
+    result = episodes.collect_episodes_from_sources(
+        [
+            "https://www.raiplaysound.it/programmi/show/good",
+            "https://www.raiplaysound.it/programmi/show/bad",
+        ]
+    )
+
+    assert len(result) == 1
+    assert result[0].episode_id == "ep-1"
 
 
 def test_collect_group_summaries_preserves_input_order(monkeypatch) -> None:

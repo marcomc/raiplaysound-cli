@@ -563,6 +563,7 @@ def collect_episodes_from_sources(
             episode_url = parts[1].strip().rstrip("/")
             if not episode_id or not episode_url:
                 continue
+            source_episode_count += 1
             existing = seen.get(episode_id)
             if existing is not None:
                 if not existing.season and season_hint:
@@ -583,7 +584,6 @@ def collect_episodes_from_sources(
             )
             seen[episode_id] = episode
             episodes.append(episode)
-            source_episode_count += 1
         if source_episode_count == 0:
             for episode in _collect_episodes_from_page_json(source, season_hint, group_source):
                 existing = seen.get(episode.episode_id)
@@ -731,7 +731,10 @@ def _collect_episodes_from_page_json(
     season_hint: str,
     group_source: GroupSource | None,
 ) -> list[Episode]:
-    payload = json.loads(http_get(_episode_json_url(source)))
+    try:
+        payload = json.loads(http_get(_episode_json_url(source)))
+    except (HTTPRequestError, json.JSONDecodeError, TypeError, ValueError):
+        return []
     if not isinstance(payload, dict):
         return []
     block = payload.get("block")
