@@ -348,6 +348,7 @@ def _discover_groups_from_program_json(slug: str) -> list[GroupSource]:
             continue
         filter_entries.append((label, weblink.rstrip("/"), path))
 
+    tab_menu_entries: list[tuple[str, str, str, bool]] = []
     for item in raw_tab_menu:
         if not isinstance(item, dict):
             continue
@@ -356,7 +357,14 @@ def _discover_groups_from_program_json(slug: str) -> list[GroupSource]:
         path = str(item.get("content_type") or item.get("path_id") or "").strip()
         if not label or not weblink.startswith("/programmi/"):
             continue
-        if item.get("active") and weblink == f"/programmi/{slug}":
+        tab_menu_entries.append((label, weblink, path, bool(item.get("active"))))
+
+    non_root_tab_entries = [entry for entry in tab_menu_entries if entry[1] != f"/programmi/{slug}"]
+    for label, weblink, path, is_active in tab_menu_entries:
+        if is_active and weblink == f"/programmi/{slug}" and non_root_tab_entries:
+            filter_entries.append((label, weblink, path))
+            continue
+        if is_active and weblink == f"/programmi/{slug}":
             continue
         filter_entries.append((label, weblink, path))
 

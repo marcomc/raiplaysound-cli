@@ -68,7 +68,7 @@ from .runtime import acquire_lock, http_get, release_lock, run_yt_dlp
 console = Console()
 err_console = Console(stderr=True)
 LIST_CACHE_MAX_AGE_HOURS = 24
-LIST_CACHE_VERSION = 5
+LIST_CACHE_VERSION = 6
 
 
 def json_dump(data: Any) -> None:

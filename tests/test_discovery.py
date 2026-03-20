@@ -788,11 +788,17 @@ def test_discover_group_listing_sources_supports_extra_tabs_from_program_json(
 
     assert [(group.key, group.label, group.kind, group.url) for group in groups] == [
         (
+            "episodi",
+            "Episodi",
+            "group",
+            "https://www.raiplaysound.it/programmi/sophialiberaenciclopediadiradio3",
+        ),
+        (
             "extra",
             "Extra",
             "group",
             "https://www.raiplaysound.it/programmi/sophialiberaenciclopediadiradio3/extra",
-        )
+        ),
     ]
 
 

@@ -468,7 +468,7 @@ def test_list_episodes_uses_cached_payload(monkeypatch, tmp_path: Path, capsys) 
     cache_file.write_text(
         """
 {
-  "version": 5,
+  "version": 6,
   "slug": "profili",
   "program_url": "https://www.raiplaysound.it/programmi/profili",
   "summary": {
@@ -869,7 +869,7 @@ def test_list_seasons_uses_cached_summary_payload(monkeypatch, tmp_path: Path, c
     cache_file.write_text(
         """
 {
-  "version": 5,
+  "version": 6,
   "slug": "america7",
   "program_url": "https://www.raiplaysound.it/programmi/america7",
   "has_seasons": true,

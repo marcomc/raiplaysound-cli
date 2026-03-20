@@ -54,6 +54,8 @@ All notable changes to this project are documented in this file.
 - Extended grouping discovery to read top-level `tab_menu` entries from program
   JSON, so programs that expose tabs such as `Extra` without `filters`
   metadata now show those groupings in `list seasons`.
+- Refined mixed tab-menu discovery so programs with both the default `Episodi`
+  surface and extra tabs show both groupings after the list cache rebuilds.
 
 ## [2.1.1] - 2026-03-19 - download progress and startup visibility improvements
 
