@@ -23,7 +23,7 @@ from raiplaysound_cli.episodes import (
     year_span,
 )
 from raiplaysound_cli.errors import CLIError
-from raiplaysound_cli.models import Episode
+from raiplaysound_cli.models import Episode, EpisodeMetadata
 from raiplaysound_cli.runtime import acquire_lock, release_lock
 
 
@@ -101,8 +101,8 @@ def test_normalize_episode_metadata() -> None:
     summary = normalize_episode_metadata(
         episodes,
         {
-            "a": ("20240101", "1", "Episode A"),
-            "b": ("20250101", "2", "Episode B"),
+            "a": EpisodeMetadata(upload_date="20240101", season="1", title="Episode A"),
+            "b": EpisodeMetadata(upload_date="20250101", season="2", title="Episode B"),
         },
     )
     assert summary.has_seasons is True
@@ -129,8 +129,16 @@ def test_normalize_episode_metadata_preserves_year_range_seasons() -> None:
     summary = normalize_episode_metadata(
         episodes,
         {
-            "a": ("20251001", "2024-2025", "Episode A"),
-            "b": ("20260201", "2025/2026", "Episode B"),
+            "a": EpisodeMetadata(
+                upload_date="20251001",
+                season="2024-2025",
+                title="Episode A",
+            ),
+            "b": EpisodeMetadata(
+                upload_date="20260201",
+                season="2025/2026",
+                title="Episode B",
+            ),
         },
     )
     assert summary.has_seasons is True
@@ -173,20 +181,64 @@ def test_cache_file_is_fresh(tmp_path: Path) -> None:
 
 
 def test_cache_entry_is_complete() -> None:
-    assert cache_entry_is_complete(("20240101", "1", "Episode A")) is True
-    assert cache_entry_is_complete(("NA", "1", "Episode A")) is False
-    assert cache_entry_is_complete(("20240101", "1", "NA")) is False
+    assert (
+        cache_entry_is_complete(
+            EpisodeMetadata(upload_date="20240101", season="1", title="Episode A")
+        )
+        is True
+    )
+    assert (
+        cache_entry_is_complete(EpisodeMetadata(upload_date="NA", season="1", title="Episode A"))
+        is False
+    )
+    assert (
+        cache_entry_is_complete(EpisodeMetadata(upload_date="20240101", season="1", title="NA"))
+        is False
+    )
     assert cache_entry_is_complete(None) is False
 
 
 def test_load_metadata_cache_skips_malformed_rows(tmp_path: Path) -> None:
     cache = tmp_path / ".metadata-cache.tsv"
     cache.write_text(
-        "broken-row\n" "episode-1\t20240101\t1\tEpisode Title\n",
+        "broken-row\nepisode-1\t20240101\t1\tEpisode Title\n",
         encoding="utf-8",
     )
     metadata = load_metadata_cache(cache)
-    assert metadata == {"episode-1": ("20240101", "1", "Episode Title")}
+    assert metadata == {
+        "episode-1": EpisodeMetadata(
+            upload_date="20240101",
+            season="1",
+            title="Episode Title",
+            search_text="",
+        )
+    }
+
+
+def test_load_metadata_cache_accepts_legacy_and_extended_rows(tmp_path: Path) -> None:
+    cache = tmp_path / ".metadata-cache.tsv"
+    cache.write_text(
+        (
+            "legacy\t20240101\t1\tLegacy Episode\n"
+            "extended\t20240202\t2\tExtended Episode\tAuthor Name | Description\n"
+        ),
+        encoding="utf-8",
+    )
+
+    result = load_metadata_cache(cache)
+
+    assert result["legacy"] == EpisodeMetadata(
+        upload_date="20240101",
+        season="1",
+        title="Legacy Episode",
+        search_text="",
+    )
+    assert result["extended"] == EpisodeMetadata(
+        upload_date="20240202",
+        season="2",
+        title="Extended Episode",
+        search_text="Author Name | Description",
+    )
 
 
 def test_invalid_integer_setting_raises_cli_error() -> None:

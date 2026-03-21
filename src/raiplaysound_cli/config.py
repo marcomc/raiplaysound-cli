@@ -40,11 +40,11 @@ def parse_env_file(path: Path) -> dict[str, str]:
 
 
 def choose_command(argv: list[str], config: dict[str, str]) -> tuple[str, list[str]]:
-    if argv and argv[0] in {"list", "download"}:
+    if argv and argv[0] in {"list", "search", "download"}:
         return argv[0], argv[1:]
 
     configured = config.get("COMMAND", "").strip().lower()
-    if configured in {"list", "download"}:
+    if configured in {"list", "search", "download"}:
         return configured, argv
 
     list_switches = {

@@ -44,6 +44,14 @@ class Episode:
 
 
 @dataclasses.dataclass(slots=True)
+class EpisodeMetadata:
+    upload_date: str = "NA"
+    season: str = "NA"
+    title: str = "NA"
+    search_text: str = ""
+
+
+@dataclasses.dataclass(slots=True)
 class SeasonSummary:
     counts: dict[str, int]
     year_min: dict[str, str]

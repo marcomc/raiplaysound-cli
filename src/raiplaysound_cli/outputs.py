@@ -44,11 +44,16 @@ def generate_rss_feed(
     base_url: str,
 ) -> Path:
     cache_by_date: dict[str, list[tuple[str, str]]] = {}
-    for episode_id, (upload, _season, title) in load_metadata_cache(metadata_cache_file).items():
-        if re.fullmatch(r"\d{8}", upload):
-            cache_by_date.setdefault(f"{upload[:4]}-{upload[4:6]}-{upload[6:8]}", []).append(
-                (title, episode_id)
-            )
+    for episode_id, metadata in load_metadata_cache(metadata_cache_file).items():
+        if re.fullmatch(r"\d{8}", metadata.upload_date):
+            cache_by_date.setdefault(
+                (
+                    f"{metadata.upload_date[:4]}-"
+                    f"{metadata.upload_date[4:6]}-"
+                    f"{metadata.upload_date[6:8]}"
+                ),
+                [],
+            ).append((metadata.title, episode_id))
     show_title = fetch_show_title(slug)
     items = []
     for file_path in sorted(target_dir.iterdir(), reverse=True):
@@ -117,9 +122,16 @@ def generate_rss_feed(
 
 def generate_playlist(target_dir: Path, metadata_cache_file: Path) -> Path:
     cache_by_date: dict[str, list[str]] = {}
-    for _episode_id, (upload, _season, title) in load_metadata_cache(metadata_cache_file).items():
-        if re.fullmatch(r"\d{8}", upload):
-            cache_by_date.setdefault(f"{upload[:4]}-{upload[4:6]}-{upload[6:8]}", []).append(title)
+    for _episode_id, metadata in load_metadata_cache(metadata_cache_file).items():
+        if re.fullmatch(r"\d{8}", metadata.upload_date):
+            cache_by_date.setdefault(
+                (
+                    f"{metadata.upload_date[:4]}-"
+                    f"{metadata.upload_date[4:6]}-"
+                    f"{metadata.upload_date[6:8]}"
+                ),
+                [],
+            ).append(metadata.title)
     entries: list[tuple[str, Path]] = []
     for file_path in target_dir.iterdir():
         if file_path.is_file():

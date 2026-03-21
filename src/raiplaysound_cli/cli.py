@@ -61,9 +61,10 @@ from .episodes import (
     year_span,
 )
 from .errors import CLIError
-from .models import Episode, GroupSource, SeasonSummary
+from .models import Episode, EpisodeMetadata, GroupSource, SeasonSummary
 from .outputs import generate_playlist, generate_rss_feed
 from .runtime import acquire_lock, http_get, release_lock, run_yt_dlp
+from .search import search_all
 
 console = Console()
 err_console = Console(stderr=True)
@@ -344,6 +345,7 @@ def format_main_help() -> str:
             "",
             "Commands:",
             "  list      Inspect stations, programs, seasons, or episodes",
+            "  search    Search stations, programs, groupings, and local episode metadata",
             "  download  Download one program into the local music library",
             "",
             "Run `raiplaysound-cli <command> --help` for command-specific help.",
@@ -534,6 +536,146 @@ def print_download_prep_step(message: str) -> None:
     console.print(f"[dim]Preparing:[/dim] {message}")
 
 
+def print_search_station_table(items: list[dict[str, str]], *, show_urls: bool) -> None:
+    table = Table(show_header=True)
+    table.add_column("Name", overflow="fold")
+    table.add_column("Slug", no_wrap=True)
+    if show_urls:
+        table.add_column("Page", overflow="fold", max_width=44)
+        table.add_column("Feed", overflow="fold", max_width=44)
+    for item in items:
+        row = [item["name"], item["slug"]]
+        if show_urls:
+            row.extend([item["page_url"], item["feed_url"]])
+        table.add_row(*row)
+    console.print(table)
+
+
+def print_search_program_table(items: list[dict[str, Any]], *, show_urls: bool) -> None:
+    table = Table(show_header=True)
+    table.add_column("Name", overflow="fold")
+    table.add_column("Slug", no_wrap=True)
+    table.add_column("Station", no_wrap=True)
+    table.add_column("Years", no_wrap=True)
+    table.add_column("Groupings", justify="right", no_wrap=True)
+    table.add_column("Description", overflow="fold", max_width=40)
+    if show_urls:
+        table.add_column("Page", overflow="fold", max_width=44)
+    for item in items:
+        row = [
+            str(item["title"]),
+            str(item["slug"]),
+            str(item["station_short"]),
+            str(item["years"]),
+            str(item["grouping_count"]) if int(item["grouping_count"]) > 0 else "—",
+            str(item["description_excerpt"] or "—"),
+        ]
+        if show_urls:
+            row.append(str(item["page_url"]))
+        table.add_row(*row)
+    console.print(table)
+
+
+def print_search_grouping_table(items: list[dict[str, Any]], *, show_urls: bool) -> None:
+    table = Table(show_header=True)
+    table.add_column("Program", no_wrap=True)
+    table.add_column("Type", no_wrap=True)
+    table.add_column("Name", overflow="fold")
+    table.add_column("Selector", overflow="fold")
+    table.add_column("Episodes", justify="right", no_wrap=True)
+    table.add_column("Published", no_wrap=True)
+    if show_urls:
+        table.add_column("URL", overflow="fold", max_width=44)
+    for item in items:
+        row = [
+            str(item["slug"]),
+            _display_group_kind(str(item["kind"])),
+            str(item["label"]),
+            str(item["key"]),
+            str(item["episodes"]),
+            str(item["published"]),
+        ]
+        if show_urls:
+            row.append(str(item["url"]))
+        table.add_row(*row)
+    console.print(table)
+
+
+def print_search_episode_table(items: list[dict[str, str]], *, show_urls: bool) -> None:
+    table = Table(show_header=True)
+    table.add_column("Program", no_wrap=True)
+    table.add_column("Date", no_wrap=True)
+    table.add_column("Season", no_wrap=True)
+    table.add_column("Group", overflow="fold")
+    table.add_column("Episode", overflow="fold")
+    table.add_column("ID", no_wrap=True)
+    if show_urls:
+        table.add_column("URL", overflow="fold", max_width=44)
+    for item in items:
+        row = [
+            item["slug"],
+            item["date"],
+            item["season"] if item["season"] != "NA" else "—",
+            item["group"] or item["group_kind"] or "—",
+            item["title"],
+            item["id"],
+        ]
+        if show_urls:
+            row.append(item["url"] or "—")
+        table.add_row(*row)
+    console.print(table)
+
+
+def print_search_results(payload: dict[str, Any], *, show_urls: bool) -> None:
+    console.print(f"Search results for '{payload['query']}':")
+    sections = [
+        ("Stations", payload["stations"], print_search_station_table),
+        ("Programs", payload["programs"], print_search_program_table),
+        ("Seasons and groupings", payload["groupings"], print_search_grouping_table),
+        ("Episodes", payload["episodes"], print_search_episode_table),
+    ]
+    any_results = False
+    for heading, items, printer in sections:
+        if not items:
+            continue
+        any_results = True
+        console.print("")
+        console.print(f"{heading} ({len(items)}):")
+        printer(items, show_urls=show_urls)
+    if not any_results:
+        console.print("No matches found.")
+    console.print("")
+    cache_info = payload["cache_info"]
+    console.print("Cache status:")
+    console.print(
+        f"  stations: {cache_info['stations']['age']}",
+        soft_wrap=True,
+    )
+    console.print(
+        f"  programs: {cache_info['programs']['age']}",
+        soft_wrap=True,
+    )
+    console.print(
+        f"  seasons/groupings: {cache_info['groupings']['age']}",
+        soft_wrap=True,
+    )
+    console.print(
+        f"  episodes: {cache_info['episodes']['age']}",
+        soft_wrap=True,
+    )
+    console.print("")
+    console.print(
+        "Best available single refresh command for fresher global results:",
+        soft_wrap=True,
+    )
+    console.print(f"  {payload['refresh_hint']}", soft_wrap=True)
+    console.print(
+        "This refreshes the program catalog only. Season/grouping and episode matches still "
+        "come from local caches populated by `list` or `download` runs.",
+        soft_wrap=True,
+    )
+
+
 def list_output_context(use_pager: bool):
     return console.pager(styles=True) if use_pager else nullcontext()
 
@@ -595,7 +737,7 @@ def load_show_context(
         sources_override=sources_override,
         source_groups_override=source_groups_override,
     )
-    cache: dict[str, tuple[str, str, str]] = {}
+    cache: dict[str, EpisodeMetadata] = {}
     if not settings.force_refresh_metadata and cache_file_is_fresh(
         metadata_cache_file, settings.metadata_max_age_hours
     ):
@@ -641,7 +783,7 @@ def load_cached_show_context(
     *,
     sources_override: list[str] | None = None,
     source_groups_override: list[GroupSource] | None = None,
-) -> tuple[str, str, list[Any], Any, Path, dict[str, tuple[str, str, str]]]:
+) -> tuple[str, str, list[Any], Any, Path, dict[str, EpisodeMetadata]]:
     slug, program_url, _sources, episodes, metadata_cache_file = _collect_episode_context(
         settings,
         input_value,
@@ -651,13 +793,49 @@ def load_cached_show_context(
         sources_override=sources_override,
         source_groups_override=source_groups_override,
     )
-    cache: dict[str, tuple[str, str, str]] = {}
+    cache: dict[str, EpisodeMetadata] = {}
     if not settings.force_refresh_metadata and cache_file_is_fresh(
         metadata_cache_file, settings.metadata_max_age_hours
     ):
         cache = load_metadata_cache(metadata_cache_file)
     summary = normalize_episode_metadata(episodes, cache)
     return slug, program_url, episodes, summary, metadata_cache_file, cache
+
+
+def search_command(settings: Settings, args: argparse.Namespace) -> int:
+    query = " ".join(args.query).strip()
+    payload = search_all(
+        query,
+        target_base=settings.target_base,
+        catalog_cache_file=settings.catalog_cache_file,
+        refresh_catalog=args.refresh_catalog,
+        catalog_max_age_hours=args.catalog_max_age_hours,
+    )
+    if args.json:
+        json_dump(
+            {
+                "mode": "search",
+                "query": payload["query"],
+                "counts": {
+                    "stations": len(payload["stations"]),
+                    "programs": len(payload["programs"]),
+                    "groupings": len(payload["groupings"]),
+                    "episodes": len(payload["episodes"]),
+                },
+                "show_urls": args.show_urls,
+                "local_episode_metadata": payload["local_episode_metadata"],
+                "cache_info": payload["cache_info"],
+                "refresh_hint": payload["refresh_hint"],
+                "stations": payload["stations"],
+                "programs": payload["programs"],
+                "groupings": payload["groupings"],
+                "episodes": payload["episodes"],
+            }
+        )
+        return 0
+    with list_output_context(args.pager):
+        print_search_results(payload, show_urls=args.show_urls)
+    return 0
 
 
 def list_stations(_settings: Settings, args: argparse.Namespace) -> int:
@@ -950,7 +1128,6 @@ def build_list_parser() -> argparse.ArgumentParser:
             "  raiplaysound-cli list episodes PROGRAM_SLUG --season SEASON_NUMBER --show-urls"
         ),
         add_help=False,
-        color=False,
     )
     parser.add_argument(
         "positional_a",
@@ -1038,6 +1215,66 @@ def build_list_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def build_search_parser() -> argparse.ArgumentParser:
+    parser = make_argument_parser(
+        prog="raiplaysound-cli search",
+        usage="raiplaysound-cli search QUERY [QUERY ...] [options]",
+        description=(
+            "Search RaiPlaySound stations and programs, plus locally cached seasons, "
+            "groupings, and episode metadata."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  raiplaysound-cli search radio2\n"
+            "  raiplaysound-cli search burnt sugar --json\n"
+            "  raiplaysound-cli search lucio dalla --show-urls"
+        ),
+        add_help=False,
+    )
+    parser.add_argument(
+        "query",
+        nargs="+",
+        metavar="QUERY",
+        help="One or more search terms. Use shell quotes for exact phrases.",
+    )
+    general_group = parser.add_argument_group("General")
+    general_group.add_argument(
+        "-h",
+        "--help",
+        action="help",
+        help="Show this help message and exit.",
+    )
+    output_group = parser.add_argument_group("Output")
+    output_group.add_argument(
+        "--json",
+        action="store_true",
+        help="Print JSON instead of grouped tables.",
+    )
+    output_group.add_argument(
+        "--show-urls",
+        action="store_true",
+        help="Include page and episode URLs in search results when available.",
+    )
+    output_group.add_argument(
+        "--pager",
+        action="store_true",
+        help="Show text output through a pager.",
+    )
+    catalog_group = parser.add_argument_group("Catalog")
+    catalog_group.add_argument(
+        "--refresh-catalog",
+        action="store_true",
+        help="Refresh the cached program catalog before searching programs.",
+    )
+    catalog_group.add_argument(
+        "--catalog-max-age-hours",
+        type=int,
+        default=2160,
+        help="Refresh the program catalog after this many hours.",
+    )
+    return parser
+
+
 def build_download_parser() -> argparse.ArgumentParser:
     parser = make_argument_parser(
         prog="raiplaysound-cli download",
@@ -1056,7 +1293,6 @@ def build_download_parser() -> argparse.ArgumentParser:
             "  raiplaysound-cli download PROGRAM_SLUG --rss --playlist"
         ),
         add_help=False,
-        color=False,
     )
     parser.add_argument(
         "input",
@@ -1240,6 +1476,14 @@ def apply_list_defaults(settings: Settings, args: argparse.Namespace) -> argpars
         args.group_by = settings.group_by
     if not args.sorted and settings.podcasts_sorted:
         args.sorted = True
+    return args
+
+
+def apply_search_defaults(settings: Settings, args: argparse.Namespace) -> argparse.Namespace:
+    if settings.show_urls and not args.show_urls:
+        args.show_urls = True
+    if settings.pager and not args.pager:
+        args.pager = True
     return args
 
 
@@ -1576,6 +1820,9 @@ def main(argv: list[str] | None = None) -> int:
             if not args.input:
                 raise CLIError("list episodes requires <program_slug|program_url>.")
             return list_episodes(settings, args)
+        if command == "search":
+            args = apply_search_defaults(settings, build_search_parser().parse_args(rest))
+            return search_command(settings, args)
         args = build_download_parser().parse_args(rest)
         if not (args.input or settings.input_value):
             raise CLIError("download requires <program_slug|program_url>.")

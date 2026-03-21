@@ -9,7 +9,7 @@ import urllib.parse
 from pathlib import Path
 
 from .errors import CLIError, HTTPRequestError
-from .models import Episode, GroupSource, GroupSummary, SeasonSummary
+from .models import Episode, EpisodeMetadata, GroupSource, GroupSummary, SeasonSummary
 from .runtime import http_get, run_yt_dlp
 
 PROGRAM_URL_RE = re.compile(r"^https?://www\.raiplaysound\.it/programmi/([A-Za-z0-9-]+)/?$")
@@ -615,7 +615,9 @@ def collect_episodes_from_sources(
     return episodes
 
 
-def collect_season_summary_from_sources(sources: list[str]) -> tuple[list[Episode], SeasonSummary]:
+def collect_season_summary_from_sources(
+    sources: list[str],
+) -> tuple[list[Episode], SeasonSummary]:
     episodes = collect_episodes_from_sources(sources)
     season_counts: dict[str, int] = {}
     season_year_min: dict[str, str] = {}
@@ -690,8 +692,8 @@ def collect_group_summaries(groups: list[GroupSource]) -> list[GroupSummary]:
     return [results[index] for index in range(len(groups))]
 
 
-def load_metadata_cache(path: Path) -> dict[str, tuple[str, str, str]]:
-    cache: dict[str, tuple[str, str, str]] = {}
+def load_metadata_cache(path: Path) -> dict[str, EpisodeMetadata]:
+    cache: dict[str, EpisodeMetadata] = {}
     if not path.exists():
         return cache
     try:
@@ -701,21 +703,34 @@ def load_metadata_cache(path: Path) -> dict[str, tuple[str, str, str]]:
     for line in lines:
         if not line.strip():
             continue
-        parts = line.split("\t", 3)
+        parts = line.split("\t", 4)
         if len(parts) < 4:
             continue
-        episode_id, upload, season, title = parts
-        cache[episode_id] = (upload, season, title)
+        episode_id, upload, season, title = parts[:4]
+        search_text = parts[4] if len(parts) > 4 else ""
+        cache[episode_id] = EpisodeMetadata(
+            upload_date=upload,
+            season=season,
+            title=title,
+            search_text=search_text,
+        )
     return cache
 
 
-def write_metadata_cache(path: Path, cache: dict[str, tuple[str, str, str]]) -> None:
+def _sanitize_metadata_cache_text(value: str, *, limit: int = 4000) -> str:
+    return " ".join(value.replace("\t", " ").replace("\n", " ").split())[:limit]
+
+
+def write_metadata_cache(path: Path, cache: dict[str, EpisodeMetadata]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = []
     for episode_id in sorted(cache):
-        upload, season, title = cache[episode_id]
-        safe_title = title.replace("\t", " ").replace("\n", " ")
-        lines.append(f"{episode_id}\t{upload}\t{season}\t{safe_title}\n")
+        item = cache[episode_id]
+        safe_title = _sanitize_metadata_cache_text(item.title)
+        safe_search_text = _sanitize_metadata_cache_text(item.search_text)
+        lines.append(
+            f"{episode_id}\t{item.upload_date}\t{item.season}\t{safe_title}\t{safe_search_text}\n"
+        )
     path.write_text("".join(lines), encoding="utf-8")
 
 
@@ -807,20 +822,54 @@ def _normalize_episode_upload_date(payload: dict[str, object]) -> str:
     return "NA"
 
 
-def _collect_metadata_from_episode_json(source: str) -> dict[str, tuple[str, str, str]]:
+def _build_episode_search_text(payload: object) -> str:
+    collected: list[str] = []
+    seen: set[str] = set()
+
+    def visit(node: object) -> None:
+        if isinstance(node, dict):
+            for value in node.values():
+                visit(value)
+            return
+        if isinstance(node, list):
+            for item in node:
+                visit(item)
+            return
+        if not isinstance(node, str):
+            return
+        normalized = " ".join(node.split())
+        if not normalized or normalized.startswith(("http://", "https://", "/")):
+            return
+        if normalized in seen:
+            return
+        seen.add(normalized)
+        collected.append(normalized)
+
+    visit(payload)
+    return _sanitize_metadata_cache_text(" | ".join(collected))
+
+
+def _collect_metadata_from_episode_json(source: str) -> dict[str, EpisodeMetadata]:
     payload = json.loads(http_get(_episode_json_url(source)))
     if not isinstance(payload, dict):
         raise CLIError("invalid episode payload")
     episode_id = _episode_id_from_payload(payload)
     title = str(payload.get("title") or payload.get("episode_title") or "NA")
     season = str(payload.get("season") or payload.get("season_number") or "NA")
-    return {episode_id: (_normalize_episode_upload_date(payload), season, title)}
+    return {
+        episode_id: EpisodeMetadata(
+            upload_date=_normalize_episode_upload_date(payload),
+            season=season,
+            title=title,
+            search_text=_build_episode_search_text(payload),
+        )
+    }
 
 
 def collect_metadata(
     sources: list[str], *, single_entries: bool = False
-) -> dict[str, tuple[str, str, str]]:
-    result: dict[str, tuple[str, str, str]] = {}
+) -> dict[str, EpisodeMetadata]:
+    result: dict[str, EpisodeMetadata] = {}
     for source in sources:
         if single_entries:
             try:
@@ -844,8 +893,20 @@ def collect_metadata(
             parts = line.split("\t")
             if len(parts) < 4:
                 continue
-            episode_id, upload_date, title, season = parts[0], parts[1], parts[2], parts[3]
-            result.setdefault(episode_id, (upload_date, season, title))
+            episode_id, upload_date, title, season = (
+                parts[0],
+                parts[1],
+                parts[2],
+                parts[3],
+            )
+            result.setdefault(
+                episode_id,
+                EpisodeMetadata(
+                    upload_date=upload_date,
+                    season=season,
+                    title=title,
+                ),
+            )
     return result
 
 
@@ -861,16 +922,17 @@ def extract_year_from_url(url: str) -> str:
     return match.group(1) if match else "NA"
 
 
-def cache_entry_is_complete(entry: tuple[str, str, str] | None) -> bool:
+def cache_entry_is_complete(entry: EpisodeMetadata | None) -> bool:
     if entry is None:
         return False
-    upload, _season, title = entry
-    return bool(upload and upload != "NA" and title and title != "NA")
+    return bool(
+        entry.upload_date and entry.upload_date != "NA" and entry.title and entry.title != "NA"
+    )
 
 
 def normalize_episode_metadata(
     episodes: list[Episode],
-    metadata: dict[str, tuple[str, str, str]],
+    metadata: dict[str, EpisodeMetadata],
 ) -> SeasonSummary:
     season_counts: dict[str, int] = {}
     season_year_min: dict[str, str] = {}
@@ -879,14 +941,16 @@ def normalize_episode_metadata(
     show_year_max = ""
     detected_season_evidence = False
     for episode in episodes:
-        upload_date, meta_season, title = metadata.get(
+        item = metadata.get(
             episode.episode_id,
-            ("NA", "NA", episode.label.replace("-", " ")),
+            EpisodeMetadata(title=episode.label.replace("-", " ")),
         )
-        episode.title = title if title and title != "NA" else episode.label.replace("-", " ")
-        episode.upload_date = upload_date or "NA"
+        episode.title = (
+            item.title if item.title and item.title != "NA" else episode.label.replace("-", " ")
+        )
+        episode.upload_date = item.upload_date or "NA"
         season_candidate = "NA"
-        normalized_meta_season = normalize_season_key(meta_season)
+        normalized_meta_season = normalize_season_key(item.season)
         normalized_episode_season = normalize_season_key(episode.season)
         if normalized_meta_season is not None:
             season_candidate = normalized_meta_season

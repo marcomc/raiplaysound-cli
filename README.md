@@ -81,6 +81,7 @@ Use command-specific help for detailed options:
 
 ```bash
 ~/.local/bin/raiplaysound-cli list --help
+~/.local/bin/raiplaysound-cli search --help
 ~/.local/bin/raiplaysound-cli download --help
 ```
 
@@ -113,8 +114,10 @@ Uninstalling:
 ## Capabilities
 
 - Accepts either a RaiPlaySound `program_slug` or full `program_url`
-- Supports `list` and `download` commands
+- Supports `list`, `search`, and `download` commands
 - Lists stations, programs, seasons, and episodes
+- Searches stations, programs, locally cached seasons/groupings, and locally
+  cached episode metadata
 - Downloads episodes into `~/Music/RaiPlaySound/<slug>/`
 - Uses `yt-dlp --download-archive` for idempotent repeat runs
 - Supports audio formats `mp3`, `m4a`, `aac`, `ogg`, `opus`, `flac`, and `wav`
@@ -189,8 +192,8 @@ Supported config keys:
 | `FORCE_REFRESH_CATALOG` | `--refresh-catalog` | list `programs` |
 | `CATALOG_MAX_AGE_HOURS` | `--catalog-max-age-hours` | list `programs` |
 | `STATIONS_DETAILED` | `--detailed` | list `stations` |
-| `SHOW_URLS` | `--show-urls` | list `episodes` |
-| `PAGER` | `--pager` | list |
+| `SHOW_URLS` | `--show-urls` | list `episodes`, search |
+| `PAGER` | `--pager` | list, search |
 | `INPUT` | `<program_slug\|program_url>` | download, list `seasons`, list `episodes` |
 
 `FORCE_REFRESH_CATALOG` and `CATALOG_MAX_AGE_HOURS` affect only `list programs`.
@@ -214,6 +217,7 @@ RSS enclosure bases.
 ```bash
 raiplaysound-cli list stations
 raiplaysound-cli list programs
+raiplaysound-cli search lucio dalla
 raiplaysound-cli list episodes america7
 raiplaysound-cli download america7
 ```
@@ -267,6 +271,35 @@ Next:
 pipe-friendly and easy to capture. For large catalogs, the most practical ways
 to narrow or browse the output are `--filter`, `--sorted`, or the opt-in
 `--pager` flag rather than auto-paging by default.
+
+### Search cached metadata
+
+```bash
+raiplaysound-cli search lucio
+raiplaysound-cli search burnt sugar --json
+raiplaysound-cli search radio2 --show-urls
+```
+
+`search` always queries live stations and the cached-or-refreshed global
+program catalog. Season/grouping and episode matches come from local caches
+that were already populated by earlier `list` or `download` runs.
+
+If RaiPlaySound is temporarily unavailable, `search` still returns any local
+season/grouping and episode matches it can find from existing caches instead
+of failing outright. Live station and program sections are left empty in that
+case, and the cache summary notes the live lookup failure.
+
+That means:
+
+- station and program matches are available immediately
+- season/grouping matches depend on cached `list seasons` payloads
+- episode matches depend on local `.metadata-cache.tsv` files and, when
+  available, cached `list episodes` payloads
+
+When episode metadata is refreshed through downloads, the per-show
+`.metadata-cache.tsv` now also stores a searchable text field derived from the
+episode JSON payload. That lets `search` match titles, authors, descriptions,
+and other metadata strings that Rai exposes for the cached episode.
 
 ### Inspect seasons and episodes
 

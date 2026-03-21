@@ -10,7 +10,7 @@ from raiplaysound_cli import cli
 from raiplaysound_cli import episodes as episode_module
 from raiplaysound_cli.config import Settings
 from raiplaysound_cli.errors import HTTPRequestError
-from raiplaysound_cli.models import GroupSource, Program
+from raiplaysound_cli.models import EpisodeMetadata, GroupSource, Program
 
 
 def test_main_version_prints_cli_version() -> None:
@@ -43,6 +43,9 @@ def test_main_without_args_prints_focused_help(capsys) -> None:
     assert "usage: raiplaysound-cli [--version] <command>" in captured.out
     assert "Commands:" in captured.out
     assert "list      Inspect stations, programs, seasons, or episodes" in captured.out
+    assert (
+        "search    Search stations, programs, groupings, and local episode metadata" in captured.out
+    )
     assert "download  Download one program into the local music library" in captured.out
     assert "Run `raiplaysound-cli <command> --help` for command-specific help." in captured.out
     assert "usage: raiplaysound-cli list" not in captured.out
@@ -58,6 +61,9 @@ def test_main_help_prints_focused_help(capsys) -> None:
     assert result == 0
     assert "usage: raiplaysound-cli [--version] <command>" in captured.out
     assert "Commands:" in captured.out
+    assert (
+        "search    Search stations, programs, groupings, and local episode metadata" in captured.out
+    )
     assert "raiplaysound-cli list stations" not in captured.out
     assert "usage: raiplaysound-cli list" not in captured.out
     assert "usage: raiplaysound-cli download" not in captured.out
@@ -390,7 +396,11 @@ def test_list_episodes_does_not_create_download_directory(
     monkeypatch.setattr(
         cli,
         "discover_grouped_episode_sources",
-        lambda _slug, _selected_seasons, _request_all, _selected_groups: (None, None, False),
+        lambda _slug, _selected_seasons, _request_all, _selected_groups: (
+            None,
+            None,
+            False,
+        ),
     )
     monkeypatch.setattr(
         cli,
@@ -428,7 +438,11 @@ def test_list_episodes_skips_metadata_refresh_and_cache_writes(
     monkeypatch.setattr(
         cli,
         "discover_grouped_episode_sources",
-        lambda _slug, _selected_seasons, _request_all, _selected_groups: (None, None, False),
+        lambda _slug, _selected_seasons, _request_all, _selected_groups: (
+            None,
+            None,
+            False,
+        ),
     )
     monkeypatch.setattr(cli, "load_show_context", fail)
     monkeypatch.setattr(cli, "collect_metadata", fail)
@@ -561,7 +575,11 @@ def test_list_episodes_cache_key_uses_resolved_season_sources(
     monkeypatch.setattr(
         cli,
         "discover_grouped_episode_sources",
-        lambda _slug, _selected_seasons, _request_all, _selected_groups: (None, None, False),
+        lambda _slug, _selected_seasons, _request_all, _selected_groups: (
+            None,
+            None,
+            False,
+        ),
     )
 
     captured_sources: list[list[str]] = []
@@ -1255,7 +1273,11 @@ def test_list_episodes_text_prints_download_suggestions(
     monkeypatch.setattr(
         cli,
         "discover_grouped_episode_sources",
-        lambda _slug, _selected_seasons, _request_all, _selected_groups: (None, None, False),
+        lambda _slug, _selected_seasons, _request_all, _selected_groups: (
+            None,
+            None,
+            False,
+        ),
     )
 
     def fake_load_list_episode_context(
@@ -1397,7 +1419,11 @@ def test_flat_program_episode_listing_omits_season_column(
     monkeypatch.setattr(
         cli,
         "discover_grouped_episode_sources",
-        lambda _slug, _selected_seasons, _request_all, _selected_groups: (None, None, False),
+        lambda _slug, _selected_seasons, _request_all, _selected_groups: (
+            None,
+            None,
+            False,
+        ),
     )
     monkeypatch.setattr(
         cli,
@@ -1458,7 +1484,9 @@ def test_flat_program_episode_listing_omits_season_column(
     assert "Standalone episode" in captured.out
 
 
-def test_collect_episodes_from_flat_source_does_not_mark_real_season(monkeypatch) -> None:
+def test_collect_episodes_from_flat_source_does_not_mark_real_season(
+    monkeypatch,
+) -> None:
     monkeypatch.setattr(
         episode_module,
         "run_yt_dlp",
@@ -1645,7 +1673,7 @@ def test_download_uses_grouped_episode_sources(monkeypatch, tmp_path: Path, caps
         *,
         sources_override: list[str] | None = None,
         source_groups_override: list[GroupSource] | None = None,
-    ) -> tuple[str, str, list[object], object, Path, dict[str, tuple[str, str, str]]]:
+    ) -> tuple[str, str, list[object], object, Path, dict[str, EpisodeMetadata]]:
         assert input_value == "profili"
         assert sources_override == [
             "https://www.raiplaysound.it/programmi/profili",
@@ -1749,7 +1777,11 @@ def test_download_refreshes_metadata_only_for_filtered_episodes(
     monkeypatch.setattr(
         cli,
         "discover_grouped_episode_sources",
-        lambda _slug, _selected_seasons, _request_all, _selected_groups: (None, None, False),
+        lambda _slug, _selected_seasons, _request_all, _selected_groups: (
+            None,
+            None,
+            False,
+        ),
     )
 
     episodes = [
@@ -1806,12 +1838,12 @@ def test_download_refreshes_metadata_only_for_filtered_episodes(
 
     def fake_collect_metadata(
         targets: list[str], *, single_entries: bool = False
-    ) -> dict[str, tuple[str, str, str]]:
+    ) -> dict[str, EpisodeMetadata]:
         captured_targets.append(targets)
         assert single_entries is True
-        return {"ep-2": ("20260306", "2", "Episode Two")}
+        return {"ep-2": EpisodeMetadata(upload_date="20260306", season="2", title="Episode Two")}
 
-    written_cache: dict[str, tuple[str, str, str]] = {}
+    written_cache: dict[str, EpisodeMetadata] = {}
 
     monkeypatch.setattr(cli, "collect_metadata", fake_collect_metadata)
     monkeypatch.setattr(
@@ -1844,7 +1876,9 @@ def test_download_refreshes_metadata_only_for_filtered_episodes(
 
     assert result == 0
     assert captured_targets == [["https://www.raiplaysound.it/audio/ep-2.html"]]
-    assert written_cache == {"ep-2": ("20260306", "2", "Episode Two")}
+    assert written_cache == {
+        "ep-2": EpisodeMetadata(upload_date="20260306", season="2", title="Episode Two")
+    }
     assert "Preparing: discovering groupings and sources" in captured.out
     assert "Preparing: enumerating episodes and loading cached metadata" in captured.out
     assert "Preparing: selected 1 episode(s) for download" in captured.out
@@ -1869,7 +1903,11 @@ def test_download_skips_missing_scan_when_missing_not_enabled(
     monkeypatch.setattr(
         cli,
         "discover_grouped_episode_sources",
-        lambda _slug, _selected_seasons, _request_all, _selected_groups: (None, None, False),
+        lambda _slug, _selected_seasons, _request_all, _selected_groups: (
+            None,
+            None,
+            False,
+        ),
     )
     monkeypatch.setattr(
         cli,
@@ -1909,7 +1947,7 @@ def test_download_skips_missing_scan_when_missing_not_enabled(
                 },
             )(),
             target_dir / ".metadata-cache.tsv",
-            {"ep-1": ("20260306", "2", "Episode Two")},
+            {"ep-1": EpisodeMetadata(upload_date="20260306", season="2", title="Episode Two")},
         ),
     )
     monkeypatch.setattr(
