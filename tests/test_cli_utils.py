@@ -96,9 +96,7 @@ def test_normalize_season_key_supports_year_ranges_and_ordinals() -> None:
 def test_normalize_episode_metadata() -> None:
     episodes = [
         Episode(episode_id="a", url="https://example.com/2024/01/a", label="a"),
-        Episode(
-            episode_id="b", url="https://example.com/2025/01/b", label="b", season="2"
-        ),
+        Episode(episode_id="b", url="https://example.com/2025/01/b", label="b", season="2"),
     ]
     summary = normalize_episode_metadata(
         episodes,
@@ -131,8 +129,16 @@ def test_normalize_episode_metadata_preserves_year_range_seasons() -> None:
     summary = normalize_episode_metadata(
         episodes,
         {
-            "a": ("20251001", "2024-2025", "Episode A"),
-            "b": ("20260201", "2025/2026", "Episode B"),
+            "a": EpisodeMetadata(
+                upload_date="20251001",
+                season="2024-2025",
+                title="Episode A",
+            ),
+            "b": EpisodeMetadata(
+                upload_date="20260201",
+                season="2025/2026",
+                title="Episode B",
+            ),
         },
     )
     assert summary.has_seasons is True
@@ -182,15 +188,11 @@ def test_cache_entry_is_complete() -> None:
         is True
     )
     assert (
-        cache_entry_is_complete(
-            EpisodeMetadata(upload_date="NA", season="1", title="Episode A")
-        )
+        cache_entry_is_complete(EpisodeMetadata(upload_date="NA", season="1", title="Episode A"))
         is False
     )
     assert (
-        cache_entry_is_complete(
-            EpisodeMetadata(upload_date="20240101", season="1", title="NA")
-        )
+        cache_entry_is_complete(EpisodeMetadata(upload_date="20240101", season="1", title="NA"))
         is False
     )
     assert cache_entry_is_complete(None) is False
