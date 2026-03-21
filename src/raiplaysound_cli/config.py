@@ -52,6 +52,7 @@ def choose_command(argv: list[str], config: dict[str, str]) -> tuple[str, list[s
         "--group-by",
         "--sorted",
         "--filter",
+        "--pager",
         "--refresh-catalog",
         "--catalog-max-age-hours",
         "--show-urls",
@@ -96,6 +97,7 @@ class Settings:
     station_filter: str = ""
     stations_detailed: bool = False
     show_urls: bool = False
+    pager: bool = False
     seasons_arg: str = ""
     groups_arg: str = ""
     episodes_arg: str = ""
@@ -175,6 +177,10 @@ class Settings:
                 parsed = normalize_bool(value)
                 if parsed is not None:
                     settings.show_urls = parsed
+            elif key == "PAGER":
+                parsed = normalize_bool(value)
+                if parsed is not None:
+                    settings.pager = parsed
             elif key == "SEASONS_ARG":
                 settings.seasons_arg = value
             elif key == "GROUPS_ARG":

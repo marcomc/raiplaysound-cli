@@ -11,6 +11,9 @@ class Program:
     station_name: str
     station_short: str
     years: str
+    page_url: str
+    description_excerpt: str
+    grouping_count: int
 
 
 @dataclasses.dataclass(slots=True)

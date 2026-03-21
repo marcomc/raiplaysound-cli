@@ -2,6 +2,78 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+## [2.1.2] - 2026-03-20 - TUI, grouping audit, and CLI robustness improvements
+
+### Changed
+
+- Made `raiplaysound-cli list seasons <program>` render seasons and non-season
+  groupings as a compact table with program, type, name, episode count,
+  selector, and published-range columns.
+- Deduplicated repeated grouping rows in season/group listing output, so the
+  same selector no longer appears multiple times when RaiPlaySound exposes the
+  current grouping through more than one discovery path.
+- Simplified grouped download hints below `list seasons` so they show generic
+  `--group` usage patterns instead of repeating one command per discovered
+  grouping.
+- Focused top-level help output on command discovery only, leaving detailed
+  options to `raiplaysound-cli list --help` and
+  `raiplaysound-cli download --help`.
+- Simplified top-level help further by removing embedded list-form examples so
+  `raiplaysound-cli --help` stays symmetric across commands.
+- Reworked `list --help` and `download --help` into clearer, sectioned help
+  screens with a compact usage line, user-facing argument descriptions, grouped
+  options, and short practical examples.
+- Removed the generic argparse `options:` block from subcommand help in favor
+  of explicit `General`, `Programs`, `Episodes`, `Selection`, and related
+  sections, and hid compatibility aliases from normal help output.
+- Changed `list stations` and `list programs` text output from ad-hoc line
+  listings to Rich tables with clearer columns and compact next-step command
+  suggestions below the table.
+- Added `list --pager` (and config key `PAGER`) as an opt-in pager for text
+  listing output, and clarified in help that `--refresh-catalog` applies only
+  to `list programs`.
+- Fixed program-catalog station enrichment to prefer Rai's `podcast_info`
+  metadata, so station slugs and `list stations` program counts populate again
+  after a catalog refresh.
+- Reworked grouping discovery to treat `program.json` filters as the primary
+  source of truth, so grouped shows with custom route names such as
+  `radio2afumetti` under `cicli`, editorial `clip` buckets, and custom
+  season-block sections are now exposed correctly instead of collapsing back to
+  flat listings.
+- Fixed year-range season handling so labels such as `2025-2026` no longer
+  crash season discovery or collapse back to `Season 1` during summary and
+  episode normalization.
+- Fixed missing-program handling so commands such as
+  `raiplaysound-cli list seasons PROGRAM_SLUG` now report a normal CLI error
+  instead of leaking a Python traceback when RaiPlaySound returns `404`.
+- Hardened shared HTTP handling so RaiPlaySound network failures and non-404
+  HTTP responses now surface as normal CLI errors instead of raw Python
+  exceptions.
+- Hardened local catalog and metadata cache loading so malformed rows are
+  skipped instead of aborting listings or output generation with tracebacks.
+- Extended grouping discovery to read top-level `tab_menu` entries from program
+  JSON, so programs that expose tabs such as `Extra` without `filters`
+  metadata now show those groupings in `list seasons`.
+- Refined mixed tab-menu discovery so programs with both the default `Episodi`
+  surface and extra tabs show both groupings after the list cache rebuilds.
+- Preserved season-based list and download behavior for mixed season-plus-tab
+  programs, so real seasons remain selectable through `--season` even when
+  extra tabs such as `Extra` are also exposed through `--group`.
+- Fixed the `Groupings` column in `list programs` so it counts the same
+  discoverable groupings used by `list seasons`, including `tab_menu`-only
+  tabs such as `Extra`, instead of only counting legacy `filters` entries.
+- Bumped the program-catalog cache format so existing long-lived caches are
+  rebuilt automatically and pick up corrected station and grouping metadata.
+- Fixed `--json` output to write directly to stdout instead of through Rich, so
+  piped or redirected JSON listings remain valid and are no longer corrupted by
+  terminal line wrapping.
+- Updated the program-grouping audit tooling and regenerated audit artifacts so
+  they now record both strict payload-derived groups and the effective live
+  discovery groups accepted by `list seasons`, including the small set of
+  redundant default root groupings such as `episodi` or `puntate`.
+
 ## [2.1.1] - 2026-03-19 - download progress and startup visibility improvements
 
 ### Changed

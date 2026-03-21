@@ -17,14 +17,23 @@ It is intended as a command contract reference for contributors and AI agents.
 
 ## Top-Level Invocation
 
-- `raiplaysound-cli` with no arguments prints the combined help text and exits
-  with status `0`.
-- `raiplaysound-cli --help` prints the same combined help text and exits with
-  status `0`.
+- `raiplaysound-cli` with no arguments prints the focused top-level help text
+  and exits with status `0`.
+- `raiplaysound-cli --help` prints the same focused top-level help text and
+  exits with status `0`.
 - `raiplaysound-cli --version` prints the CLI version and exits with status
   `0`.
-- Top-level help should list the available commands and the supported options
-  for both `list` and `download`.
+- Top-level help should list only the available commands and the pointer to
+  command-specific help; it should not inline command examples or the full
+  option sets for `list` and `download`.
+- `raiplaysound-cli list --help` prints list-specific help with a compact usage
+  line, grouped option sections, and short examples.
+- `raiplaysound-cli download --help` prints download-specific help with grouped
+  option sections, an explicit `PROGRAM_SLUG_OR_URL` positional name, and
+  short examples.
+- Compatibility aliases remain accepted where supported, but should be hidden
+  from normal help output so the documented surface stays focused on the
+  preferred flags.
 - Empty invocation does not dispatch any config-selected command.
 
 ## Command Selection
@@ -66,8 +75,19 @@ raiplaysound-cli list episodes america7
 ### `list stations`
 
 - fetches live data from `dirette.json`
-- does not use a local cache
-- `--detailed` adds page and feed URLs
+- does not use a live program cache for station discovery
+- text output is a table with:
+  - `Name`
+  - `Programs`
+  - `Slug`
+  - `Page`
+  - optional `Feed` with `--detailed`
+- `--pager` can route text output through a pager without changing JSON output
+- station program counts are taken from the locally cached program catalog when
+  available; when no compatible local catalog exists yet, the count column may
+  be unknown
+- the footer prints a concrete `list programs --filter ...` example using one
+  discovered station slug
 - JSON output includes mode, count, detail flag, and station objects
 
 ### `list programs`
@@ -85,6 +105,24 @@ raiplaysound-cli list episodes america7
 - `--group-by auto` groups by station unless a station filter is active, in
   which case it groups alphabetically
 - `--sorted` forces a flat alphabetical list
+- text output is a table with:
+  - `Name`
+  - `Slug`
+  - `Station`
+  - `Years`
+  - `Groupings`
+  - `Description`
+  - `Page`
+- the `Groupings` column reflects the same discoverable grouping surfaces used
+  by `list seasons`, including tab-based entries such as `Extra`, not just
+  legacy `filters` metadata
+- `--refresh-catalog` and `--catalog-max-age-hours` apply only to `list programs`
+- `--pager` can route text output through a pager without changing JSON output
+- the `Page` column is a clickable terminal link in Rich-capable terminals
+- the footer prints concrete follow-up commands for:
+  - listing programs for one station
+  - listing episodes for one program
+  - downloading one program
 - errors if the station filter matches nothing
 
 ### `list seasons`
@@ -92,6 +130,13 @@ raiplaysound-cli list episodes america7
 - requires a program slug or full program URL
 - uses the lightweight grouping discovery path and should not refresh or write
   `.metadata-cache.tsv`
+- text output is a table with:
+  - `Program`
+  - `Type`
+  - `Name`
+  - `Episodes`
+  - `Selector`
+  - `Published`
 - when the program exposes real seasons, it prints seasons
 - when the program exposes other grouping families, it prints groupings instead
   of incorrectly collapsing to a flat list
@@ -99,8 +144,8 @@ raiplaysound-cli list episodes america7
   re-enumerating every grouping every time
 - cached list payloads are short-lived and versioned, and stale or incompatible
   payloads must be rebuilt automatically rather than reused
-- non-season grouping output includes the exact `--group` selector token for
-  each grouping and matching `download --group ...` suggestions
+- grouped output includes the exact selector token once in the table and keeps
+  the download suggestions generic instead of printing one command per row
 - `--season` narrows the output only for real seasonal programs
 - `--season` is rejected for non-season grouped programs and flat programs
 - JSON output exposes:
@@ -203,8 +248,8 @@ Relevant config behavior:
   target was passed
 - `GROUPS_ARG` acts as the default `--group` value for `download` and
   `list episodes`
-- `STATION_FILTER`, `GROUP_BY`, `PODCASTS_SORTED`, `SHOW_URLS`, and
-  `STATIONS_DETAILED` act as list defaults
+- `STATION_FILTER`, `GROUP_BY`, `PODCASTS_SORTED`, `SHOW_URLS`,
+  `STATIONS_DETAILED`, and `PAGER` act as list defaults
 - `CHECK_JOBS`, `TARGET_BASE`, and `CATALOG_CACHE_FILE` are config-only knobs
 
 ## Grouping and Season Behavior

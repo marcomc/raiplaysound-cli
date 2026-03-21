@@ -13,6 +13,7 @@ It is intended as a fast handoff document for new contributors and AI agents.
 - [External Dependencies](#external-dependencies)
 - [RaiPlaySound Data Sources](#raiplaysound-data-sources)
 - [Current CLI Discovery Flow](#current-cli-discovery-flow)
+- [Tab-based Programs](#tab-based-programs)
 - [Season URL Patterns Verified Live](#season-url-patterns-verified-live)
 - [Season Detection Strategy](#season-detection-strategy)
 - [Known Failure Modes](#known-failure-modes)
@@ -104,6 +105,10 @@ Important note:
 
 - program listing uses the cached full catalog plus local filtering by station
   slug rather than relying on station-scoped pages or station-scoped APIs
+- station attribution for the program catalog must prefer
+  `payload.podcast_info.channel` from `programmi/<slug>.json`; the older
+  top-level `channel` field is often `null` in current Rai responses and will
+  collapse station counts to `none` if used as the primary source
 
 ### Program pages
 
@@ -162,6 +167,9 @@ This is the main fallback when the HTML is inconsistent.
 
 - reads the cached full program catalog when valid
 - otherwise rebuilds it from sitemap plus per-program JSON
+- the `Groupings` column should be derived from the same discoverable grouping
+  surfaces used by `list seasons`, including `filters` and `tab_menu`, so
+  `tab_menu`-only tabs such as `Extra` are counted correctly
 
 ### `list episodes`
 
@@ -203,6 +211,54 @@ Current approach:
 This is faster than the full download-oriented context loader, but grouping
 discovery still depends on the site exposing enough information in the HTML or
 in probeable URLs.
+
+## Tab-based Programs
+
+Some RaiPlaySound programs do not expose alternate grouping surfaces through
+season links or `filters`. Instead, they expose them through
+`programmi/<slug>.json -> tab_menu`.
+
+Typical examples:
+
+- a default root `Episodi` surface plus an `Extra` tab
+- a root `Episodi` surface plus `Playlist`
+- editorial tabs such as `Clip`
+
+Detection rules:
+
+- read `programmi/<slug>.json`
+- inspect both:
+  - `filters`
+  - `tab_menu`
+- treat both as discoverable grouping sources
+- do not discard the active root `/programmi/<slug>` entry when there are
+  additional non-root tab entries, because that root often corresponds to the
+  main `Episodi` surface and should coexist with tabs like `Extra`
+- skip purely auxiliary sections only when they are intentionally excluded by
+  policy in code, for example entries in `SKIP_GROUP_SECTIONS`
+
+Current implementation notes:
+
+- grouping discovery is centralized in
+  [`discover_groups_from_program_payload()`](/Users/mmassari/Development/raiplaysound-cli/src/raiplaysound_cli/episodes.py)
+- `list seasons` and `list episodes` should use the same discoverable grouping
+  surfaces
+- the `Groupings` column in `list programs` should be derived from the same
+  discovery logic, not from `filters` alone
+
+Enumeration fallback:
+
+- some tab pages, especially `Extra`, do not enumerate correctly through
+  `yt-dlp --flat-playlist`
+- when that happens, the CLI should fall back to the page JSON card payload,
+  currently using `block.cards` extraction from the grouping page
+
+Failure mode to watch for:
+
+- a fix that adds `tab_menu` discovery can accidentally hide the root
+  `Episodi` grouping and leave only `Extra` or another tab visible
+- if that happens, check whether active root tab handling was changed so that
+  `/programmi/<slug>` is being dropped too aggressively
 
 ## Season URL Patterns Verified Live
 

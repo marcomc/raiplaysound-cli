@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -8,6 +9,7 @@ from pathlib import Path
 from raiplaysound_cli import cli
 from raiplaysound_cli import episodes as episode_module
 from raiplaysound_cli.config import Settings
+from raiplaysound_cli.errors import HTTPRequestError
 from raiplaysound_cli.models import GroupSource, Program
 
 
@@ -22,10 +24,18 @@ def test_main_version_prints_cli_version() -> None:
         cwd=Path(__file__).resolve().parents[1],
     )
     assert result.returncode == 0
-    assert "raiplaysound-cli 2.1.1" in result.stdout
+    assert "raiplaysound-cli 2.1.2" in result.stdout
 
 
-def test_main_without_args_prints_extensive_help(capsys) -> None:
+def test_main_version_prints_when_present_anywhere(capsys) -> None:
+    result = cli.main(["list", "--version"])
+    captured = capsys.readouterr()
+
+    assert result == 0
+    assert "raiplaysound-cli 2.1.2" in captured.out
+
+
+def test_main_without_args_prints_focused_help(capsys) -> None:
     result = cli.main([])
     captured = capsys.readouterr()
 
@@ -34,24 +44,70 @@ def test_main_without_args_prints_extensive_help(capsys) -> None:
     assert "Commands:" in captured.out
     assert "list      Inspect stations, programs, seasons, or episodes" in captured.out
     assert "download  Download one program into the local music library" in captured.out
-    assert "raiplaysound-cli list seasons <program_slug|program_url>" in captured.out
-    assert "raiplaysound-cli list episodes <program_slug|program_url>" in captured.out
-    assert "usage: raiplaysound-cli list" in captured.out
-    assert "usage: raiplaysound-cli download" in captured.out
-    assert "TARGET_OR_INPUT" in captured.out
-    assert "Preferred positional target" in captured.out
-    assert "--episode-ids" in captured.out
+    assert "Run `raiplaysound-cli <command> --help` for command-specific help." in captured.out
+    assert "usage: raiplaysound-cli list" not in captured.out
+    assert "usage: raiplaysound-cli download" not in captured.out
+    assert "--episode-ids" not in captured.out
     assert "\x1b[" not in captured.out
 
 
-def test_main_help_prints_extensive_help(capsys) -> None:
+def test_main_help_prints_focused_help(capsys) -> None:
     result = cli.main(["--help"])
     captured = capsys.readouterr()
 
     assert result == 0
+    assert "usage: raiplaysound-cli [--version] <command>" in captured.out
     assert "Commands:" in captured.out
-    assert "usage: raiplaysound-cli list" in captured.out
+    assert "raiplaysound-cli list stations" not in captured.out
+    assert "usage: raiplaysound-cli list" not in captured.out
+    assert "usage: raiplaysound-cli download" not in captured.out
+
+
+def test_list_help_prints_command_specific_help(capsys) -> None:
+    result = cli.main(["list", "--help"])
+    captured = capsys.readouterr()
+
+    assert result == 0
+    assert (
+        "usage: raiplaysound-cli list <stations|programs|seasons|episodes> "
+        "[PROGRAM_SLUG_OR_URL] [options]" in captured.out
+    )
+    assert "Targets:" not in captured.out
+    assert "What to list. One of:" not in captured.out
+    assert "For `seasons` and `episodes`: a program slug or full URL." in captured.out
+    assert "`PROGRAM_SLUG`" in captured.out
+    assert "General:" in captured.out
+    assert "Programs:" in captured.out
+    assert "Episodes:" in captured.out
+    assert "options:" not in captured.out
+    assert "Examples:" in captured.out
+    assert "--pager" in captured.out
+    assert "raiplaysound-cli list seasons PROGRAM_SLUG" in captured.out
+    assert "raiplaysound-cli list programs --filter STATION_SLUG" in captured.out
+    assert "Only for `list programs`. Refresh the cached program catalog." in captured.out
+    assert "--show-urls" in captured.out
+
+
+def test_download_help_prints_command_specific_help(capsys) -> None:
+    result = cli.main(["download", "--help"])
+    captured = capsys.readouterr()
+
+    assert result == 0
     assert "usage: raiplaysound-cli download" in captured.out
+    assert "General:" in captured.out
+    assert "Selection:" in captured.out
+    assert "Execution:" in captured.out
+    assert "Metadata and Cache:" in captured.out
+    assert "Outputs:" in captured.out
+    assert "options:" not in captured.out
+    assert "Examples:" in captured.out
+    assert "raiplaysound-cli download PROGRAM_SLUG --season SEASON_NUMBER" in captured.out
+    assert "raiplaysound-cli download PROGRAM_SLUG --group GROUP_SLUG" in captured.out
+    assert "--episode-ids" in captured.out
+    assert "--group" in captured.out
+    assert "For grouped programs. Use grouping slugs shown by `list seasons`." in captured.out
+    assert "--seasons" not in captured.out
+    assert "--episodes" not in captured.out
 
 
 def test_main_list_requires_exactly_one_target(capsys) -> None:
@@ -117,6 +173,60 @@ def test_main_list_episodes_requires_input(capsys) -> None:
     assert "list episodes requires <program_slug|program_url>." in captured.err
 
 
+def test_main_list_seasons_reports_missing_program_slug(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    settings = Settings()
+    settings.catalog_cache_file = tmp_path / "state" / "program-catalog.tsv"
+
+    def fake_http_get(_url: str, **_kwargs: object) -> str:
+        raise HTTPRequestError(
+            "https://www.raiplaysound.it/programmi/sophia",
+            "RaiPlaySound returned HTTP 404 for https://www.raiplaysound.it/programmi/sophia.",
+            code=404,
+        )
+
+    monkeypatch.setattr(cli, "parse_env_file", lambda _path: {})
+    monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
+    monkeypatch.setattr(episode_module, "http_get", fake_http_get)
+
+    result = cli.main(["list", "seasons", "sophia"])
+    captured = capsys.readouterr()
+
+    assert result == 1
+    assert "program 'sophia' was not found on RaiPlaySound." in captured.err
+
+
+def test_main_list_stations_reports_network_failure(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        cli,
+        "http_get",
+        lambda _url: (_ for _ in ()).throw(
+            HTTPRequestError(
+                "https://www.raiplaysound.it/dirette.json",
+                "network request failed for https://www.raiplaysound.it/dirette.json: offline",
+            )
+        ),
+    )
+
+    result = cli.main(["list", "stations"])
+    captured = capsys.readouterr()
+
+    assert result == 1
+    assert "network request failed for https://www.raiplaysound.it/dirette.json:" in captured.err
+    assert "offline" in captured.err
+
+
+def test_main_list_stations_reports_invalid_payload(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(cli, "http_get", lambda _url: "{")
+
+    result = cli.main(["list", "stations"])
+    captured = capsys.readouterr()
+
+    assert result == 1
+    assert "invalid RaiPlaySound station payload." in captured.err
+
+
 def test_main_rejects_legacy_list_target_flags(capsys) -> None:
     result = cli.main(["list", "--episodes", "america7"])
     captured = capsys.readouterr()
@@ -152,6 +262,12 @@ def test_main_list_programs_uses_config_filter_and_json(
                 station_name="Radio 2",
                 station_short="radio2",
                 years="2024",
+                page_url=(
+                    "https://www.raiplaysound.it/programmi/show-a/"
+                    "very-long-program-path-for-json-regression-check"
+                ),
+                description_excerpt="Excerpt A " * 20,
+                grouping_count=2,
             ),
             Program(
                 slug="show-b",
@@ -159,20 +275,25 @@ def test_main_list_programs_uses_config_filter_and_json(
                 station_name="Radio 3",
                 station_short="radio3",
                 years="2025",
+                page_url="https://www.raiplaysound.it/programmi/show-b",
+                description_excerpt="Excerpt B",
+                grouping_count=0,
             ),
         ],
     )
 
     result = cli.main(["list", "programs", "--json"])
     captured = capsys.readouterr()
+    payload = json.loads(captured.out)
 
     assert result == 0
-    assert '"station_filter": "radio2"' in captured.out
-    assert '"slug": "show-a"' in captured.out
-    assert '"slug": "show-b"' not in captured.out
+    assert payload["station_filter"] == "radio2"
+    assert [item["slug"] for item in payload["programs"]] == ["show-a"]
 
 
-def test_list_programs_text_prints_download_suggestion(monkeypatch, tmp_path: Path, capsys) -> None:
+def test_list_programs_text_prints_table_and_navigation_suggestions(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
     settings = Settings()
     settings.catalog_cache_file = tmp_path / "program-catalog.tsv"
 
@@ -189,6 +310,9 @@ def test_list_programs_text_prints_download_suggestion(monkeypatch, tmp_path: Pa
                 station_name="Radio 2",
                 station_short="radio2",
                 years="2024",
+                page_url="https://www.raiplaysound.it/programmi/show-a",
+                description_excerpt="Excerpt A",
+                grouping_count=2,
             )
         ],
     )
@@ -197,8 +321,61 @@ def test_list_programs_text_prints_download_suggestion(monkeypatch, tmp_path: Pa
     captured = capsys.readouterr()
 
     assert result == 0
-    assert "Download:" in captured.out
-    assert "raiplaysound-cli download <program_slug>" in captured.out
+    assert "Name" in captured.out
+    assert "Slug" in captured.out
+    assert "Station" in captured.out
+    assert "Groupings" in captured.out
+    assert "Description" in captured.out
+    assert "Page" in captured.out
+    assert "show-a" in captured.out
+    assert "Excerpt A" in captured.out
+    assert "Next:" in captured.out
+    assert "raiplaysound-cli list programs --filter STATION_SLUG" in captured.out
+    assert "raiplaysound-cli list episodes PROGRAM_SLUG" in captured.out
+    assert "raiplaysound-cli download PROGRAM_SLUG" in captured.out
+
+
+def test_list_stations_text_prints_table_and_program_suggestion(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    settings = Settings()
+    settings.catalog_cache_file = tmp_path / "program-catalog.tsv"
+
+    monkeypatch.setattr(cli, "parse_env_file", lambda _path: {"COMMAND": "list"})
+    monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
+    monkeypatch.setattr(
+        cli,
+        "parse_stations",
+        lambda _raw: [
+            type(
+                "StationProxy",
+                (),
+                {
+                    "short": "radio2",
+                    "name": "Rai Radio 2",
+                    "page_url": "https://www.raiplaysound.it/radio2",
+                    "feed_url": "https://www.raiplaysound.it/feed-radio2",
+                },
+            )()
+        ],
+    )
+    monkeypatch.setattr(cli, "http_get", lambda _url: "{}")
+    monkeypatch.setattr(cli, "_load_station_program_counts", lambda _settings: {"radio2": 123})
+
+    result = cli.main(["list", "stations"])
+    captured = capsys.readouterr()
+
+    assert result == 0
+    assert "Available RaiPlaySound radio stations (1):" in captured.out
+    assert "Name" in captured.out
+    assert "Programs" in captured.out
+    assert "Slug" in captured.out
+    assert "Page" in captured.out
+    assert "Rai Radio 2" in captured.out
+    assert "123" in captured.out
+    assert "radio2" in captured.out
+    assert "Next:" in captured.out
+    assert "raiplaysound-cli list programs --filter STATION_SLUG" in captured.out
 
 
 def test_list_episodes_does_not_create_download_directory(
@@ -303,7 +480,7 @@ def test_list_episodes_uses_cached_payload(monkeypatch, tmp_path: Path, capsys) 
     cache_file.write_text(
         """
 {
-  "version": 3,
+  "version": 6,
   "slug": "profili",
   "program_url": "https://www.raiplaysound.it/programmi/profili",
   "summary": {
@@ -634,7 +811,8 @@ def test_main_without_args_ignores_configured_list_seasons(monkeypatch, capsys) 
 
     assert result == 0
     assert "Commands:" in captured.out
-    assert "usage: raiplaysound-cli list" in captured.out
+    assert "usage: raiplaysound-cli [--version] <command>" in captured.out
+    assert "usage: raiplaysound-cli list" not in captured.out
 
 
 def test_list_seasons_skips_metadata_refresh_and_cache_writes(
@@ -703,7 +881,7 @@ def test_list_seasons_uses_cached_summary_payload(monkeypatch, tmp_path: Path, c
     cache_file.write_text(
         """
 {
-  "version": 3,
+  "version": 6,
   "slug": "america7",
   "program_url": "https://www.raiplaysound.it/programmi/america7",
   "has_seasons": true,
@@ -737,7 +915,8 @@ def test_list_seasons_uses_cached_summary_payload(monkeypatch, tmp_path: Path, c
     captured = capsys.readouterr()
 
     assert result == 0
-    assert "Season 2: 17 episodes" in captured.out
+    assert "Season 2" in captured.out
+    assert "17" in captured.out
 
 
 def test_list_seasons_json_uses_real_discovered_season_urls(
@@ -841,6 +1020,19 @@ def test_list_seasons_prints_groupings_for_special_collections(
                 "GroupSummary",
                 (),
                 {
+                    "key": "speciale-pino-daniele",
+                    "label": "Speciale Pino Daniele",
+                    "url": "https://www.raiplaysound.it/programmi/profili",
+                    "kind": "special",
+                    "episodes": 1,
+                    "year_min": "2018",
+                    "year_max": "2018",
+                },
+            )(),
+            type(
+                "GroupSummary",
+                (),
+                {
                     "key": "speciale-lucio-dalla",
                     "label": "Speciale Lucio Dalla",
                     "url": "https://www.raiplaysound.it/programmi/profili/speciali/speciale-lucio-dalla",
@@ -858,19 +1050,104 @@ def test_list_seasons_prints_groupings_for_special_collections(
 
     assert result == 0
     assert "Available groupings for profili" in captured.out
-    assert "Speciale Pino Daniele: 1 episodes" in captured.out
-    assert "select with --group" in captured.out
-    assert "speciale-pino-daniele" in captured.out
-    assert "Speciale Lucio Dalla: 2 episodes" in captured.out
-    assert "speciale-lucio-dalla" in captured.out
+    assert "Program" in captured.out
+    assert "Type" in captured.out
+    assert "Selector" in captured.out
+    assert "Published" in captured.out
+    assert "speciale-pino-d" in captured.out
+    assert "Speciale Pino" in captured.out
+    assert "Daniele" in captured.out
+    assert "Speciale Lucio" in captured.out
+    assert "Dalla" in captured.out
+    assert "speciale-lucio-" in captured.out
+    assert captured.out.count("Daniele") == 1
     assert "all program episodes: raiplaysound-cli download profili" in captured.out
     assert (
-        "speciale-pino-daniele: raiplaysound-cli download profili --group "
-        "speciale-pino-daniele" in captured.out
+        "one grouping:         raiplaysound-cli download profili --group <selector>" in captured.out
     )
     assert (
-        "speciale-lucio-dalla: raiplaysound-cli download profili --group "
-        "speciale-lucio-dalla" in captured.out
+        "some groupings:       raiplaysound-cli download profili --group "
+        "<selector1>,<selector2>" in captured.out
+    )
+
+
+def test_list_seasons_prints_groupings_for_generic_filter_groups(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    settings = Settings()
+    settings.catalog_cache_file = tmp_path / "state" / "program-catalog.tsv"
+
+    monkeypatch.setattr(cli, "parse_env_file", lambda _path: {"COMMAND": "list"})
+    monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
+    monkeypatch.setattr(
+        cli,
+        "discover_group_listing_sources",
+        lambda slug: (
+            f"https://www.raiplaysound.it/programmi/{slug}",
+            [
+                GroupSource(
+                    key="diabolik---vampiri-a-clerville",
+                    label="Diabolik - Vampiri a Clerville",
+                    url=(
+                        f"https://www.raiplaysound.it/programmi/{slug}/cicli/"
+                        "diabolik---vampiri-a-clerville"
+                    ),
+                    kind="group",
+                ),
+                GroupSource(
+                    key="tex-willer---mefisto",
+                    label="Tex Willer - Mefisto",
+                    url=f"https://www.raiplaysound.it/programmi/{slug}/cicli/tex-willer---mefisto",
+                    kind="group",
+                ),
+            ],
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "collect_group_summaries",
+        lambda _groups: [
+            type(
+                "GroupSummary",
+                (),
+                {
+                    "key": "diabolik---vampiri-a-clerville",
+                    "label": "Diabolik - Vampiri a Clerville",
+                    "url": (
+                        "https://www.raiplaysound.it/programmi/radio2afumetti/cicli/"
+                        "diabolik---vampiri-a-clerville"
+                    ),
+                    "kind": "group",
+                    "episodes": 3,
+                    "year_min": "2018",
+                    "year_max": "2018",
+                },
+            )(),
+            type(
+                "GroupSummary",
+                (),
+                {
+                    "key": "tex-willer---mefisto",
+                    "label": "Tex Willer - Mefisto",
+                    "url": "https://www.raiplaysound.it/programmi/radio2afumetti/cicli/tex-willer---mefisto",
+                    "kind": "group",
+                    "episodes": 1,
+                    "year_min": "2018",
+                    "year_max": "2018",
+                },
+            )(),
+        ],
+    )
+
+    result = cli.main(["list", "seasons", "radio2afumetti"])
+    captured = capsys.readouterr()
+
+    assert result == 0
+    assert "Available groupings for radio2afumetti" in captured.out
+    assert "Group" in captured.out
+    assert (
+        "some groupings:       raiplaysound-cli download radio2afumetti --group "
+        "<selector1>,<selector2>" in captured.out
     )
 
 
@@ -963,7 +1240,8 @@ def test_main_without_args_ignores_configured_list_episodes(monkeypatch, capsys)
 
     assert result == 0
     assert "Commands:" in captured.out
-    assert "usage: raiplaysound-cli download" in captured.out
+    assert "usage: raiplaysound-cli [--version] <command>" in captured.out
+    assert "usage: raiplaysound-cli download" not in captured.out
 
 
 def test_list_episodes_text_prints_download_suggestions(
@@ -1270,8 +1548,9 @@ def test_list_seasons_honors_season_filter_for_real_seasons(
     captured = capsys.readouterr()
 
     assert result == 0
-    assert "Season 2: 17 episodes" in captured.out
-    assert "Season 1: 71 episodes" not in captured.out
+    assert "Season 2" in captured.out
+    assert "17" in captured.out
+    assert "Season 1" not in captured.out
 
 
 def test_list_seasons_rejects_season_filter_for_non_season_groupings(

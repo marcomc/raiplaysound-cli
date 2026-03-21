@@ -71,11 +71,21 @@ Run the CLI from the user install:
 ~/.local/bin/raiplaysound-cli --version
 ```
 
-Print the full command overview, including both `list` and `download` options:
+Print the focused top-level command overview:
 
 ```bash
 ~/.local/bin/raiplaysound-cli
 ```
+
+Use command-specific help for detailed options:
+
+```bash
+~/.local/bin/raiplaysound-cli list --help
+~/.local/bin/raiplaysound-cli download --help
+```
+
+The subcommand help screens are organized by topic and include short examples,
+so they are the best place to discover the supported flags in practice.
 
 Or run it directly from the project venv:
 
@@ -180,6 +190,7 @@ Supported config keys:
 | `CATALOG_MAX_AGE_HOURS` | `--catalog-max-age-hours` | list `programs` |
 | `STATIONS_DETAILED` | `--detailed` | list `stations` |
 | `SHOW_URLS` | `--show-urls` | list `episodes` |
+| `PAGER` | `--pager` | list |
 | `INPUT` | `<program_slug\|program_url>` | download, list `seasons`, list `episodes` |
 
 `FORCE_REFRESH_CATALOG` and `CATALOG_MAX_AGE_HOURS` affect only `list programs`.
@@ -221,26 +232,41 @@ raiplaysound-cli list stations --detailed
 Example output:
 
 ```text
-Available RaiPlaySound radio stations (station slug -> name):
-  - radio1           Rai Radio 1
-  - radio2           Rai Radio 2
-  - radio3           Rai Radio 3
-  - isoradio         Rai Isoradio
-  - nonameradio      No Name Radio
-  - radio1sport      Rai Radio 1 Sport
-  - radio3classica   Rai Radio 3 Classica
+Available RaiPlaySound radio stations (7):
+┏━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━┓
+┃ Name          ┃ Programs ┃ Slug         ┃ Page ┃
+┡━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━┩
+│ Rai Radio 1   │      123 │ radio1       │ open │
+│ Rai Radio 2   │      107 │ radio2       │ open │
+│ Rai Radio 3   │      198 │ radio3       │ open │
+└───────────────┴──────────┴──────────────┴──────┘
+
+Next:
+  programs for one station: raiplaysound-cli list programs --filter radio2
 ```
 
 ```text
 Programs grouped alphabetically (107):
+┏━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━┓
+┃ Name                 ┃ Slug          ┃ Station ┃ Years     ┃ Groupings ┃ Description                  ┃ Page ┃
+┡━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━┩
+│ 1 M Next             │ 1mnext        │ radio2  │ 2025      │         — │ —                            │ open │
+│ 100 Volte Alberto    │ 100voltealbe… │ radio2  │ 2020-2025 │         — │ —                            │ open │
+│ Sordi                │               │         │           │           │                              │      │
+│ A qualcuno piace     │ aqualcunopia… │ radio2  │ 2025-2026 │         2 │ Un programma del mattino... │ open │
+│ Radio2               │               │         │           │           │                              │      │
+└──────────────────────┴───────────────┴─────────┴───────────┴───────────┴──────────────────────────────┴──────┘
 
-  - 1 M Next (1mnext) [Rai Radio 2:radio2 | 2025]
-  - 100 Volte Alberto Sordi (100voltealbertosordi) [Rai Radio 2:radio2 | 2020-2025]
-  - 5 in condotta (5incondotta) [Rai Radio 2:radio2 | 2024-2025]
-
-[A]
-  - A qualcuno piace Radio2 (aqualcunopiaceradio2) [Rai Radio 2:radio2 | 2025-2026]
+Next:
+  one station:   raiplaysound-cli list programs --filter radio2
+  one program:   raiplaysound-cli list episodes 1mnext
+  download one:  raiplaysound-cli download 1mnext
 ```
+
+`list programs` intentionally prints the full table by default so the output is
+pipe-friendly and easy to capture. For large catalogs, the most practical ways
+to narrow or browse the output are `--filter`, `--sorted`, or the opt-in
+`--pager` flag rather than auto-paging by default.
 
 ### Inspect seasons and episodes
 
@@ -265,12 +291,20 @@ also reports those groupings instead of incorrectly collapsing everything into a
 flat episode list. For example, programs may expose specials, named thematic
 collections, or year and period buckets instead of numbered seasons.
 
+Grouping discovery is now filter-first: when RaiPlaySound exposes selector
+filters in the program JSON, the CLI treats those filters as the authoritative
+group source even if the site uses custom route names such as `cicli`,
+`clip`, or other product-specific paths.
+
 `list seasons` is also the long-term grouping inspector name for the CLI, even
 when the discovered program structure uses non-season collections.
 
 When a program exposes real seasons, `list seasons <program> --season <n>` narrows the
 output to the requested season. For non-season groupings or flat programs,
 `--season` is rejected instead of being silently ignored.
+
+Season selectors can be ordinary season numbers or year-style season keys such
+as `2025` when RaiPlaySound models seasons that way.
 
 `list episodes <program>` also aggregates episodes across discovered
 groupings for grouped programs, instead of only listing the currently selected
@@ -298,9 +332,18 @@ raiplaysound-cli list episodes profili --group speciale-lucio-dalla
 
 `--group` cannot be combined with `--season`.
 
-`list seasons <program>` also prints the exact selectable `--group` token for
-each discovered grouping, plus ready-to-run `download --group ...` commands at
-the bottom of the listing.
+`list seasons <program>` now renders seasons and non-season groupings in a
+table with:
+
+- `Program`
+- `Type`
+- `Name`
+- `Episodes`
+- `Selector`
+- `Published`
+
+For grouped programs, the footer now shows compact generic `download --group`
+examples instead of repeating one command per discovered grouping.
 
 For flat programs that do not expose real seasons or other groupings,
 `list episodes` does not invent a fake `S1` column. Those programs are shown

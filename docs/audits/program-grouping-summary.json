@@ -1,0 +1,402 @@
+{
+  "program_count": 1969,
+  "grouped_count": 418,
+  "effective_grouped_count": 418,
+  "multi_group_count": 376,
+  "unreachable_count": 0,
+  "effective_extra_root_groupings_count": 10,
+  "filters_surface_count": 314,
+  "tab_menu_surface_count": 1928,
+  "grouped_filters_count": 313,
+  "grouped_tab_menu_count": 418,
+  "grouped_tab_menu_only_count": 105,
+  "grouped_filters_and_tab_menu_count": 313,
+  "mode_counter": {
+    "flat": 1551,
+    "group": 221,
+    "seasonal": 121,
+    "mixed": 53,
+    "year": 23
+  },
+  "surface_counter": {
+    "tab_menu": 1928,
+    "filters": 314
+  },
+  "top_sections": [
+    [
+      "puntate",
+      139
+    ],
+    [
+      "episodi",
+      106
+    ],
+    [
+      "raiplaysound-puntate-block",
+      21
+    ],
+    [
+      "clip",
+      6
+    ],
+    [
+      "puntate-e-podcast",
+      5
+    ],
+    [
+      "puntate-",
+      5
+    ],
+    [
+      "stagioni",
+      2
+    ],
+    [
+      "a-spasso-con-radic-",
+      1
+    ],
+    [
+      "bookcrossing---porta-il-tuo-libro---puntate-block",
+      1
+    ],
+    [
+      "podcast-",
+      1
+    ],
+    [
+      "che-ci-faccio-qui-raiplaysound-puntate-block",
+      1
+    ],
+    [
+      "colpo-di-luna-puntate-block",
+      1
+    ],
+    [
+      "delitti-in-famiglia---puntate-block",
+      1
+    ],
+    [
+      "futuradio",
+      1
+    ],
+    [
+      "ultime-edizioni",
+      1
+    ],
+    [
+      "inimitabili-raiplaysound-puntate-block",
+      1
+    ],
+    [
+      "sezioni",
+      1
+    ],
+    [
+      "la-fisica-dellamore---puntate-block",
+      1
+    ],
+    [
+      "clip-",
+      1
+    ],
+    [
+      "la-tv-delle-ragazze---puntate-block",
+      1
+    ]
+  ],
+  "examples_tab_menu_only": [
+    {
+      "slug": "100voltealbertosordi",
+      "title": "100 Volte Alberto Sordi",
+      "sections": [],
+      "kinds": [
+        "group"
+      ],
+      "sample_labels": [
+        "Episodi",
+        "Clip"
+      ]
+    },
+    {
+      "slug": "a3ilformatodellarte",
+      "title": "A3 il formato dell'arte",
+      "sections": [],
+      "kinds": [
+        "group"
+      ],
+      "sample_labels": [
+        "Episodi",
+        "Clip",
+        "Extra"
+      ]
+    },
+    {
+      "slug": "abcdarte",
+      "title": "ABC d'arte",
+      "sections": [],
+      "kinds": [
+        "group"
+      ],
+      "sample_labels": [
+        "Clip"
+      ]
+    },
+    {
+      "slug": "adaltavoce",
+      "title": "Ad alta voce",
+      "sections": [],
+      "kinds": [
+        "group"
+      ],
+      "sample_labels": [
+        "Episodi",
+        "Audiolibri"
+      ]
+    },
+    {
+      "slug": "agora",
+      "title": "Agorà",
+      "sections": [],
+      "kinds": [
+        "group"
+      ],
+      "sample_labels": [
+        "Clip"
+      ]
+    },
+    {
+      "slug": "aqualcunopiaceradio2",
+      "title": "A qualcuno piace Radio2",
+      "sections": [],
+      "kinds": [
+        "group"
+      ],
+      "sample_labels": [
+        "Episodi",
+        "Clip"
+      ]
+    },
+    {
+      "slug": "aspettandovivarai2",
+      "title": "Aspettando Viva Rai2!",
+      "sections": [],
+      "kinds": [
+        "group"
+      ],
+      "sample_labels": [
+        "Episodi",
+        "Extra"
+      ]
+    },
+    {
+      "slug": "bigbang",
+      "title": "Big Bang",
+      "sections": [],
+      "kinds": [
+        "group"
+      ],
+      "sample_labels": [
+        "Episodi"
+      ]
+    },
+    {
+      "slug": "bodyandsoul",
+      "title": "Body and soul",
+      "sections": [],
+      "kinds": [
+        "group"
+      ],
+      "sample_labels": [
+        "Episodi",
+        "Extra"
+      ]
+    },
+    {
+      "slug": "bumerang",
+      "title": "#Bumerang",
+      "sections": [],
+      "kinds": [
+        "group"
+      ],
+      "sample_labels": [
+        "Episodi",
+        "Extra"
+      ]
+    },
+    {
+      "slug": "caffesanremo",
+      "title": "Caffè Sanremo",
+      "sections": [],
+      "kinds": [
+        "group"
+      ],
+      "sample_labels": [
+        "Episodi",
+        "Extra"
+      ]
+    },
+    {
+      "slug": "caterestate",
+      "title": "CaterEstate",
+      "sections": [],
+      "kinds": [
+        "group"
+      ],
+      "sample_labels": [
+        "Clip"
+      ]
+    },
+    {
+      "slug": "closefriends",
+      "title": "Close Friends",
+      "sections": [],
+      "kinds": [
+        "group"
+      ],
+      "sample_labels": [
+        "Episodi",
+        "Clip"
+      ]
+    },
+    {
+      "slug": "cosechesuccedonolanotte",
+      "title": "Cose che succedono la notte",
+      "sections": [],
+      "kinds": [
+        "group"
+      ],
+      "sample_labels": [
+        "Episodi"
+      ]
+    },
+    {
+      "slug": "dacaselloacasello",
+      "title": "Da casello a casello",
+      "sections": [],
+      "kinds": [
+        "group"
+      ],
+      "sample_labels": [
+        "Episodi"
+      ]
+    },
+    {
+      "slug": "discorai-illatocdellamusica",
+      "title": "DISCORai - Il lato C della musica",
+      "sections": [],
+      "kinds": [
+        "group"
+      ],
+      "sample_labels": [
+        "Episodi",
+        "Extra"
+      ]
+    },
+    {
+      "slug": "divimiliardiealtridisastri",
+      "title": "Divi, miliardi e altri disastri",
+      "sections": [],
+      "kinds": [
+        "group"
+      ],
+      "sample_labels": [
+        "Episodi",
+        "Extra"
+      ]
+    },
+    {
+      "slug": "fahrenheit",
+      "title": "Fahrenheit",
+      "sections": [],
+      "kinds": [
+        "group"
+      ],
+      "sample_labels": [
+        "Episodi",
+        "Clip",
+        "Extra"
+      ]
+    },
+    {
+      "slug": "figlie",
+      "title": "Figlie",
+      "sections": [],
+      "kinds": [
+        "group"
+      ],
+      "sample_labels": [
+        "Episodi",
+        "Extra"
+      ]
+    },
+    {
+      "slug": "frame-unacopertinalasuamusica",
+      "title": "Frame - Una copertina la sua musica",
+      "sections": [],
+      "kinds": [
+        "group"
+      ],
+      "sample_labels": [
+        "Episodi"
+      ]
+    },
+    {
+      "slug": "ghiacciosottile",
+      "title": "Ghiaccio sottile",
+      "sections": [],
+      "kinds": [
+        "group"
+      ],
+      "sample_labels": [
+        "Episodi",
+        "Extra"
+      ]
+    },
+    {
+      "slug": "giancarlosiani-ilcoraggiodiscrivere",
+      "title": "Giancarlo Siani - Il coraggio di scrivere",
+      "sections": [],
+      "kinds": [
+        "group"
+      ],
+      "sample_labels": [
+        "Episodi",
+        "Extra"
+      ]
+    },
+    {
+      "slug": "gliammutati",
+      "title": "Gli ammutati",
+      "sections": [],
+      "kinds": [
+        "group"
+      ],
+      "sample_labels": [
+        "Episodi",
+        "Extra"
+      ]
+    },
+    {
+      "slug": "glispeciali",
+      "title": "Gli Speciali",
+      "sections": [],
+      "kinds": [
+        "group"
+      ],
+      "sample_labels": [
+        "Episodi"
+      ]
+    },
+    {
+      "slug": "graziedeifiori",
+      "title": "Grazie dei Fiori",
+      "sections": [],
+      "kinds": [
+        "group"
+      ],
+      "sample_labels": [
+        "Clip"
+      ]
+    }
+  ]
+}

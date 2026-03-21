@@ -3,6 +3,7 @@ from __future__ import annotations
 import subprocess
 
 from raiplaysound_cli import catalog, episodes
+from raiplaysound_cli.errors import HTTPRequestError
 from raiplaysound_cli.models import Episode, GroupSource, Program
 
 
@@ -24,7 +25,55 @@ def test_fetch_program_metadata_parses_station_and_year(monkeypatch) -> None:
         station_name="Radio 2",
         station_short="radio2",
         years="2024-2025",
+        page_url="https://www.raiplaysound.it/programmi/show-a",
+        description_excerpt="",
+        grouping_count=0,
     )
+
+
+def test_fetch_program_metadata_prefers_podcast_info(monkeypatch) -> None:
+    monkeypatch.setattr(
+        catalog,
+        "http_get",
+        lambda _url, timeout=20.0: (
+            '{"title":"Fallback Title","podcast_info":{"title":"Show B",'
+            '"description":"Long description for the show",'
+            '"year":"2023","create_date":"01-01-2023",'
+            '"channel":{"name":"Rai Radio Techete","category_path":"radiotechete"}}}'
+        ),
+    )
+
+    program = catalog.fetch_program_metadata("show-b", "2025")
+
+    assert program == Program(
+        slug="show-b",
+        title="Show B",
+        station_name="Rai Radio Techete",
+        station_short="radiotechete",
+        years="2023-2025",
+        page_url="https://www.raiplaysound.it/programmi/show-b",
+        description_excerpt="Long description for the show",
+        grouping_count=0,
+    )
+
+
+def test_fetch_program_metadata_counts_discoverable_groupings(monkeypatch) -> None:
+    monkeypatch.setattr(
+        catalog,
+        "http_get",
+        lambda _url, timeout=20.0: (
+            '{"title":"Show C","podcast_info":{"channel":{"name":"Radio 3",'
+            '"category_path":"radio3"}},"filters":[{"label":"Speciale Uno",'
+            '"weblink":"/programmi/show-c/speciali/speciale-uno","path":"speciali"}],'
+            '"tab_menu":[{"label":"Episodi","weblink":"/programmi/show-c","active":true},'
+            '{"label":"Extra","weblink":"/programmi/show-c/extra","content_type":"extra"}]}'
+        ),
+    )
+
+    program = catalog.fetch_program_metadata("show-c", "2026")
+
+    assert program is not None
+    assert program.grouping_count == 3
 
 
 def test_discover_feed_sources_extracts_program_and_selected_season(monkeypatch) -> None:
@@ -402,8 +451,8 @@ def test_discover_group_listing_sources_supports_year_and_series_buckets(monkeyp
     _program_url, groups = episodes.discover_group_listing_sources("wikiradio")
 
     assert [(group.label, group.kind, group.url) for group in groups] == [
-        ("2026", "bucket", "https://www.raiplaysound.it/programmi/wikiradio"),
-        ("2025", "bucket", "https://www.raiplaysound.it/programmi/wikiradio/episodi-/2025"),
+        ("2026", "year", "https://www.raiplaysound.it/programmi/wikiradio"),
+        ("2025", "year", "https://www.raiplaysound.it/programmi/wikiradio/episodi-/2025"),
     ]
 
     _program_url, groups = episodes.discover_group_listing_sources("3sullaluna")
@@ -411,7 +460,7 @@ def test_discover_group_listing_sources_supports_year_and_series_buckets(monkeyp
     assert [(group.label, group.kind, group.url) for group in groups] == [
         (
             "Destinazione Luna",
-            "series",
+            "group",
             "https://www.raiplaysound.it/programmi/3sullaluna/puntate-e-podcast/destinazione-luna",
         )
     ]
@@ -510,6 +559,461 @@ def test_discover_group_listing_sources_uses_program_json_filters(monkeypatch) -
             "https://www.raiplaysound.it/programmi/afroamerica-blackmusicrevolution/episodi/2-stagione",
         )
     ]
+
+
+def test_discover_group_listing_sources_supports_cycle_filters_from_program_json(
+    monkeypatch,
+) -> None:
+    def fake_http_get(url: str) -> str:
+        if url == "https://www.raiplaysound.it/programmi/radio2afumetti":
+            return ""
+        if url == "https://www.raiplaysound.it/programmi/radio2afumetti.json":
+            return """
+            {
+              "filters": [
+                {
+                  "active": true,
+                  "path": "diabolik---vampiri-a-clerville",
+                  "label": "Diabolik - Vampiri a Clerville",
+                  "weblink": "/programmi/radio2afumetti/cicli/diabolik---vampiri-a-clerville"
+                },
+                {
+                  "active": false,
+                  "path": "tex-willer---mefisto",
+                  "label": "Tex Willer - Mefisto",
+                  "weblink": "/programmi/radio2afumetti/cicli/tex-willer---mefisto"
+                }
+              ]
+            }
+            """
+        raise RuntimeError("not found")
+
+    monkeypatch.setattr(episodes, "http_get", fake_http_get)
+
+    program_url, groups = episodes.discover_group_listing_sources("radio2afumetti")
+
+    assert program_url == "https://www.raiplaysound.it/programmi/radio2afumetti"
+    assert [(group.key, group.label, group.kind, group.url) for group in groups] == [
+        (
+            "diabolik---vampiri-a-clerville",
+            "Diabolik - Vampiri a Clerville",
+            "group",
+            "https://www.raiplaysound.it/programmi/radio2afumetti/cicli/diabolik---vampiri-a-clerville",
+        ),
+        (
+            "tex-willer---mefisto",
+            "Tex Willer - Mefisto",
+            "group",
+            "https://www.raiplaysound.it/programmi/radio2afumetti/cicli/tex-willer---mefisto",
+        ),
+    ]
+
+
+def test_discover_group_listing_sources_supports_custom_season_sections_from_program_json(
+    monkeypatch,
+) -> None:
+    def fake_http_get(url: str) -> str:
+        if url == "https://www.raiplaysound.it/programmi/lafisicadellamore":
+            return ""
+        if url == "https://www.raiplaysound.it/programmi/lafisicadellamore.json":
+            return (
+                "{"
+                '"filters": ['
+                "{"
+                '"active": true,'
+                '"path": "seconda-stagione",'
+                '"label": "Seconda stagione",'
+                '"weblink": "/programmi/lafisicadellamore/'
+                'la-fisica-dellamore---puntate-block/seconda-stagione"'
+                "},"
+                "{"
+                '"active": false,'
+                '"path": "prima-stagione",'
+                '"label": "Prima stagione",'
+                '"weblink": "/programmi/lafisicadellamore/'
+                'la-fisica-dellamore---puntate-block/prima-stagione"'
+                "}"
+                "]"
+                "}"
+            )
+        raise RuntimeError("not found")
+
+    monkeypatch.setattr(episodes, "http_get", fake_http_get)
+
+    _program_url, groups = episodes.discover_group_listing_sources("lafisicadellamore")
+
+    assert [(group.key, group.label, group.kind) for group in groups] == [
+        ("2", "Seconda stagione", "season"),
+        ("1", "Prima stagione", "season"),
+    ]
+
+
+def test_discover_group_listing_sources_supports_year_range_seasons(monkeypatch) -> None:
+    def fake_http_get(url: str) -> str:
+        if url == "https://www.raiplaysound.it/programmi/moviemag":
+            return "<button data-filters-current><span>Stagione 2025-2026</span></button>"
+        if url == "https://www.raiplaysound.it/programmi/moviemag.json":
+            return """
+            {
+              "filters": [
+                {
+                  "active": true,
+                  "path": "stagione-2025-2026",
+                  "label": "Stagione 2025-2026",
+                  "weblink": "/programmi/moviemag/stagioni/stagione-2025-2026"
+                },
+                {
+                  "active": false,
+                  "path": "stagione-2024-2025",
+                  "label": "Stagione 2024-2025",
+                  "weblink": "/programmi/moviemag/stagioni/stagione-2024-2025"
+                }
+              ]
+            }
+            """
+        raise RuntimeError("not found")
+
+    monkeypatch.setattr(episodes, "http_get", fake_http_get)
+
+    _program_url, groups = episodes.discover_group_listing_sources("moviemag")
+
+    assert [(group.key, group.label, group.kind) for group in groups] == [
+        ("2025-2026", "Stagione 2025-2026", "season"),
+        ("2024-2025", "Stagione 2024-2025", "season"),
+    ]
+
+
+def test_discover_season_listing_sources_ignores_non_numeric_year_range_probing(
+    monkeypatch,
+) -> None:
+    def fake_http_get(url: str) -> str:
+        if url == "https://www.raiplaysound.it/programmi/moviemag":
+            return "<button data-filters-current><span>Stagione 2025-2026</span></button>"
+        raise RuntimeError("not found")
+
+    monkeypatch.setattr(episodes, "http_get", fake_http_get)
+
+    program_url, sources = episodes.discover_season_listing_sources("moviemag")
+
+    assert program_url == "https://www.raiplaysound.it/programmi/moviemag"
+    assert sources == [program_url]
+
+
+def test_discover_group_listing_sources_supports_clip_buckets_from_program_json(
+    monkeypatch,
+) -> None:
+    def fake_http_get(url: str) -> str:
+        if url == "https://www.raiplaysound.it/programmi/lelunatiche":
+            return ""
+        if url == "https://www.raiplaysound.it/programmi/lelunatiche.json":
+            return """
+            {
+              "filters": [
+                {
+                  "active": true,
+                  "path": "ultime-inserite",
+                  "label": "Ultime inserite",
+                  "weblink": "/programmi/lelunatiche/clip/ultime-inserite"
+                },
+                {
+                  "active": false,
+                  "path": "interviste",
+                  "label": "Interviste",
+                  "weblink": "/programmi/lelunatiche/clip/interviste"
+                }
+              ]
+            }
+            """
+        raise RuntimeError("not found")
+
+    monkeypatch.setattr(episodes, "http_get", fake_http_get)
+
+    _program_url, groups = episodes.discover_group_listing_sources("lelunatiche")
+
+    assert [(group.key, group.label, group.kind) for group in groups] == [
+        ("ultime-inserite", "Ultime inserite", "group"),
+        ("interviste", "Interviste", "group"),
+    ]
+
+
+def test_discover_group_listing_sources_supports_mixed_special_and_generic_filters(
+    monkeypatch,
+) -> None:
+    def fake_http_get(url: str) -> str:
+        if url == "https://www.raiplaysound.it/programmi/ipodcastdellarmadeicarabinieri":
+            return ""
+        if url == "https://www.raiplaysound.it/programmi/ipodcastdellarmadeicarabinieri.json":
+            return """
+            {
+              "filters": [
+                {
+                  "active": true,
+                  "path": "speciali",
+                  "label": "Speciali",
+                  "weblink": "/programmi/ipodcastdellarmadeicarabinieri/sezioni/speciali"
+                },
+                {
+                  "active": false,
+                  "path": "storia-dellarma",
+                  "label": "Storia dell'Arma",
+                  "weblink": "/programmi/ipodcastdellarmadeicarabinieri/sezioni/storia-dellarma"
+                }
+              ]
+            }
+            """
+        raise RuntimeError("not found")
+
+    monkeypatch.setattr(episodes, "http_get", fake_http_get)
+
+    _program_url, groups = episodes.discover_group_listing_sources("ipodcastdellarmadeicarabinieri")
+
+    assert [(group.key, group.label, group.kind) for group in groups] == [
+        ("speciali", "Speciali", "special"),
+        ("storia-dellarma", "Storia dell'Arma", "group"),
+    ]
+
+
+def test_discover_group_listing_sources_supports_extra_tabs_from_program_json(
+    monkeypatch,
+) -> None:
+    def fake_http_get(url: str) -> str:
+        if url == "https://www.raiplaysound.it/programmi/sophialiberaenciclopediadiradio3":
+            return ""
+        if url == "https://www.raiplaysound.it/programmi/sophialiberaenciclopediadiradio3.json":
+            return """
+            {
+              "tab_menu": [
+                {
+                  "content_type": "episodi",
+                  "label": "Episodi",
+                  "weblink": "/programmi/sophialiberaenciclopediadiradio3",
+                  "active": true
+                },
+                {
+                  "content_type": "extra",
+                  "label": "Extra",
+                  "weblink": "/programmi/sophialiberaenciclopediadiradio3/extra",
+                  "active": false
+                }
+              ]
+            }
+            """
+        raise RuntimeError("not found")
+
+    monkeypatch.setattr(episodes, "http_get", fake_http_get)
+
+    _program_url, groups = episodes.discover_group_listing_sources(
+        "sophialiberaenciclopediadiradio3"
+    )
+
+    assert [(group.key, group.label, group.kind, group.url) for group in groups] == [
+        (
+            "episodi",
+            "Episodi",
+            "group",
+            "https://www.raiplaysound.it/programmi/sophialiberaenciclopediadiradio3",
+        ),
+        (
+            "extra",
+            "Extra",
+            "group",
+            "https://www.raiplaysound.it/programmi/sophialiberaenciclopediadiradio3/extra",
+        ),
+    ]
+
+
+def test_collect_episodes_from_sources_falls_back_to_page_json_block(monkeypatch) -> None:
+    def fake_run_yt_dlp(*_args, **_kwargs):
+        class Result:
+            stdout = ""
+
+        return Result()
+
+    def fake_http_get(url: str) -> str:
+        if (
+            url
+            == "https://www.raiplaysound.it/programmi/sophialiberaenciclopediadiradio3/extra.json"
+        ):
+            return """
+            {
+              "block": {
+                "cards": [
+                  {
+                    "uniquename": "ContentItem-1575a5e7-4c41-49bd-9576-01f45c7ce32d",
+                    "title": "Le parole dell'amore - Gli speciali di Radio3 del 14/02/2026",
+                    "episode_title": "I live di Sophia - Le parole dell’amore",
+                    "weblink": "/audio/1575a5e7-4c41-49bd-9576-01f45c7ce32d.html"
+                  }
+                ]
+              }
+            }
+            """
+        raise RuntimeError("not found")
+
+    monkeypatch.setattr(episodes, "run_yt_dlp", fake_run_yt_dlp)
+    monkeypatch.setattr(episodes, "http_get", fake_http_get)
+
+    grouped_source = GroupSource(
+        key="extra",
+        label="Extra",
+        url="https://www.raiplaysound.it/programmi/sophialiberaenciclopediadiradio3/extra",
+        kind="group",
+    )
+    result = episodes.collect_episodes_from_sources(
+        [grouped_source.url],
+        source_groups={grouped_source.url: grouped_source},
+    )
+
+    assert len(result) == 1
+    assert result[0].episode_id == "1575a5e7-4c41-49bd-9576-01f45c7ce32d"
+    assert result[0].group_label == "Extra"
+
+
+def test_collect_episodes_from_sources_does_not_fallback_for_duplicate_only_source(
+    monkeypatch,
+) -> None:
+    calls: list[str] = []
+
+    def fake_run_yt_dlp(args: list[str], **_kwargs):
+        class Result:
+            stdout = (
+                "ep-1\thttps://www.raiplaysound.it/audio/ep-1.html\n"
+                "ep-1\thttps://www.raiplaysound.it/audio/ep-1.html\n"
+            )
+
+        calls.append(args[-1])
+        return Result()
+
+    def fake_http_get(_url: str) -> str:
+        raise AssertionError("page-json fallback should not be used")
+
+    monkeypatch.setattr(episodes, "run_yt_dlp", fake_run_yt_dlp)
+    monkeypatch.setattr(episodes, "http_get", fake_http_get)
+
+    result = episodes.collect_episodes_from_sources(
+        [
+            "https://www.raiplaysound.it/programmi/show",
+            "https://www.raiplaysound.it/programmi/show/extra",
+        ]
+    )
+
+    assert calls == [
+        "https://www.raiplaysound.it/programmi/show",
+        "https://www.raiplaysound.it/programmi/show/extra",
+    ]
+    assert len(result) == 1
+    assert result[0].episode_id == "ep-1"
+
+
+def test_collect_episodes_from_sources_ignores_broken_page_json_fallback(monkeypatch) -> None:
+    def fake_run_yt_dlp(args: list[str], **_kwargs):
+        class Result:
+            stdout = (
+                "ep-1\thttps://www.raiplaysound.it/audio/ep-1.html\n"
+                if args[-1].endswith("/good")
+                else ""
+            )
+
+        return Result()
+
+    def fake_http_get(url: str) -> str:
+        if url.endswith("/bad.json"):
+            raise HTTPRequestError(url, "boom")
+        raise AssertionError(f"unexpected url {url}")
+
+    monkeypatch.setattr(episodes, "run_yt_dlp", fake_run_yt_dlp)
+    monkeypatch.setattr(episodes, "http_get", fake_http_get)
+
+    result = episodes.collect_episodes_from_sources(
+        [
+            "https://www.raiplaysound.it/programmi/show/good",
+            "https://www.raiplaysound.it/programmi/show/bad",
+        ]
+    )
+
+    assert len(result) == 1
+    assert result[0].episode_id == "ep-1"
+
+
+def test_discover_grouped_episode_sources_keeps_season_mode_for_mixed_groups(
+    monkeypatch,
+) -> None:
+    groups = [
+        GroupSource(
+            key="1",
+            label="Stagione 1",
+            url="https://www.raiplaysound.it/programmi/show/episodi/stagione-1",
+            kind="season",
+        ),
+        GroupSource(
+            key="2",
+            label="Stagione 2",
+            url="https://www.raiplaysound.it/programmi/show/episodi/stagione-2",
+            kind="season",
+        ),
+        GroupSource(
+            key="extra",
+            label="Extra",
+            url="https://www.raiplaysound.it/programmi/show/extra",
+            kind="group",
+        ),
+    ]
+
+    monkeypatch.setattr(
+        episodes,
+        "discover_group_listing_sources",
+        lambda _slug: ("https://www.raiplaysound.it/programmi/show", groups),
+    )
+
+    sources, selected_groups, has_non_season_groups = episodes.discover_grouped_episode_sources(
+        "show",
+        {"2"},
+        False,
+        set(),
+    )
+
+    assert sources == ["https://www.raiplaysound.it/programmi/show/episodi/stagione-2"]
+    assert selected_groups == [groups[1]]
+    assert has_non_season_groups is False
+
+
+def test_discover_grouped_episode_sources_defaults_to_all_groups_for_mixed_groups(
+    monkeypatch,
+) -> None:
+    groups = [
+        GroupSource(
+            key="1",
+            label="Stagione 1",
+            url="https://www.raiplaysound.it/programmi/show/episodi/stagione-1",
+            kind="season",
+        ),
+        GroupSource(
+            key="extra",
+            label="Extra",
+            url="https://www.raiplaysound.it/programmi/show/extra",
+            kind="group",
+        ),
+    ]
+
+    monkeypatch.setattr(
+        episodes,
+        "discover_group_listing_sources",
+        lambda _slug: ("https://www.raiplaysound.it/programmi/show", groups),
+    )
+
+    sources, selected_groups, has_non_season_groups = episodes.discover_grouped_episode_sources(
+        "show",
+        set(),
+        False,
+        set(),
+    )
+
+    assert sources == [
+        "https://www.raiplaysound.it/programmi/show/episodi/stagione-1",
+        "https://www.raiplaysound.it/programmi/show/extra",
+    ]
+    assert selected_groups == groups
+    assert has_non_season_groups is True
 
 
 def test_collect_group_summaries_preserves_input_order(monkeypatch) -> None:
