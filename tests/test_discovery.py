@@ -4,7 +4,7 @@ import subprocess
 
 from raiplaysound_cli import catalog, episodes
 from raiplaysound_cli.errors import HTTPRequestError
-from raiplaysound_cli.models import Episode, GroupSource, Program
+from raiplaysound_cli.models import Episode, EpisodeMetadata, GroupSource, Program
 
 
 def test_fetch_program_metadata_parses_station_and_year(monkeypatch) -> None:
@@ -291,8 +291,8 @@ def test_collect_metadata_accepts_partial_failure_output(monkeypatch) -> None:
     result = episodes.collect_metadata(["https://www.raiplaysound.it/programmi/battiti"])
 
     assert result == {
-        "ep-1": ("20240101", "NA", "Episode One"),
-        "ep-2": ("20240102", "2", "Episode Two"),
+        "ep-1": EpisodeMetadata(upload_date="20240101", season="NA", title="Episode One"),
+        "ep-2": EpisodeMetadata(upload_date="20240102", season="2", title="Episode Two"),
     }
 
 
@@ -318,7 +318,9 @@ def test_collect_metadata_uses_no_playlist_for_single_entries(monkeypatch) -> No
         single_entries=True,
     )
 
-    assert result == {"ep-1": ("20240101", "NA", "Episode One")}
+    assert result == {
+        "ep-1": EpisodeMetadata(upload_date="20240101", season="NA", title="Episode One")
+    }
     assert captured_args == [
         [
             "--skip-download",
@@ -356,10 +358,14 @@ def test_collect_metadata_uses_episode_json_for_single_entries(monkeypatch) -> N
     )
 
     assert result == {
-        "48e8407b-360f-472f-969e-a1c2f24e713c": (
-            "20220309",
-            "2021-22",
-            "Speciale Burnt Sugar",
+        "48e8407b-360f-472f-969e-a1c2f24e713c": EpisodeMetadata(
+            upload_date="20220309",
+            season="2021-22",
+            title="Speciale Burnt Sugar",
+            search_text=(
+                "ContentItem-48e8407b-360f-472f-969e-a1c2f24e713c | 2022-03-09 | "
+                "Speciale Burnt Sugar | 2021-22"
+            ),
         )
     }
 
