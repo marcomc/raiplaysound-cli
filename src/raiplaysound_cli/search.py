@@ -15,6 +15,7 @@ from .catalog import (
     write_program_cache,
 )
 from .episodes import load_metadata_cache
+from .errors import CLIError
 from .models import EpisodeMetadata, Program, Station
 from .runtime import http_get
 
@@ -40,14 +41,20 @@ def load_programs(
     refresh_catalog: bool,
     catalog_max_age_hours: int,
 ) -> list[Program]:
+    cache_current = program_cache_format_is_current(catalog_cache_file)
     cache_ok = (
         not refresh_catalog
-        and program_cache_format_is_current(catalog_cache_file)
+        and cache_current
         and cache_file_is_fresh(catalog_cache_file, catalog_max_age_hours)
     )
     if cache_ok:
         return load_cached_programs(catalog_cache_file)
-    programs = collect_program_catalog()
+    try:
+        programs = collect_program_catalog()
+    except CLIError:
+        if cache_current and catalog_cache_file.exists():
+            return load_cached_programs(catalog_cache_file)
+        raise
     write_program_cache(catalog_cache_file, programs)
     return programs
 
@@ -264,24 +271,43 @@ def search_all(
     catalog_max_age_hours: int,
 ) -> dict[str, Any]:
     state_dir = catalog_cache_file.parent
-    return {
-        "query": normalize_query(query),
-        "stations": search_stations(query),
-        "programs": search_programs(
+    stations: list[dict[str, str]] = []
+    stations_cache_info = {"source": "live", "age": "live lookup unavailable"}
+    try:
+        stations = search_stations(query)
+        stations_cache_info = {"source": "live", "age": "live"}
+    except CLIError:
+        pass
+
+    programs: list[dict[str, str | int]] = []
+    programs_cache_info = _single_cache_info(
+        catalog_cache_file,
+        fallback="not cached yet",
+    )
+    try:
+        programs = search_programs(
             query,
             catalog_cache_file=catalog_cache_file,
             refresh_catalog=refresh_catalog,
             catalog_max_age_hours=catalog_max_age_hours,
-        ),
+        )
+    except CLIError:
+        if not catalog_cache_file.exists():
+            programs_cache_info = {
+                "source": "cache",
+                "age": "live lookup unavailable and no local cache",
+            }
+
+    return {
+        "query": normalize_query(query),
+        "stations": stations,
+        "programs": programs,
         "groupings": search_local_groupings(query, state_dir=state_dir),
         "episodes": search_local_episodes(query, target_base=target_base, state_dir=state_dir),
         "local_episode_metadata": (target_base.exists()),
         "cache_info": {
-            "stations": {"source": "live"},
-            "programs": _single_cache_info(
-                catalog_cache_file,
-                fallback="not cached yet",
-            ),
+            "stations": stations_cache_info,
+            "programs": programs_cache_info,
             "groupings": _multi_cache_info(
                 sorted((state_dir / "list-seasons").glob("*.json")),
                 fallback="no local season/grouping cache yet",

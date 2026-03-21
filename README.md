@@ -284,6 +284,11 @@ raiplaysound-cli search radio2 --show-urls
 program catalog. Season/grouping and episode matches come from local caches
 that were already populated by earlier `list` or `download` runs.
 
+If RaiPlaySound is temporarily unavailable, `search` still returns any local
+season/grouping and episode matches it can find from existing caches instead
+of failing outright. Live station and program sections are left empty in that
+case, and the cache summary notes the live lookup failure.
+
 That means:
 
 - station and program matches are available immediately

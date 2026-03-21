@@ -3,9 +3,15 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from raiplaysound_cli import cli
+from raiplaysound_cli import cli, search
 from raiplaysound_cli.config import Settings
-from raiplaysound_cli.search import search_local_episodes, search_local_groupings
+from raiplaysound_cli.errors import HTTPRequestError
+from raiplaysound_cli.search import (
+    load_programs,
+    search_all,
+    search_local_episodes,
+    search_local_groupings,
+)
 
 
 def test_search_help_prints_command_specific_help(capsys) -> None:
@@ -90,7 +96,7 @@ def test_search_results_print_cache_hints(capsys) -> None:
             "groupings": [],
             "episodes": [],
             "cache_info": {
-                "stations": {"source": "live"},
+                "stations": {"source": "live", "age": "live"},
                 "programs": {"source": "cache", "age": "2 days old"},
                 "groupings": {"source": "cache", "age": "4 days old"},
                 "episodes": {"source": "cache", "age": "6 days old"},
@@ -102,6 +108,7 @@ def test_search_results_print_cache_hints(capsys) -> None:
     captured = capsys.readouterr()
 
     assert "Cache status:" in captured.out
+    assert "stations: live" in captured.out
     assert "programs: 2 days old" in captured.out
     assert "seasons/groupings: 4 days old" in captured.out
     assert "episodes: 6 days old" in captured.out
@@ -177,3 +184,71 @@ def test_search_local_groupings_reads_cached_list_payloads(tmp_path: Path) -> No
             "all_seasons": False,
         }
     ]
+
+
+def test_load_programs_falls_back_to_existing_cache_when_refresh_fails(
+    tmp_path: Path, monkeypatch
+) -> None:
+    cache = tmp_path / "program-catalog.tsv"
+    cache.write_text(
+        "show-a\tShow A\tRai Radio 2\tradio2\t2024\thttps://www.raiplaysound.it/programmi/show-a\tExcerpt\t0\t2\n",
+        encoding="utf-8",
+    )
+
+    def fail_collect() -> list[object]:
+        raise HTTPRequestError("https://www.raiplaysound.it/programmi", "boom")
+
+    monkeypatch.setattr(search, "collect_program_catalog", fail_collect)
+
+    programs = load_programs(
+        catalog_cache_file=cache,
+        refresh_catalog=True,
+        catalog_max_age_hours=1,
+    )
+
+    assert [program.slug for program in programs] == ["show-a"]
+
+
+def test_search_all_uses_local_results_when_live_lookups_fail(tmp_path: Path, monkeypatch) -> None:
+    target_base = tmp_path / "Music" / "RaiPlaySound"
+    show_dir = target_base / "profili"
+    show_dir.mkdir(parents=True)
+    (show_dir / ".metadata-cache.tsv").write_text(
+        "ep-1\t20240101\tNA\tSpeciale Burnt Sugar\tAuthor Name | Description Text\n",
+        encoding="utf-8",
+    )
+
+    def fail_http_get(url: str) -> str:
+        raise HTTPRequestError(url, f"boom: {url}")
+
+    def fail_collect() -> list[object]:
+        raise HTTPRequestError("https://www.raiplaysound.it/programmi", "boom")
+
+    monkeypatch.setattr(search, "http_get", fail_http_get)
+    monkeypatch.setattr(search, "collect_program_catalog", fail_collect)
+
+    payload = search_all(
+        "author",
+        target_base=target_base,
+        catalog_cache_file=tmp_path / "state" / "program-catalog.tsv",
+        refresh_catalog=False,
+        catalog_max_age_hours=2160,
+    )
+
+    assert payload["stations"] == []
+    assert payload["programs"] == []
+    assert payload["episodes"] == [
+        {
+            "slug": "profili",
+            "program_url": "https://www.raiplaysound.it/programmi/profili",
+            "title": "Speciale Burnt Sugar",
+            "date": "2024-01-01",
+            "season": "NA",
+            "group": "",
+            "group_kind": "",
+            "id": "ep-1",
+            "url": "",
+        }
+    ]
+    assert payload["cache_info"]["stations"]["age"] == "live lookup unavailable"
+    assert payload["cache_info"]["programs"]["age"] == "live lookup unavailable and no local cache"

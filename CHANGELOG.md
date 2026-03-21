@@ -11,6 +11,10 @@ All notable changes to this project are documented in this file.
 - Added `raiplaysound-cli search <query>` to search live stations and the
   program catalog plus locally cached seasons, groupings, and episode
   metadata from previous `list` or `download` runs.
+- Hardened `raiplaysound-cli search <query>` so temporary RaiPlaySound network
+  failures no longer suppress locally cached season/grouping or episode
+  matches; live sections now degrade cleanly when those lookups are
+  unavailable.
 - Extended per-show `.metadata-cache.tsv` rows with an optional searchable
   metadata field so cached episode searches can match richer RaiPlaySound JSON
   text such as titles, authors, and descriptions when that metadata has been

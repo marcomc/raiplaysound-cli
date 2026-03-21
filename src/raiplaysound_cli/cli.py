@@ -648,7 +648,7 @@ def print_search_results(payload: dict[str, Any], *, show_urls: bool) -> None:
     cache_info = payload["cache_info"]
     console.print("Cache status:")
     console.print(
-        "  stations: live RaiPlaySound data",
+        f"  stations: {cache_info['stations']['age']}",
         soft_wrap=True,
     )
     console.print(
