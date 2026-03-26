@@ -24,7 +24,7 @@ def test_main_version_prints_cli_version() -> None:
         cwd=Path(__file__).resolve().parents[1],
     )
     assert result.returncode == 0
-    assert "raiplaysound-cli 2.1.2" in result.stdout
+    assert "raiplaysound-cli 2.1.3" in result.stdout
 
 
 def test_main_version_prints_when_present_anywhere(capsys) -> None:
@@ -32,7 +32,7 @@ def test_main_version_prints_when_present_anywhere(capsys) -> None:
     captured = capsys.readouterr()
 
     assert result == 0
-    assert "raiplaysound-cli 2.1.2" in captured.out
+    assert "raiplaysound-cli 2.1.3" in captured.out
 
 
 def test_main_without_args_prints_focused_help(capsys) -> None:
@@ -46,7 +46,7 @@ def test_main_without_args_prints_focused_help(capsys) -> None:
     assert (
         "search    Search stations, programs, groupings, and local episode metadata" in captured.out
     )
-    assert "download  Download one program into the local music library" in captured.out
+    assert "download  Download one program or configured favourites" in captured.out
     assert "Run `raiplaysound-cli <command> --help` for command-specific help." in captured.out
     assert "usage: raiplaysound-cli list" not in captured.out
     assert "usage: raiplaysound-cli download" not in captured.out
@@ -108,12 +108,15 @@ def test_download_help_prints_command_specific_help(capsys) -> None:
     assert "options:" not in captured.out
     assert "Examples:" in captured.out
     assert "raiplaysound-cli download PROGRAM_SLUG --season SEASON_NUMBER" in captured.out
+    assert "raiplaysound-cli download --favourites" in captured.out
     assert "raiplaysound-cli download PROGRAM_SLUG --group GROUP_SLUG" in captured.out
     assert "--episode-ids" in captured.out
     assert "--group" in captured.out
+    assert "--favourites" in captured.out
     assert "For grouped programs. Use grouping slugs shown by `list seasons`." in captured.out
     assert "--seasons" not in captured.out
     assert "--episodes" not in captured.out
+    assert "--favorites" not in captured.out
 
 
 def test_main_list_requires_exactly_one_target(capsys) -> None:
@@ -247,6 +250,62 @@ def test_main_download_requires_input(capsys) -> None:
 
     assert result == 1
     assert "download requires <program_slug|program_url>." in captured.err
+
+
+def test_main_download_favourites_requires_configured_favorites(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(cli, "parse_env_file", lambda _path: {})
+
+    result = cli.main(["download", "--favourites"])
+    captured = capsys.readouterr()
+
+    assert result == 1
+    assert "--favourites requires FAVORITES" in captured.err
+
+
+def test_main_download_favourites_rejects_explicit_input(monkeypatch, capsys) -> None:
+    settings = Settings.from_config({"FAVORITES": "musicalbox,profili"})
+
+    monkeypatch.setattr(cli, "parse_env_file", lambda _path: {"FAVORITES": "musicalbox,profili"})
+    monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
+
+    result = cli.main(["download", "america7", "--favourites"])
+    captured = capsys.readouterr()
+
+    assert result == 1
+    assert "--favourites cannot be combined" in captured.err
+
+
+def test_main_download_favourites_uses_configured_programs(monkeypatch, capsys) -> None:
+    settings = Settings.from_config(
+        {"FAVORITES": "musicalbox, profili, https://www.raiplaysound.it/programmi/america7"}
+    )
+    captured_inputs: list[str] = []
+
+    def fake_download_one_program(_settings: Settings, _args: object, input_value: str) -> int:
+        captured_inputs.append(input_value)
+        return 0
+
+    monkeypatch.setattr(
+        cli,
+        "parse_env_file",
+        lambda _path: {
+            "FAVORITES": "musicalbox, profili, https://www.raiplaysound.it/programmi/america7"
+        },
+    )
+    monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
+    monkeypatch.setattr(cli, "_download_one_program", fake_download_one_program)
+
+    result = cli.main(["download", "--favourites"])
+    captured = capsys.readouterr()
+
+    assert result == 0
+    assert captured_inputs == [
+        "musicalbox",
+        "profili",
+        "https://www.raiplaysound.it/programmi/america7",
+    ]
+    assert "Starting favourites run for 3 configured program(s)" in captured.out
+    assert "Favourites run completed: done=3, errors=0" in captured.out
 
 
 def test_main_list_programs_uses_config_filter_and_json(

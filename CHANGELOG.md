@@ -4,6 +4,17 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [2.1.3] - 2026-03-26 - favourites batch downloads
+
+### Changed
+
+- Added a `FAVORITES` config key plus `raiplaysound-cli download --favourites`
+  for batch downloads across a configured list of program slugs or program
+  URLs.
+- Kept favourite batch downloads aligned with the existing default season
+  behavior, so seasonal programs download only the latest season unless you
+  explicitly pass selectors such as `--season all`.
+
 ## [2.1.2] - 2026-03-20 - TUI, grouping audit, and CLI robustness improvements
 
 ### Changed
