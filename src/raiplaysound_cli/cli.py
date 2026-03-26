@@ -346,7 +346,7 @@ def format_main_help() -> str:
             "Commands:",
             "  list      Inspect stations, programs, seasons, or episodes",
             "  search    Search stations, programs, groupings, and local episode metadata",
-            "  download  Download one program into the local music library",
+            "  download  Download one program or configured favourites",
             "",
             "Run `raiplaysound-cli <command> --help` for command-specific help.",
         ]
@@ -1286,6 +1286,7 @@ def build_download_parser() -> argparse.ArgumentParser:
         epilog=(
             "Examples:\n"
             "  raiplaysound-cli download PROGRAM_SLUG\n"
+            "  raiplaysound-cli download --favourites\n"
             "  raiplaysound-cli download PROGRAM_SLUG --season SEASON_NUMBER\n"
             "  raiplaysound-cli download PROGRAM_SLUG --group GROUP_SLUG\n"
             "  raiplaysound-cli download PROGRAM_SLUG --episode-ids "
@@ -1306,6 +1307,17 @@ def build_download_parser() -> argparse.ArgumentParser:
         "--help",
         action="help",
         help="Show this help message and exit.",
+    )
+    general_group.add_argument(
+        "--favourites",
+        action="store_true",
+        help="Download each program configured in `FAVORITES`.",
+    )
+    general_group.add_argument(
+        "--favorites",
+        dest="favourites",
+        action="store_true",
+        help=argparse.SUPPRESS,
     )
     selection_group = parser.add_argument_group("Selection")
     selection_group.add_argument(
@@ -1529,8 +1541,8 @@ def predicted_media_exists(episode_url: str, output_template: str, audio_format:
     return False
 
 
-def download_command(settings: Settings, args: argparse.Namespace) -> int:
-    slug, program_url = detect_slug(args.input or settings.input_value)
+def _download_one_program(settings: Settings, args: argparse.Namespace, input_value: str) -> int:
+    slug, program_url = detect_slug(input_value)
     selected_seasons, request_all = build_requested_set(args.season or settings.seasons_arg)
     selected_groups = build_requested_groups(args.group or settings.groups_arg)
     requested_episode_ids, requested_episode_urls = build_requested_episode_filters(
@@ -1555,7 +1567,7 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
     print_download_prep_step("enumerating episodes and loading cached metadata")
     slug, program_url, episodes, summary, metadata_cache_file, cache = load_cached_show_context(
         settings,
-        args.input or settings.input_value,
+        input_value,
         selected_seasons,
         request_all,
         sources_override=sources_override,
@@ -1769,6 +1781,36 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
     return 0
 
 
+def download_command(settings: Settings, args: argparse.Namespace) -> int:
+    if args.favourites:
+        if args.input:
+            raise CLIError("--favourites cannot be combined with <program_slug|program_url>.")
+        if not settings.favorites:
+            raise CLIError("--favourites requires FAVORITES in ~/.raiplaysound-cli.conf.")
+        console.print(
+            f"Starting favourites run for {len(settings.favorites)} configured program(s)"
+        )
+        ok_count = 0
+        error_count = 0
+        for index, favorite in enumerate(settings.favorites, start=1):
+            console.print("")
+            console.print(f"[bold]Favourite {index}/{len(settings.favorites)}:[/bold] {favorite}")
+            try:
+                result = _download_one_program(settings, args, favorite)
+            except CLIError as exc:
+                err_console.print(f"Error ({favorite}): {exc}")
+                error_count += 1
+                continue
+            if result == 0:
+                ok_count += 1
+            else:
+                error_count += 1
+        console.print(f"Favourites run completed: done={ok_count}, errors={error_count}")
+        return 1 if error_count else 0
+
+    return _download_one_program(settings, args, args.input or settings.input_value)
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv:
@@ -1824,7 +1866,7 @@ def main(argv: list[str] | None = None) -> int:
             args = apply_search_defaults(settings, build_search_parser().parse_args(rest))
             return search_command(settings, args)
         args = build_download_parser().parse_args(rest)
-        if not (args.input or settings.input_value):
+        if not args.favourites and not (args.input or settings.input_value):
             raise CLIError("download requires <program_slug|program_url>.")
         settings = apply_download_overrides(settings, args)
         if settings.audio_format not in {"mp3", "m4a", "aac", "ogg", "opus", "flac", "wav"}:

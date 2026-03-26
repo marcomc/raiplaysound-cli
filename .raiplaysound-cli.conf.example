@@ -120,6 +120,12 @@ CHECK_JOBS=8
 # Also used for list mode when LIST_TARGET is "seasons" or "episodes".
 # INPUT="musicalbox"
 
+# Optional favourite program list for `download --favourites`.
+# Use a comma-separated list of program slugs or full RaiPlaySound program URLs.
+# When you run `raiplaysound-cli download --favourites` with no extra selectors,
+# each favourite downloads only its latest season by default.
+# FAVORITES="musicalbox,profili,https://www.raiplaysound.it/programmi/america7"
+
 # Optional: generate an M3U playlist (playlist.m3u) in the show's download folder
 # after every run. The playlist is built from the metadata cache and all locally
 # present audio files, sorted oldest-to-newest. File paths are relative to the

@@ -91,6 +91,7 @@ class Settings:
     rss_base_url: str = ""
     playlist: bool = False
     input_value: str = ""
+    favorites: list[str] = dataclasses.field(default_factory=list)
     list_target: str = ""
     group_by: str = "auto"
     podcasts_sorted: bool = False
@@ -159,6 +160,8 @@ class Settings:
                     settings.playlist = parsed
             elif key == "INPUT":
                 settings.input_value = value
+            elif key == "FAVORITES":
+                settings.favorites = [item.strip() for item in value.split(",") if item.strip()]
             elif key == "LIST_TARGET":
                 settings.list_target = value.lower()
             elif key in {"GROUP_BY", "PODCASTS_GROUP_BY"}:

@@ -53,6 +53,18 @@ def test_parse_env_file(tmp_path: Path) -> None:
     assert settings.groups_arg == "speciali,battiti"
 
 
+def test_settings_from_config_parses_favorites_list() -> None:
+    settings = Settings.from_config(
+        {"FAVORITES": "musicalbox, profili, https://www.raiplaysound.it/programmi/america7"}
+    )
+
+    assert settings.favorites == [
+        "musicalbox",
+        "profili",
+        "https://www.raiplaysound.it/programmi/america7",
+    ]
+
+
 def test_requested_seasons() -> None:
     selected, all_flag = build_requested_set("1,2")
     assert selected == {"1", "2"}

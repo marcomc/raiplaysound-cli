@@ -148,6 +148,7 @@ Example values:
 TARGET_BASE="$HOME/Music/RaiPlaySound"
 AUDIO_FORMAT="mp3"
 JOBS=5
+FAVORITES="musicalbox,profili"
 GROUP_BY="auto"
 STATION_FILTER="radio2"
 CATALOG_MAX_AGE_HOURS=2160
@@ -186,6 +187,7 @@ Supported config keys:
 | `FORCE_REFRESH_METADATA` | `--refresh-metadata` | download |
 | `CLEAR_METADATA_CACHE` | `--clear-metadata-cache` | download |
 | `METADATA_MAX_AGE_HOURS` | `--metadata-max-age-hours` | download |
+| `FAVORITES` | `--favourites` | download |
 | `GROUP_BY` | `--group-by` | list `programs` |
 | `PODCASTS_SORTED` | `--sorted` | list `programs` |
 | `STATION_FILTER` | `--filter` | list `programs` |
@@ -195,6 +197,11 @@ Supported config keys:
 | `SHOW_URLS` | `--show-urls` | list `episodes`, search |
 | `PAGER` | `--pager` | list, search |
 | `INPUT` | `<program_slug\|program_url>` | download, list `seasons`, list `episodes` |
+
+`FAVORITES` accepts a comma-separated list of RaiPlaySound program slugs or
+full program URLs. Running `raiplaysound-cli download --favourites` iterates
+that list. If you do not pass `--season`, `--group`, `--episode-ids`, or
+`--episode-urls`, each favourite downloads only the latest season by default.
 
 `FORCE_REFRESH_CATALOG` and `CATALOG_MAX_AGE_HOURS` affect only `list programs`.
 They do not change the per-show metadata cache used by `download` and
@@ -220,6 +227,7 @@ raiplaysound-cli list programs
 raiplaysound-cli search lucio dalla
 raiplaysound-cli list episodes america7
 raiplaysound-cli download america7
+raiplaysound-cli download --favourites
 ```
 
 ## Common Workflows
@@ -395,6 +403,19 @@ actually be downloaded.
 During that preparation phase, the CLI now prints explicit startup steps such
 as source discovery, episode enumeration, metadata refresh, and archive-file
 checks so long grouped downloads are not silent before transfer starts.
+
+If you prefer a batch workflow, set `FAVORITES` in
+`~/.raiplaysound-cli.conf` and run:
+
+```bash
+raiplaysound-cli download --favourites
+```
+
+That iterates each configured favourite program. By default, seasonal
+programs download only their latest season in this mode, matching the normal
+single-program default. You can still override the selection for every
+favourite in the batch with options such as `--season all` or `--group
+speciali`.
 
 Once transfers begin, each per-episode progress row now shows downloaded size
 in megabytes, for example `5.0/10.0 MB`, while the overall row shows aggregate
