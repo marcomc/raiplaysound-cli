@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import sys
 import types
 from importlib.util import module_from_spec, spec_from_file_location
@@ -71,3 +72,40 @@ def test_main_reports_missing_runtime_tree(monkeypatch, capsys) -> None:
 
     assert result == 1
     assert "could not find an installed package tree" in captured.err
+
+
+def test_uninstall_dev_restores_legacy_standalone_install(tmp_path: Path) -> None:
+    install_dir = tmp_path / "install"
+    install_path = tmp_path / "bin" / "raiplaysound-cli"
+    launcher_path = install_dir / "bin" / "raiplaysound-cli"
+    legacy_path = install_dir / "venv" / "bin" / "raiplaysound-cli"
+    repo_root = Path(__file__).resolve().parents[1]
+    launcher_link_target = repo_root / "launcher" / "raiplaysound-cli"
+
+    legacy_path.parent.mkdir(parents=True)
+    legacy_path.write_text("#!/usr/bin/env python3\n", encoding="utf-8")
+    legacy_path.chmod(0o755)
+    install_path.parent.mkdir(parents=True)
+    install_path.symlink_to(launcher_link_target)
+
+    result = subprocess.run(
+        [
+            "make",
+            f"CURDIR={repo_root}",
+            f"INSTALL_DIR={install_dir}",
+            f"BINDIR={install_path.parent}",
+            f"INSTALL_PATH={install_path}",
+            f"INSTALL_LAUNCHER_PATH={launcher_path}",
+            f"INSTALL_VENV={install_dir / 'venv'}",
+            "uninstall-dev",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=repo_root,
+    )
+
+    assert result.returncode == 0
+    assert install_path.is_symlink()
+    assert install_path.resolve() == legacy_path
+    assert "Restored legacy standalone install" in result.stdout

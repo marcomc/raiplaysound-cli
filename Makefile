@@ -100,6 +100,9 @@ uninstall-dev:
 		if [ -x "$(INSTALL_LAUNCHER_PATH)" ]; then \
 			ln -sf "$(INSTALL_LAUNCHER_PATH)" "$(INSTALL_PATH)"; \
 			echo "Restored standalone install at $(INSTALL_PATH)"; \
+		elif [ -x "$(INSTALL_VENV)/bin/$(INSTALL_NAME)" ]; then \
+			ln -sf "$(INSTALL_VENV)/bin/$(INSTALL_NAME)" "$(INSTALL_PATH)"; \
+			echo "Restored legacy standalone install at $(INSTALL_PATH)"; \
 		else \
 			echo "No standalone install found"; \
 		fi; \
