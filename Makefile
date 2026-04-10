@@ -15,6 +15,8 @@ INSTALL_LAUNCHER_PATH ?= $(INSTALL_LAUNCHER_DIR)/$(INSTALL_NAME)
 LAUNCHER_DIR ?= launcher
 LAUNCHER_SCRIPT := $(LAUNCHER_DIR)/$(INSTALL_NAME)
 LAUNCHER_SUPPORT := $(LAUNCHER_DIR)/launcher_support.py
+DEV_LAUNCHER_PATH ?= $(VENV)/bin/$(INSTALL_NAME)
+DEV_LAUNCHER_SUPPORT_PATH ?= $(VENV)/bin/launcher_support.py
 
 PREFIX ?= $(HOME)/.local
 BINDIR ?= $(PREFIX)/bin
@@ -77,14 +79,18 @@ install: check-deps _install-venv
 	@"$(INSTALL_PIP)" install --no-build-isolation . --quiet
 	@mkdir -p "$(BINDIR)"
 	@mkdir -p "$(INSTALL_LAUNCHER_DIR)"
-	@install -m 755 "$(LAUNCHER_SCRIPT)" "$(INSTALL_LAUNCHER_PATH)"
+	@{ printf '#!%s\n' "$(INSTALL_VENV)/bin/python"; tail -n +2 "$(LAUNCHER_SCRIPT)"; } > "$(INSTALL_LAUNCHER_PATH)"
 	@install -m 644 "$(LAUNCHER_SUPPORT)" "$(INSTALL_LAUNCHER_DIR)/launcher_support.py"
+	@chmod 755 "$(INSTALL_LAUNCHER_PATH)"
 	@ln -sf "$(INSTALL_LAUNCHER_PATH)" "$(INSTALL_PATH)"
 	@echo "Installed standalone CLI at $(INSTALL_PATH)"
 
 install-dev: check-deps dev-deps
 	@mkdir -p "$(BINDIR)"
-	@ln -sf "$(CURDIR)/$(LAUNCHER_SCRIPT)" "$(INSTALL_PATH)"
+	@{ printf '#!%s\n' "$(VENV_PYTHON)"; tail -n +2 "$(LAUNCHER_SCRIPT)"; } > "$(DEV_LAUNCHER_PATH)"
+	@install -m 644 "$(LAUNCHER_SUPPORT)" "$(DEV_LAUNCHER_SUPPORT_PATH)"
+	@chmod 755 "$(DEV_LAUNCHER_PATH)"
+	@ln -sf "$(DEV_LAUNCHER_PATH)" "$(INSTALL_PATH)"
 	@echo "Installed editable dev CLI at $(INSTALL_PATH)"
 
 uninstall:
@@ -94,7 +100,7 @@ uninstall:
 	@echo "Removed $(INSTALL_DIR)"
 
 uninstall-dev:
-	@if [ -L "$(INSTALL_PATH)" ] && [ "$$(readlink "$(INSTALL_PATH)")" = "$(CURDIR)/$(LAUNCHER_SCRIPT)" ]; then \
+	@if [ -L "$(INSTALL_PATH)" ] && [ "$$(readlink "$(INSTALL_PATH)")" = "$(DEV_LAUNCHER_PATH)" ]; then \
 		rm -f "$(INSTALL_PATH)"; \
 		echo "Removed dev symlink $(INSTALL_PATH)"; \
 		if [ -x "$(INSTALL_LAUNCHER_PATH)" ]; then \

@@ -76,23 +76,28 @@ def test_main_reports_missing_runtime_tree(monkeypatch, capsys) -> None:
 
 def test_uninstall_dev_restores_legacy_standalone_install(tmp_path: Path) -> None:
     install_dir = tmp_path / "install"
+    venv_dir = tmp_path / ".venv"
     install_path = tmp_path / "bin" / "raiplaysound-cli"
     launcher_path = install_dir / "bin" / "raiplaysound-cli"
     legacy_path = install_dir / "venv" / "bin" / "raiplaysound-cli"
+    dev_launcher_path = venv_dir / "bin" / "raiplaysound-cli"
     repo_root = Path(__file__).resolve().parents[1]
-    launcher_link_target = repo_root / "launcher" / "raiplaysound-cli"
 
     legacy_path.parent.mkdir(parents=True)
     legacy_path.write_text("#!/usr/bin/env python3\n", encoding="utf-8")
     legacy_path.chmod(0o755)
     install_path.parent.mkdir(parents=True)
-    install_path.symlink_to(launcher_link_target)
+    dev_launcher_path.parent.mkdir(parents=True)
+    dev_launcher_path.write_text("#!/usr/bin/env python3\n", encoding="utf-8")
+    dev_launcher_path.chmod(0o755)
+    install_path.symlink_to(dev_launcher_path)
 
     result = subprocess.run(
         [
             "make",
             f"CURDIR={repo_root}",
             f"INSTALL_DIR={install_dir}",
+            f"VENV={venv_dir}",
             f"BINDIR={install_path.parent}",
             f"INSTALL_PATH={install_path}",
             f"INSTALL_LAUNCHER_PATH={launcher_path}",
@@ -109,3 +114,37 @@ def test_uninstall_dev_restores_legacy_standalone_install(tmp_path: Path) -> Non
     assert install_path.is_symlink()
     assert install_path.resolve() == legacy_path
     assert "Restored legacy standalone install" in result.stdout
+
+
+def test_install_stamps_launcher_with_install_venv_python(tmp_path: Path) -> None:
+    install_dir = tmp_path / "install"
+    bindir = tmp_path / "bin"
+    repo_root = Path(__file__).resolve().parents[1]
+    install_launcher_path = install_dir / "bin" / "raiplaysound-cli"
+    install_launcher_support = install_dir / "bin" / "launcher_support.py"
+    install_venv = install_dir / "venv"
+    install_path = bindir / "raiplaysound-cli"
+
+    result = subprocess.run(
+        [
+            "make",
+            f"CURDIR={repo_root}",
+            f"INSTALL_DIR={install_dir}",
+            f"INSTALL_VENV={install_venv}",
+            f"INSTALL_LAUNCHER_PATH={install_launcher_path}",
+            f"INSTALL_LAUNCHER_DIR={install_launcher_path.parent}",
+            f"BINDIR={bindir}",
+            f"INSTALL_PATH={install_path}",
+            "install",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=repo_root,
+    )
+
+    assert result.returncode == 0
+    assert install_launcher_path.read_text(encoding="utf-8").startswith(
+        f"#!{install_venv / 'bin' / 'python'}"
+    )
+    assert install_launcher_support.exists()
