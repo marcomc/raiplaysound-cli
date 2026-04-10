@@ -88,6 +88,18 @@ def test_discover_runtime_root_prefers_repo_root_over_venv(
     assert support.discover_runtime_root(script_path) == repo_root
 
 
+def test_discover_runtime_root_falls_back_to_parent_parent_for_install_tree(
+    tmp_path: Path,
+) -> None:
+    support = load_launcher_support()
+    install_root = tmp_path / "install"
+    script_path = install_root / "bin" / "launcher_support.py"
+    script_path.parent.mkdir(parents=True)
+    script_path.write_text("", encoding="utf-8")
+
+    assert support.discover_runtime_root(script_path) == install_root
+
+
 def test_uninstall_dev_restores_legacy_standalone_install(tmp_path: Path) -> None:
     install_dir = tmp_path / "install"
     venv_dir = tmp_path / ".venv"

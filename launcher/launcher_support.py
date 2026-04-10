@@ -31,9 +31,6 @@ def discover_runtime_root(script_path: Path) -> Path:
     for candidate in candidates:
         if (candidate / "src" / "raiplaysound_cli").is_dir():
             return candidate
-    for candidate in candidates:
-        if (candidate / "venv").is_dir() or (candidate / ".venv").is_dir():
-            return candidate
     return script_path.parent.parent
 
 
