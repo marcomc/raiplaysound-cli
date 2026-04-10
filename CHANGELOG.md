@@ -4,6 +4,17 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [2.1.4] - 2026-04-10 - resilient launcher install
+
+### Changed
+
+- Replaced the user-facing `raiplaysound-cli` console-script symlink with a
+  stable Python launcher that loads the installed package from the local
+  install tree. That keeps the command working across Python interpreter
+  upgrades or venv recreation instead of pinning it to a generated shebang.
+- Updated `make install-dev` to point the user command at the repo launcher
+  rather than at the editable venv's generated console script.
+
 ## [2.1.3] - 2026-03-26 - favourites batch downloads
 
 ### Changed

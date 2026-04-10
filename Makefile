@@ -9,6 +9,12 @@ INSTALL_NAME ?= raiplaysound-cli
 INSTALL_DIR ?= $(HOME)/.local/share/raiplaysound-cli
 INSTALL_VENV ?= $(INSTALL_DIR)/venv
 INSTALL_PIP := $(INSTALL_VENV)/bin/pip
+INSTALL_LAUNCHER_DIR ?= $(INSTALL_DIR)/bin
+INSTALL_LAUNCHER_PATH ?= $(INSTALL_LAUNCHER_DIR)/$(INSTALL_NAME)
+
+LAUNCHER_DIR ?= launcher
+LAUNCHER_SCRIPT := $(LAUNCHER_DIR)/$(INSTALL_NAME)
+LAUNCHER_SUPPORT := $(LAUNCHER_DIR)/launcher_support.py
 
 PREFIX ?= $(HOME)/.local
 BINDIR ?= $(PREFIX)/bin
@@ -70,12 +76,15 @@ _install-venv:
 install: check-deps _install-venv
 	@"$(INSTALL_PIP)" install --no-build-isolation . --quiet
 	@mkdir -p "$(BINDIR)"
-	@ln -sf "$(INSTALL_VENV)/bin/$(INSTALL_NAME)" "$(INSTALL_PATH)"
+	@mkdir -p "$(INSTALL_LAUNCHER_DIR)"
+	@install -m 755 "$(LAUNCHER_SCRIPT)" "$(INSTALL_LAUNCHER_PATH)"
+	@install -m 644 "$(LAUNCHER_SUPPORT)" "$(INSTALL_LAUNCHER_DIR)/launcher_support.py"
+	@ln -sf "$(INSTALL_LAUNCHER_PATH)" "$(INSTALL_PATH)"
 	@echo "Installed standalone CLI at $(INSTALL_PATH)"
 
 install-dev: check-deps dev-deps
 	@mkdir -p "$(BINDIR)"
-	@ln -sf "$(CURDIR)/$(VENV)/bin/$(INSTALL_NAME)" "$(INSTALL_PATH)"
+	@ln -sf "$(CURDIR)/$(LAUNCHER_SCRIPT)" "$(INSTALL_PATH)"
 	@echo "Installed editable dev CLI at $(INSTALL_PATH)"
 
 uninstall:
@@ -85,11 +94,11 @@ uninstall:
 	@echo "Removed $(INSTALL_DIR)"
 
 uninstall-dev:
-	@if [ -L "$(INSTALL_PATH)" ] && [ "$$(readlink "$(INSTALL_PATH)")" = "$(CURDIR)/$(VENV)/bin/$(INSTALL_NAME)" ]; then \
+	@if [ -L "$(INSTALL_PATH)" ] && [ "$$(readlink "$(INSTALL_PATH)")" = "$(CURDIR)/$(LAUNCHER_SCRIPT)" ]; then \
 		rm -f "$(INSTALL_PATH)"; \
 		echo "Removed dev symlink $(INSTALL_PATH)"; \
-		if [ -x "$(INSTALL_VENV)/bin/$(INSTALL_NAME)" ]; then \
-			ln -sf "$(INSTALL_VENV)/bin/$(INSTALL_NAME)" "$(INSTALL_PATH)"; \
+		if [ -x "$(INSTALL_LAUNCHER_PATH)" ]; then \
+			ln -sf "$(INSTALL_LAUNCHER_PATH)" "$(INSTALL_PATH)"; \
 			echo "Restored standalone install at $(INSTALL_PATH)"; \
 		else \
 			echo "No standalone install found"; \
@@ -107,7 +116,7 @@ lint: test lint-docs
 	@"$(VENV)/bin/ruff" check src tests
 	@"$(VENV)/bin/mypy" src tests
 	@"$(VENV)/bin/black" --check src tests
-	@"$(VENV_PYTHON)" -m py_compile src/raiplaysound_cli/*.py
+	@"$(VENV_PYTHON)" -m py_compile src/raiplaysound_cli/*.py launcher/*.py launcher/raiplaysound-cli
 
 lint-docs:
 	@$(MARKDOWNLINT) $(DOCS) --config /Users/mmassari/.markdownlint.json
