@@ -17,6 +17,10 @@ LAUNCHER_SCRIPT := $(LAUNCHER_DIR)/$(INSTALL_NAME)
 LAUNCHER_SUPPORT := $(LAUNCHER_DIR)/launcher_support.py
 DEV_LAUNCHER_PATH ?= $(VENV)/bin/$(INSTALL_NAME)
 DEV_LAUNCHER_SUPPORT_PATH ?= $(VENV)/bin/launcher_support.py
+INSTALL_VENV_PYTHON_ABS := $(abspath $(INSTALL_VENV)/bin/python)
+INSTALL_LAUNCHER_PATH_ABS := $(abspath $(INSTALL_LAUNCHER_PATH))
+DEV_VENV_PYTHON_ABS := $(abspath $(VENV_PYTHON))
+DEV_LAUNCHER_PATH_ABS := $(abspath $(DEV_LAUNCHER_PATH))
 
 PREFIX ?= $(HOME)/.local
 BINDIR ?= $(PREFIX)/bin
@@ -79,18 +83,18 @@ install: check-deps _install-venv
 	@"$(INSTALL_PIP)" install --no-build-isolation . --quiet
 	@mkdir -p "$(BINDIR)"
 	@mkdir -p "$(INSTALL_LAUNCHER_DIR)"
-	@{ printf '#!%s\n' "$(INSTALL_VENV)/bin/python"; tail -n +2 "$(LAUNCHER_SCRIPT)"; } > "$(INSTALL_LAUNCHER_PATH)"
+	@{ printf '#!%s\n' "$(INSTALL_VENV_PYTHON_ABS)"; tail -n +2 "$(LAUNCHER_SCRIPT)"; } > "$(INSTALL_LAUNCHER_PATH)"
 	@install -m 644 "$(LAUNCHER_SUPPORT)" "$(INSTALL_LAUNCHER_DIR)/launcher_support.py"
 	@chmod 755 "$(INSTALL_LAUNCHER_PATH)"
-	@ln -sf "$(INSTALL_LAUNCHER_PATH)" "$(INSTALL_PATH)"
+	@ln -sf "$(INSTALL_LAUNCHER_PATH_ABS)" "$(INSTALL_PATH)"
 	@echo "Installed standalone CLI at $(INSTALL_PATH)"
 
 install-dev: check-deps dev-deps
 	@mkdir -p "$(BINDIR)"
-	@{ printf '#!%s\n' "$(VENV_PYTHON)"; tail -n +2 "$(LAUNCHER_SCRIPT)"; } > "$(DEV_LAUNCHER_PATH)"
+	@{ printf '#!%s\n' "$(DEV_VENV_PYTHON_ABS)"; tail -n +2 "$(LAUNCHER_SCRIPT)"; } > "$(DEV_LAUNCHER_PATH)"
 	@install -m 644 "$(LAUNCHER_SUPPORT)" "$(DEV_LAUNCHER_SUPPORT_PATH)"
 	@chmod 755 "$(DEV_LAUNCHER_PATH)"
-	@ln -sf "$(DEV_LAUNCHER_PATH)" "$(INSTALL_PATH)"
+	@ln -sf "$(DEV_LAUNCHER_PATH_ABS)" "$(INSTALL_PATH)"
 	@echo "Installed editable dev CLI at $(INSTALL_PATH)"
 
 uninstall:
@@ -100,7 +104,7 @@ uninstall:
 	@echo "Removed $(INSTALL_DIR)"
 
 uninstall-dev:
-	@if [ -L "$(INSTALL_PATH)" ] && [ "$$(readlink "$(INSTALL_PATH)")" = "$(DEV_LAUNCHER_PATH)" ]; then \
+	@if [ -L "$(INSTALL_PATH)" ] && [ "$$(readlink "$(INSTALL_PATH)")" = "$(DEV_LAUNCHER_PATH_ABS)" ]; then \
 		rm -f "$(INSTALL_PATH)"; \
 		echo "Removed dev symlink $(INSTALL_PATH)"; \
 		if [ -x "$(INSTALL_LAUNCHER_PATH)" ]; then \

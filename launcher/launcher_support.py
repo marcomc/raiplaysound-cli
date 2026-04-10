@@ -26,6 +26,17 @@ def runtime_sys_path_entries(root: Path) -> list[Path]:
     return entries
 
 
+def discover_runtime_root(script_path: Path) -> Path:
+    candidates = [script_path.parent, *script_path.parents]
+    for candidate in candidates:
+        if (candidate / "src" / "raiplaysound_cli").is_dir():
+            return candidate
+    for candidate in candidates:
+        if (candidate / "venv").is_dir() or (candidate / ".venv").is_dir():
+            return candidate
+    return script_path.parent.parent
+
+
 def _prepend_sys_path(entries: Sequence[Path]) -> None:
     for entry in reversed(entries):
         entry_str = str(entry)
@@ -43,7 +54,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
 
     script_path = Path(__file__).resolve()
-    root = script_path.parent.parent
+    root = discover_runtime_root(script_path)
     entries = runtime_sys_path_entries(root)
     if not entries:
         sys.stderr.write(

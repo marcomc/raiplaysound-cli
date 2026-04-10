@@ -74,6 +74,20 @@ def test_main_reports_missing_runtime_tree(monkeypatch, capsys) -> None:
     assert "could not find an installed package tree" in captured.err
 
 
+def test_discover_runtime_root_prefers_repo_root_over_venv(
+    tmp_path: Path,
+) -> None:
+    support = load_launcher_support()
+    repo_root = tmp_path / "repo"
+    launcher_dir = repo_root / ".venv" / "bin"
+    launcher_dir.mkdir(parents=True)
+    (repo_root / "src" / "raiplaysound_cli").mkdir(parents=True)
+    script_path = launcher_dir / "launcher_support.py"
+    script_path.write_text("", encoding="utf-8")
+
+    assert support.discover_runtime_root(script_path) == repo_root
+
+
 def test_uninstall_dev_restores_legacy_standalone_install(tmp_path: Path) -> None:
     install_dir = tmp_path / "install"
     venv_dir = tmp_path / ".venv"
