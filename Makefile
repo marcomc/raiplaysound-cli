@@ -9,6 +9,18 @@ INSTALL_NAME ?= raiplaysound-cli
 INSTALL_DIR ?= $(HOME)/.local/share/raiplaysound-cli
 INSTALL_VENV ?= $(INSTALL_DIR)/venv
 INSTALL_PIP := $(INSTALL_VENV)/bin/pip
+INSTALL_LAUNCHER_DIR ?= $(INSTALL_DIR)/bin
+INSTALL_LAUNCHER_PATH ?= $(INSTALL_LAUNCHER_DIR)/$(INSTALL_NAME)
+
+LAUNCHER_DIR ?= launcher
+LAUNCHER_SCRIPT := $(LAUNCHER_DIR)/$(INSTALL_NAME)
+LAUNCHER_SUPPORT := $(LAUNCHER_DIR)/launcher_support.py
+DEV_LAUNCHER_PATH ?= $(VENV)/bin/$(INSTALL_NAME)
+DEV_LAUNCHER_SUPPORT_PATH ?= $(VENV)/bin/launcher_support.py
+INSTALL_VENV_PYTHON_ABS := $(abspath $(INSTALL_VENV)/bin/python)
+INSTALL_LAUNCHER_PATH_ABS := $(abspath $(INSTALL_LAUNCHER_PATH))
+DEV_VENV_PYTHON_ABS := $(abspath $(VENV_PYTHON))
+DEV_LAUNCHER_PATH_ABS := $(abspath $(DEV_LAUNCHER_PATH))
 
 PREFIX ?= $(HOME)/.local
 BINDIR ?= $(PREFIX)/bin
@@ -70,12 +82,19 @@ _install-venv:
 install: check-deps _install-venv
 	@"$(INSTALL_PIP)" install --no-build-isolation . --quiet
 	@mkdir -p "$(BINDIR)"
-	@ln -sf "$(INSTALL_VENV)/bin/$(INSTALL_NAME)" "$(INSTALL_PATH)"
+	@mkdir -p "$(INSTALL_LAUNCHER_DIR)"
+	@{ printf '#!%s\n' "$(INSTALL_VENV_PYTHON_ABS)"; tail -n +2 "$(LAUNCHER_SCRIPT)"; } > "$(INSTALL_LAUNCHER_PATH)"
+	@install -m 644 "$(LAUNCHER_SUPPORT)" "$(INSTALL_LAUNCHER_DIR)/launcher_support.py"
+	@chmod 755 "$(INSTALL_LAUNCHER_PATH)"
+	@ln -sf "$(INSTALL_LAUNCHER_PATH_ABS)" "$(INSTALL_PATH)"
 	@echo "Installed standalone CLI at $(INSTALL_PATH)"
 
 install-dev: check-deps dev-deps
 	@mkdir -p "$(BINDIR)"
-	@ln -sf "$(CURDIR)/$(VENV)/bin/$(INSTALL_NAME)" "$(INSTALL_PATH)"
+	@{ printf '#!%s\n' "$(DEV_VENV_PYTHON_ABS)"; tail -n +2 "$(LAUNCHER_SCRIPT)"; } > "$(DEV_LAUNCHER_PATH)"
+	@install -m 644 "$(LAUNCHER_SUPPORT)" "$(DEV_LAUNCHER_SUPPORT_PATH)"
+	@chmod 755 "$(DEV_LAUNCHER_PATH)"
+	@ln -sf "$(DEV_LAUNCHER_PATH_ABS)" "$(INSTALL_PATH)"
 	@echo "Installed editable dev CLI at $(INSTALL_PATH)"
 
 uninstall:
@@ -85,12 +104,15 @@ uninstall:
 	@echo "Removed $(INSTALL_DIR)"
 
 uninstall-dev:
-	@if [ -L "$(INSTALL_PATH)" ] && [ "$$(readlink "$(INSTALL_PATH)")" = "$(CURDIR)/$(VENV)/bin/$(INSTALL_NAME)" ]; then \
+	@if [ -L "$(INSTALL_PATH)" ] && [ "$$(readlink "$(INSTALL_PATH)")" = "$(DEV_LAUNCHER_PATH_ABS)" ]; then \
 		rm -f "$(INSTALL_PATH)"; \
 		echo "Removed dev symlink $(INSTALL_PATH)"; \
-		if [ -x "$(INSTALL_VENV)/bin/$(INSTALL_NAME)" ]; then \
-			ln -sf "$(INSTALL_VENV)/bin/$(INSTALL_NAME)" "$(INSTALL_PATH)"; \
+		if [ -x "$(INSTALL_LAUNCHER_PATH)" ]; then \
+			ln -sf "$(INSTALL_LAUNCHER_PATH)" "$(INSTALL_PATH)"; \
 			echo "Restored standalone install at $(INSTALL_PATH)"; \
+		elif [ -x "$(INSTALL_VENV)/bin/$(INSTALL_NAME)" ]; then \
+			ln -sf "$(INSTALL_VENV)/bin/$(INSTALL_NAME)" "$(INSTALL_PATH)"; \
+			echo "Restored legacy standalone install at $(INSTALL_PATH)"; \
 		else \
 			echo "No standalone install found"; \
 		fi; \
@@ -107,7 +129,7 @@ lint: test lint-docs
 	@"$(VENV)/bin/ruff" check src tests
 	@"$(VENV)/bin/mypy" src tests
 	@"$(VENV)/bin/black" --check src tests
-	@"$(VENV_PYTHON)" -m py_compile src/raiplaysound_cli/*.py
+	@"$(VENV_PYTHON)" -m py_compile src/raiplaysound_cli/*.py launcher/*.py launcher/raiplaysound-cli
 
 lint-docs:
 	@$(MARKDOWNLINT) $(DOCS) --config /Users/mmassari/.markdownlint.json

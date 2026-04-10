@@ -1,0 +1,28 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import importlib.util
+import sys
+from pathlib import Path
+
+
+def _load_support_module() -> object:
+    support_path = Path(__file__).resolve().with_name("launcher_support.py")
+    spec = importlib.util.spec_from_file_location(
+        "raiplaysound_cli_launcher_support",
+        support_path,
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"unable to load launcher support module from {support_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def main(argv: list[str] | None = None) -> int:
+    support = _load_support_module()
+    return support.main(argv)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

@@ -49,10 +49,16 @@ make install
 This installs the package into:
 
 - `~/.local/share/raiplaysound-cli/venv`
+- `~/.local/share/raiplaysound-cli/bin/raiplaysound-cli`
 
 and creates the user-facing command at:
 
 - `~/.local/bin/raiplaysound-cli`
+
+The installed command is a small Python launcher that loads the package from
+the local install tree. It does not rely on the exact interpreter path baked
+into a pip-generated console script, so it keeps working if the underlying
+Python version changes or the venv is recreated.
 
 Editable development install:
 
@@ -63,7 +69,7 @@ make install-dev
 ```
 
 `make install-dev` keeps the command in `~/.local/bin/raiplaysound-cli`, but
-points it at the project-local `.venv` so source edits take effect immediately.
+points it at the project-local launcher so source edits take effect immediately.
 
 Run the CLI from the user install:
 
