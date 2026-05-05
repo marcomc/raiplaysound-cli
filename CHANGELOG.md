@@ -15,6 +15,8 @@ All notable changes to this project are documented in this file.
   artwork links when a live program-detail refresh temporarily fails.
 - Made root `index.html` generation also skip folders whose metadata or artwork
   refresh hits a write-time permission error, instead of failing the whole run.
+- Hardened root `index.html` generation to also skip restricted entries whose
+  directory-type check itself raises a permission error.
 - Deduplicated generated RSS items by cached episode GUID so stale duplicate
   local files no longer produce repeated `<item>` entries in `feed.xml`.
 - Preserved cached artwork references when a metadata refresh succeeds but the

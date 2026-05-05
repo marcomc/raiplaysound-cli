@@ -382,14 +382,27 @@ def _program_index_item(show_dir: Path, base_url: str) -> dict[str, str | int] |
     }
 
 
+def _iter_program_dirs(target_base: Path) -> list[Path]:
+    program_dirs: list[Path] = []
+    for show_dir in sorted(target_base.iterdir(), key=lambda item: item.name.casefold()):
+        if show_dir.name.startswith("."):
+            continue
+        try:
+            if not show_dir.is_dir():
+                continue
+        except OSError:
+            continue
+        program_dirs.append(show_dir)
+    return program_dirs
+
+
 def generate_program_index(target_base: Path, base_url: str = "") -> Path:
     target_base.mkdir(parents=True, exist_ok=True)
     icon_path = download_index_icon(target_base)
     icon_href = urllib.parse.quote(icon_path.name) if icon_path is not None else ""
     items = [
         item
-        for show_dir in sorted(target_base.iterdir(), key=lambda item: item.name.casefold())
-        if show_dir.is_dir() and not show_dir.name.startswith(".")
+        for show_dir in _iter_program_dirs(target_base)
         for item in [_program_index_item(show_dir, base_url)]
         if item is not None
     ]
