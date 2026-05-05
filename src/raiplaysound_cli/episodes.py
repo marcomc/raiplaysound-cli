@@ -866,6 +866,10 @@ def _collect_metadata_from_episode_json(source: str) -> dict[str, EpisodeMetadat
     }
 
 
+def _has_usable_upload_date(metadata: EpisodeMetadata) -> bool:
+    return re.fullmatch(r"\d{8}", metadata.upload_date) is not None
+
+
 def collect_metadata(
     sources: list[str], *, single_entries: bool = False
 ) -> dict[str, EpisodeMetadata]:
@@ -911,8 +915,9 @@ def collect_metadata(
                     json_metadata = _collect_metadata_from_episode_json(parts[4])
                 except Exception:
                     json_metadata = {}
-                if episode_id in json_metadata:
-                    result.setdefault(episode_id, json_metadata[episode_id])
+                json_entry = json_metadata.get(episode_id)
+                if json_entry is not None and _has_usable_upload_date(json_entry):
+                    result.setdefault(episode_id, json_entry)
                     continue
             result.setdefault(
                 episode_id,

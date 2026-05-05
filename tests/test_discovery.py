@@ -337,6 +337,45 @@ def test_collect_metadata_prefers_episode_json_date_tracking(monkeypatch) -> Non
     assert item.title == "Musical Box del 02/05/2026"
 
 
+def test_collect_metadata_keeps_ytdlp_date_when_episode_json_date_is_unusable(
+    monkeypatch,
+) -> None:
+    def fake_run_yt_dlp(
+        args: list[str], *, allow_partial_failure: bool = False
+    ) -> subprocess.CompletedProcess[str]:
+        assert allow_partial_failure is True
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=0,
+            stdout=(
+                "48e8407b-360f-472f-969e-a1c2f24e713c\t20260503\t"
+                "Musical Box del 02/05/2026\tNA\t"
+                "https://www.raiplaysound.it/audio/2026/05/Musical-Box-del-02052026-"
+                "48e8407b-360f-472f-969e-a1c2f24e713c.html\n"
+            ),
+            stderr="",
+        )
+
+    def fake_http_get(_url: str) -> str:
+        return (
+            '{"uniquename":"ContentItem-48e8407b-360f-472f-969e-a1c2f24e713c",'
+            '"title":"Musical Box del 02/05/2026",'
+            '"path_id":"/audio/2026/05/Musical-Box-del-02052026-'
+            '48e8407b-360f-472f-969e-a1c2f24e713c.json"}'
+        )
+
+    monkeypatch.setattr(episodes, "run_yt_dlp", fake_run_yt_dlp)
+    monkeypatch.setattr(episodes, "http_get", fake_http_get)
+
+    result = episodes.collect_metadata(["https://www.raiplaysound.it/programmi/musicalbox"])
+
+    assert result["48e8407b-360f-472f-969e-a1c2f24e713c"] == EpisodeMetadata(
+        upload_date="20260503",
+        season="NA",
+        title="Musical Box del 02/05/2026",
+    )
+
+
 def test_collect_metadata_uses_no_playlist_for_single_entries(monkeypatch) -> None:
     captured_args: list[list[str]] = []
 
