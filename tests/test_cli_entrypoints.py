@@ -10,7 +10,7 @@ from raiplaysound_cli import cli
 from raiplaysound_cli import episodes as episode_module
 from raiplaysound_cli.config import Settings
 from raiplaysound_cli.errors import HTTPRequestError
-from raiplaysound_cli.models import EpisodeMetadata, GroupSource, Program
+from raiplaysound_cli.models import EpisodeMetadata, GroupSource, Program, ProgramDetails
 
 
 def test_main_version_prints_cli_version() -> None:
@@ -24,7 +24,7 @@ def test_main_version_prints_cli_version() -> None:
         cwd=Path(__file__).resolve().parents[1],
     )
     assert result.returncode == 0
-    assert "raiplaysound-cli 2.1.4" in result.stdout
+    assert "raiplaysound-cli 2.2.0" in result.stdout
 
 
 def test_main_version_prints_when_present_anywhere(capsys) -> None:
@@ -32,7 +32,7 @@ def test_main_version_prints_when_present_anywhere(capsys) -> None:
     captured = capsys.readouterr()
 
     assert result == 0
-    assert "raiplaysound-cli 2.1.4" in captured.out
+    assert "raiplaysound-cli 2.2.0" in captured.out
 
 
 def test_main_without_args_prints_focused_help(capsys) -> None:
@@ -306,6 +306,25 @@ def test_main_download_favourites_uses_configured_programs(monkeypatch, capsys) 
     ]
     assert "Starting favourites run for 3 configured program(s)" in captured.out
     assert "Favourites run completed: done=3, errors=0" in captured.out
+
+
+def test_main_handles_keyboard_interrupt_without_traceback(monkeypatch, capsys) -> None:
+    settings = Settings()
+
+    monkeypatch.setattr(cli, "parse_env_file", lambda _path: {})
+    monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
+    monkeypatch.setattr(
+        cli,
+        "_download_one_program",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(KeyboardInterrupt()),
+    )
+
+    result = cli.main(["download", "america7"])
+    captured = capsys.readouterr()
+
+    assert result == 130
+    assert "Interrupted." in captured.err
+    assert "Traceback" not in captured.err
 
 
 def test_main_list_programs_uses_config_filter_and_json(
@@ -1798,6 +1817,19 @@ def test_download_uses_grouped_episode_sources(monkeypatch, tmp_path: Path, caps
     monkeypatch.setattr(cli, "acquire_lock", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(cli, "release_lock", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(cli, "resolve_log_file", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        cli,
+        "prepare_program_assets",
+        lambda target_dir, slug, program_url: ProgramDetails(
+            slug=slug,
+            title=slug,
+            author="RAI",
+            description="",
+            page_url=program_url,
+            image_url="",
+        ),
+    )
+    monkeypatch.setattr(cli, "generate_program_index", lambda *_args, **_kwargs: None)
 
     class FakeDownloader:
         def __init__(self, **_kwargs) -> None:
@@ -1914,6 +1946,19 @@ def test_download_refreshes_metadata_only_for_filtered_episodes(
     monkeypatch.setattr(cli, "acquire_lock", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(cli, "release_lock", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(cli, "resolve_log_file", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        cli,
+        "prepare_program_assets",
+        lambda target_dir, slug, program_url: ProgramDetails(
+            slug=slug,
+            title=slug,
+            author="RAI",
+            description="",
+            page_url=program_url,
+            image_url="",
+        ),
+    )
+    monkeypatch.setattr(cli, "generate_program_index", lambda *_args, **_kwargs: None)
 
     class FakeDownloader:
         def __init__(self, **_kwargs) -> None:
@@ -2024,6 +2069,19 @@ def test_download_skips_missing_scan_when_missing_not_enabled(
     monkeypatch.setattr(cli, "acquire_lock", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(cli, "release_lock", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(cli, "resolve_log_file", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        cli,
+        "prepare_program_assets",
+        lambda target_dir, slug, program_url: ProgramDetails(
+            slug=slug,
+            title=slug,
+            author="RAI",
+            description="",
+            page_url=program_url,
+            image_url="",
+        ),
+    )
+    monkeypatch.setattr(cli, "generate_program_index", lambda *_args, **_kwargs: None)
 
     class FakeDownloader:
         def __init__(self, **_kwargs) -> None:

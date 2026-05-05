@@ -4,6 +4,60 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Restored absolute local `file://` enclosure and artwork URLs in generated
+  RSS feeds when `RSS_BASE_URL` is unset, so local feeds remain valid for
+  podcast clients that reject relative artifact paths.
+- Made root `index.html` generation skip unreadable program folders instead of
+  aborting the whole run after downloads complete.
+- Preserved cached program titles, authors, descriptions, image URLs, and
+  artwork links when a live program-detail refresh temporarily fails.
+- Made root `index.html` generation also skip folders whose metadata or artwork
+  refresh hits a write-time permission error, instead of failing the whole run.
+- Hardened root `index.html` generation to also skip restricted entries whose
+  directory-type check itself raises a permission error.
+- Hardened root `index.html` generation to skip feed-link checks that raise
+  filesystem permission errors on restricted `feed.xml` paths.
+- Limited root `index.html` generation to real program folders that already
+  contain local audio, so unrelated or empty directories under `TARGET_BASE`
+  are not backfilled with RaiPlaySound metadata.
+- Deduplicated generated RSS items by cached episode GUID so stale duplicate
+  local files no longer produce repeated `<item>` entries in `feed.xml`.
+- Avoided RSS item loss when metadata cache is partial and multiple local files
+  share the same date, by falling back to filename-based GUIDs in ambiguous
+  same-day cases.
+- Preserved cached artwork references when a metadata refresh succeeds but the
+  cover-art download fails, so existing local `cover.*` files remain visible in
+  RSS and the generated index.
+- Corrected RSS item ordering to sort by the real episode publish date instead
+  of the formatted `pubDate` text.
+
+## [2.2.0] - 2026-06-01 - artwork, index, and feed improvements
+
+### Added
+
+- Added program artwork download during `download` runs. The CLI now stores the
+  program cover in the show folder and references it from generated RSS feeds
+  through standard RSS `<image>` and iTunes podcast image tags.
+- Added automatic `index.html` generation in the target root. The page lists
+  synchronized program folders with artwork, title, author, description, local
+  episode count, latest downloaded episode date, and an RSS link only when that
+  program folder currently contains `feed.xml`. Local folder and artwork links
+  are relative to the generated page, while RSS links use `RSS_BASE_URL` when it
+  is configured.
+- Added `apple-touch-icon.png` beside the generated root `index.html`, plus
+  Apple touch icon metadata, so iPhone Home Screen bookmarks can use the local
+  RaiPlaySound icon.
+- Made root index generation backfill missing per-program metadata and cover
+  art for existing program folders, so older downloads and folders outside the
+  current favourites list still get artwork when RaiPlaySound exposes it.
+
+### Fixed
+
+- Made Ctrl-C interruptions exit cleanly with a short `Interrupted.` message
+  and status code 130 instead of printing a Python traceback.
+
 ## [2.1.4] - 2026-04-10 - resilient launcher install
 
 ### Changed
