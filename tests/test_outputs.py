@@ -110,7 +110,7 @@ def test_outputs_fall_back_to_filename_when_date_is_ambiguous(tmp_path: Path, mo
     assert "#EXTINF:-1,file-two" in playlist_content
 
 
-def test_generate_rss_feed_deduplicates_same_cached_episode_guid(
+def test_generate_rss_feed_keeps_multiple_same_day_files_when_cache_is_partial(
     monkeypatch, tmp_path: Path
 ) -> None:
     target_dir = tmp_path / "musicalbox"
@@ -120,8 +120,8 @@ def test_generate_rss_feed_deduplicates_same_cached_episode_guid(
         "ep-1\t20240101\t1\tEpisode One\n",
         encoding="utf-8",
     )
-    (target_dir / "Musical Box - 2024-01-01 - old-title.m4a").write_bytes(b"old")
-    (target_dir / "Musical Box - 2024-01-01 - new-title.m4a").write_bytes(b"new")
+    (target_dir / "Musical Box - 2024-01-01 - first-title.m4a").write_bytes(b"first")
+    (target_dir / "Musical Box - 2024-01-01 - second-title.m4a").write_bytes(b"second")
     monkeypatch.setattr(outputs, "fetch_show_title", lambda _slug: "Musical Box")
 
     feed_path = outputs.generate_rss_feed(
@@ -133,9 +133,10 @@ def test_generate_rss_feed_deduplicates_same_cached_episode_guid(
     )
     content = feed_path.read_text(encoding="utf-8")
 
-    assert content.count("<item>") == 1
-    assert content.count('<guid isPermaLink="false">ep-1</guid>') == 1
-    assert "<title>Episode One</title>" in content
+    assert content.count("<item>") == 2
+    assert '<guid isPermaLink="false">ep-1</guid>' not in content
+    assert "first-title" in content
+    assert "second-title" in content
 
 
 def test_prepare_program_assets_downloads_artwork_and_writes_details(

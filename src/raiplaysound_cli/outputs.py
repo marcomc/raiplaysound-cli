@@ -237,9 +237,12 @@ def generate_rss_feed(
     )
     items_by_guid: dict[str, tuple[int, str, str, str, str, str, str, int]] = {}
     audio_entries = _local_audio_entries(target_dir) or []
+    audio_count_by_date: dict[str, int] = {}
+    for file_date, _file_path in audio_entries:
+        audio_count_by_date[file_date] = audio_count_by_date.get(file_date, 0) + 1
     for file_date, file_path in sorted(audio_entries, reverse=True):
         dated_entries = cache_by_date.get(file_date, [])
-        if len(dated_entries) == 1:
+        if len(dated_entries) == 1 and audio_count_by_date.get(file_date, 0) == 1:
             title, guid = dated_entries[0]
         else:
             title = re.sub(r"^.*\d{4}-\d{2}-\d{2}\s+-\s+", "", file_path.stem)

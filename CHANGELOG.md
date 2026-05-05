@@ -21,6 +21,9 @@ All notable changes to this project are documented in this file.
   filesystem permission errors on restricted `feed.xml` paths.
 - Deduplicated generated RSS items by cached episode GUID so stale duplicate
   local files no longer produce repeated `<item>` entries in `feed.xml`.
+- Avoided RSS item loss when metadata cache is partial and multiple local files
+  share the same date, by falling back to filename-based GUIDs in ambiguous
+  same-day cases.
 - Preserved cached artwork references when a metadata refresh succeeds but the
   cover-art download fails, so existing local `cover.*` files remain visible in
   RSS and the generated index.
