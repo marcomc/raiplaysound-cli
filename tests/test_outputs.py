@@ -456,6 +456,48 @@ def test_generate_program_index_skips_folder_when_is_dir_raises(
     assert "restricted-show" not in content
 
 
+def test_generate_program_index_skips_feed_link_when_feed_exists_check_raises(
+    monkeypatch, tmp_path: Path
+) -> None:
+    target_base = tmp_path / "RaiPlaySound"
+    show_dir = target_base / "america7"
+    show_dir.mkdir(parents=True)
+    monkeypatch.setattr(
+        outputs,
+        "download_index_icon",
+        lambda root: (root / outputs.INDEX_ICON_FILE),
+    )
+    details = ProgramDetails(
+        slug="america7",
+        title="America7",
+        author="Oliviero Bergamini",
+        description="America oltre gli stereotipi.",
+        page_url="https://www.raiplaysound.it/programmi/america7",
+        image_url="",
+        artwork_file="cover.jpg",
+    )
+    outputs.write_program_details(show_dir, details)
+    (show_dir / "cover.jpg").write_bytes(b"cover")
+    (show_dir / "America7 - 2024-01-01 - one.m4a").write_bytes(b"one")
+    (show_dir / "feed.xml").write_text("<rss></rss>\n", encoding="utf-8")
+
+    original_exists = Path.exists
+
+    def patched_exists(path: Path) -> bool:
+        if path == show_dir / "feed.xml":
+            raise PermissionError("restricted feed path")
+        return original_exists(path)
+
+    monkeypatch.setattr(Path, "exists", patched_exists)
+
+    content = outputs.generate_program_index(target_base, "https://example.test/audio").read_text(
+        encoding="utf-8"
+    )
+
+    assert "America7" in content
+    assert "https://example.test/audio/america7/feed.xml" not in content
+
+
 def test_generate_rss_feed_sorts_items_by_real_publish_date(tmp_path: Path, monkeypatch) -> None:
     target_dir = tmp_path / "musicalbox"
     target_dir.mkdir()

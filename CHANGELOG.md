@@ -17,6 +17,8 @@ All notable changes to this project are documented in this file.
   refresh hits a write-time permission error, instead of failing the whole run.
 - Hardened root `index.html` generation to also skip restricted entries whose
   directory-type check itself raises a permission error.
+- Hardened root `index.html` generation to skip feed-link checks that raise
+  filesystem permission errors on restricted `feed.xml` paths.
 - Deduplicated generated RSS items by cached episode GUID so stale duplicate
   local files no longer produce repeated `<item>` entries in `feed.xml`.
 - Preserved cached artwork references when a metadata refresh succeeds but the

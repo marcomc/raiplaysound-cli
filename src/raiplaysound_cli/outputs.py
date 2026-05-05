@@ -375,7 +375,7 @@ def _program_index_item(show_dir: Path, base_url: str) -> dict[str, str | int] |
         "author": details.author,
         "description": details.description,
         "folder_href": folder_href,
-        "feed_href": feed_href if feed_path.exists() else "",
+        "feed_href": feed_href if _path_exists(feed_path) else "",
         "artwork_href": artwork_href,
         "episode_count": len(audio_entries),
         "latest_date": latest_date,
@@ -394,6 +394,13 @@ def _iter_program_dirs(target_base: Path) -> list[Path]:
             continue
         program_dirs.append(show_dir)
     return program_dirs
+
+
+def _path_exists(path: Path) -> bool:
+    try:
+        return path.exists()
+    except OSError:
+        return False
 
 
 def generate_program_index(target_base: Path, base_url: str = "") -> Path:
