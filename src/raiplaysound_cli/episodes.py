@@ -877,10 +877,13 @@ def collect_metadata(
     for source in sources:
         if single_entries:
             try:
-                result.update(_collect_metadata_from_episode_json(source))
-                continue
+                json_metadata = _collect_metadata_from_episode_json(source)
             except Exception:
                 pass
+            else:
+                if all(_has_usable_upload_date(item) for item in json_metadata.values()):
+                    result.update(json_metadata)
+                    continue
         args = [
             "--skip-download",
             "--ignore-errors",
