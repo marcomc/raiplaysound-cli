@@ -352,7 +352,7 @@ def generate_playlist(target_dir: Path, metadata_cache_file: Path) -> Path:
 def _program_index_item(show_dir: Path, base_url: str) -> dict[str, str | int] | None:
     slug = show_dir.name
     audio_entries = _local_audio_entries(show_dir)
-    if audio_entries is None:
+    if audio_entries is None or not audio_entries:
         return None
     try:
         details = ensure_program_assets(show_dir, slug)

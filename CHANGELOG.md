@@ -19,6 +19,9 @@ All notable changes to this project are documented in this file.
   directory-type check itself raises a permission error.
 - Hardened root `index.html` generation to skip feed-link checks that raise
   filesystem permission errors on restricted `feed.xml` paths.
+- Limited root `index.html` generation to real program folders that already
+  contain local audio, so unrelated or empty directories under `TARGET_BASE`
+  are not backfilled with RaiPlaySound metadata.
 - Deduplicated generated RSS items by cached episode GUID so stale duplicate
   local files no longer produce repeated `<item>` entries in `feed.xml`.
 - Avoided RSS item loss when metadata cache is partial and multiple local files

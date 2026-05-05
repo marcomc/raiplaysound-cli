@@ -416,6 +416,39 @@ def test_generate_program_index_skips_folder_when_asset_refresh_cannot_write(
     assert "blocked-show" not in content
 
 
+def test_generate_program_index_skips_non_show_folder_without_audio(
+    monkeypatch, tmp_path: Path
+) -> None:
+    target_base = tmp_path / "RaiPlaySound"
+    good_dir = target_base / "america7"
+    empty_dir = target_base / "notes"
+    good_dir.mkdir(parents=True)
+    empty_dir.mkdir(parents=True)
+    monkeypatch.setattr(
+        outputs,
+        "download_index_icon",
+        lambda root: (root / outputs.INDEX_ICON_FILE),
+    )
+    details = ProgramDetails(
+        slug="america7",
+        title="America7",
+        author="Oliviero Bergamini",
+        description="America oltre gli stereotipi.",
+        page_url="https://www.raiplaysound.it/programmi/america7",
+        image_url="",
+        artwork_file="cover.jpg",
+    )
+    outputs.write_program_details(good_dir, details)
+    (good_dir / "cover.jpg").write_bytes(b"cover")
+    (good_dir / "America7 - 2024-01-01 - one.m4a").write_bytes(b"one")
+
+    content = outputs.generate_program_index(target_base, "").read_text(encoding="utf-8")
+
+    assert "America7" in content
+    assert "notes" not in content
+    assert not (empty_dir / outputs.PROGRAM_INFO_FILE).exists()
+
+
 def test_generate_program_index_skips_folder_when_is_dir_raises(
     monkeypatch, tmp_path: Path
 ) -> None:
