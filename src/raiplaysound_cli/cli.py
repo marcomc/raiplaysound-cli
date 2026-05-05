@@ -1627,7 +1627,10 @@ def predicted_media_exists(
     if not resolved:
         return False
     resolved_path = Path(resolved)
-    base = str(resolved_path.with_name(_replace_stem_date(resolved_path.stem, publish_date)))
+    bases = [
+        str(resolved_path.with_suffix("")),
+        str(resolved_path.with_name(_replace_stem_date(resolved_path.stem, publish_date))),
+    ]
     for ext in [
         audio_format,
         "mp3",
@@ -1641,8 +1644,9 @@ def predicted_media_exists(
         "webm",
         "m4b",
     ]:
-        if Path(f"{base}.{ext}").exists():
-            return True
+        for base in bases:
+            if Path(f"{base}.{ext}").exists():
+                return True
     return False
 
 

@@ -2082,6 +2082,34 @@ def test_predicted_media_exists_uses_episode_publish_date(monkeypatch, tmp_path:
     )
 
 
+def test_predicted_media_exists_keeps_old_ytdlp_date_compatible(
+    monkeypatch, tmp_path: Path
+) -> None:
+    old_date_file = tmp_path / "Musical Box - 2026-05-03 - Musical Box del 02⧸05⧸2026.m4a"
+    old_date_file.write_bytes(b"audio")
+
+    monkeypatch.setattr(
+        cli,
+        "run_yt_dlp",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=str(old_date_file.with_suffix(".webm")) + "\n",
+            stderr="",
+        ),
+    )
+
+    assert (
+        cli.predicted_media_exists(
+            "https://www.raiplaysound.it/audio/ep.html",
+            str(tmp_path / "%(title)s.%(ext)s"),
+            "m4a",
+            "2026-05-02",
+        )
+        is True
+    )
+
+
 def test_download_skips_missing_scan_when_missing_not_enabled(
     monkeypatch, tmp_path: Path, capsys
 ) -> None:
