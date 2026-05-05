@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Iterator
 
 from raiplaysound_cli import outputs
 from raiplaysound_cli.models import ProgramDetails
@@ -219,6 +220,47 @@ def test_generate_program_index_backfills_missing_program_artwork(
     assert (show_dir / outputs.PROGRAM_INFO_FILE).exists()
     assert "radio2storierock/cover.jpg" in content
     assert "Radio2 Storie Rock" in content
+
+
+def test_generate_program_index_skips_unreadable_program_folder(
+    monkeypatch, tmp_path: Path
+) -> None:
+    target_base = tmp_path / "RaiPlaySound"
+    good_dir = target_base / "america7"
+    bad_dir = target_base / "broken-show"
+    good_dir.mkdir(parents=True)
+    bad_dir.mkdir(parents=True)
+    monkeypatch.setattr(
+        outputs,
+        "download_index_icon",
+        lambda root: (root / outputs.INDEX_ICON_FILE),
+    )
+    details = ProgramDetails(
+        slug="america7",
+        title="America7",
+        author="Oliviero Bergamini",
+        description="America oltre gli stereotipi.",
+        page_url="https://www.raiplaysound.it/programmi/america7",
+        image_url="",
+        artwork_file="cover.jpg",
+    )
+    outputs.write_program_details(good_dir, details)
+    (good_dir / "cover.jpg").write_bytes(b"cover")
+    (good_dir / "America7 - 2024-01-01 - one.m4a").write_bytes(b"one")
+
+    original_iterdir = Path.iterdir
+
+    def patched_iterdir(path: Path) -> Iterator[Path]:
+        if path == bad_dir:
+            raise PermissionError("unreadable folder")
+        return original_iterdir(path)
+
+    monkeypatch.setattr(Path, "iterdir", patched_iterdir)
+
+    content = outputs.generate_program_index(target_base, "").read_text(encoding="utf-8")
+
+    assert "America7" in content
+    assert "broken-show" not in content
 
 
 def test_download_index_icon_saves_apple_touch_icon(monkeypatch, tmp_path: Path) -> None:

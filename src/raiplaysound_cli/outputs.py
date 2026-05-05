@@ -168,9 +168,13 @@ def download_index_icon(target_base: Path) -> Path | None:
     return icon_path
 
 
-def _local_audio_entries(target_dir: Path) -> list[tuple[str, Path]]:
+def _local_audio_entries(target_dir: Path) -> list[tuple[str, Path]] | None:
     entries: list[tuple[str, Path]] = []
-    for file_path in target_dir.iterdir():
+    try:
+        file_paths = list(target_dir.iterdir())
+    except OSError:
+        return None
+    for file_path in file_paths:
         if not file_path.is_file() or file_path.suffix.lower() not in AUDIO_SUFFIXES:
             continue
         match = DATE_IN_NAME_RE.search(file_path.name)
@@ -209,7 +213,8 @@ def generate_rss_feed(
         else ""
     )
     items = []
-    for file_date, file_path in sorted(_local_audio_entries(target_dir), reverse=True):
+    audio_entries = _local_audio_entries(target_dir) or []
+    for file_date, file_path in sorted(audio_entries, reverse=True):
         dated_entries = cache_by_date.get(file_date, [])
         if len(dated_entries) == 1:
             title, guid = dated_entries[0]
@@ -288,7 +293,7 @@ def generate_playlist(target_dir: Path, metadata_cache_file: Path) -> Path:
                 [],
             ).append(metadata.title)
     entries: list[tuple[str, Path]] = []
-    entries.extend(_local_audio_entries(target_dir))
+    entries.extend(_local_audio_entries(target_dir) or [])
     entries.sort(key=lambda item: item[0])
     lines = ["#EXTM3U"]
     for file_date, file_path in entries:
@@ -308,10 +313,12 @@ def generate_playlist(target_dir: Path, metadata_cache_file: Path) -> Path:
     return playlist_path
 
 
-def _program_index_item(show_dir: Path, base_url: str) -> dict[str, str | int]:
+def _program_index_item(show_dir: Path, base_url: str) -> dict[str, str | int] | None:
     slug = show_dir.name
-    details = ensure_program_assets(show_dir, slug)
     audio_entries = _local_audio_entries(show_dir)
+    if audio_entries is None:
+        return None
+    details = ensure_program_assets(show_dir, slug)
     latest_date = max((date for date, _path in audio_entries), default="")
     artwork_path = show_dir / details.artwork_file if details.artwork_file else None
     feed_path = show_dir / "feed.xml"
@@ -344,9 +351,11 @@ def generate_program_index(target_base: Path, base_url: str = "") -> Path:
     icon_path = download_index_icon(target_base)
     icon_href = urllib.parse.quote(icon_path.name) if icon_path is not None else ""
     items = [
-        _program_index_item(show_dir, base_url)
+        item
         for show_dir in sorted(target_base.iterdir(), key=lambda item: item.name.casefold())
         if show_dir.is_dir() and not show_dir.name.startswith(".")
+        for item in [_program_index_item(show_dir, base_url)]
+        if item is not None
     ]
     rows = []
     for item in items:
