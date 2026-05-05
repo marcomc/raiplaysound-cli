@@ -24,7 +24,7 @@ def test_main_version_prints_cli_version() -> None:
         cwd=Path(__file__).resolve().parents[1],
     )
     assert result.returncode == 0
-    assert "raiplaysound-cli 2.2.1" in result.stdout
+    assert "raiplaysound-cli 2.2.2" in result.stdout
 
 
 def test_main_version_prints_when_present_anywhere(capsys) -> None:
@@ -32,7 +32,7 @@ def test_main_version_prints_when_present_anywhere(capsys) -> None:
     captured = capsys.readouterr()
 
     assert result == 0
-    assert "raiplaysound-cli 2.2.1" in captured.out
+    assert "raiplaysound-cli 2.2.2" in captured.out
 
 
 def test_main_without_args_prints_focused_help(capsys) -> None:
@@ -117,6 +117,70 @@ def test_download_help_prints_command_specific_help(capsys) -> None:
     assert "--seasons" not in captured.out
     assert "--episodes" not in captured.out
     assert "--favorites" not in captured.out
+
+
+def test_repair_filenames_dry_run_does_not_rename(monkeypatch, tmp_path: Path, capsys) -> None:
+    settings = Settings()
+    settings.target_base = tmp_path / "Music" / "RaiPlaySound"
+    target_dir = settings.target_base / "musicalbox"
+    target_dir.mkdir(parents=True)
+    (target_dir / ".metadata-cache.tsv").write_text(
+        "ep-sat\t20260502\tNA\tMusical Box del 02/05/2026\n",
+        encoding="utf-8",
+    )
+    wrong = target_dir / "Musical Box - 2026-05-03 - Musical Box del 02⧸05⧸2026.m4a"
+    wrong.write_bytes(b"audio")
+
+    monkeypatch.setattr(cli, "parse_env_file", lambda _path: {})
+    monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
+
+    result = cli.main(["repair", "filenames", "musicalbox"])
+    captured = capsys.readouterr()
+
+    assert result == 0
+    assert wrong.exists()
+    assert "Would rename 1 file(s) for musicalbox" in captured.out
+    assert "Musical Box - 2026-05-02 - Musical Box del 02⧸05⧸2026.m4a" in captured.out
+
+
+def test_repair_filenames_apply_renames_and_regenerates_outputs(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    settings = Settings()
+    settings.target_base = tmp_path / "Music" / "RaiPlaySound"
+    settings.rss_feed = True
+    settings.playlist = True
+    target_dir = settings.target_base / "musicalbox"
+    target_dir.mkdir(parents=True)
+    metadata_cache = target_dir / ".metadata-cache.tsv"
+    metadata_cache.write_text(
+        "ep-sat\t20260502\tNA\tMusical Box del 02/05/2026\n",
+        encoding="utf-8",
+    )
+    wrong = target_dir / "Musical Box - 2026-05-03 - Musical Box del 02⧸05⧸2026.m4a"
+    wrong.write_bytes(b"audio")
+    calls: list[str] = []
+
+    monkeypatch.setattr(cli, "parse_env_file", lambda _path: {})
+    monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
+    monkeypatch.setattr(cli, "generate_rss_feed", lambda *_args, **_kwargs: calls.append("rss"))
+    monkeypatch.setattr(
+        cli, "generate_playlist", lambda *_args, **_kwargs: calls.append("playlist")
+    )
+    monkeypatch.setattr(
+        cli,
+        "generate_program_index",
+        lambda *_args, **_kwargs: calls.append("index"),
+    )
+
+    result = cli.main(["repair", "filenames", "musicalbox", "--apply"])
+    captured = capsys.readouterr()
+
+    assert result == 0
+    assert not wrong.exists()
+    assert (target_dir / "Musical Box - 2026-05-02 - Musical Box del 02⧸05⧸2026.m4a").exists()
+    assert calls == ["rss", "playlist", "index"]
+    assert "Renamed 1 file(s) for musicalbox" in captured.out
 
 
 def test_main_list_requires_exactly_one_target(capsys) -> None:

@@ -69,6 +69,7 @@ from .outputs import (
     generate_rss_feed,
     prepare_program_assets,
 )
+from .repair import apply_filename_repairs, plan_filename_repairs
 from .runtime import acquire_lock, http_get, release_lock, run_yt_dlp
 from .search import search_all
 
@@ -353,6 +354,7 @@ def format_main_help() -> str:
             "  list      Inspect stations, programs, seasons, or episodes",
             "  search    Search stations, programs, groupings, and local episode metadata",
             "  download  Download one program or configured favourites",
+            "  repair    Repair local files using cached RaiPlaySound metadata",
             "",
             "Run `raiplaysound-cli <command> --help` for command-specific help.",
         ]
@@ -1449,6 +1451,89 @@ def build_download_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def build_repair_parser() -> argparse.ArgumentParser:
+    parser = make_argument_parser(
+        prog="raiplaysound-cli repair",
+        usage="raiplaysound-cli repair filenames [PROGRAM_SLUG_OR_URL] [options]",
+        description="Repair local RaiPlaySound files using cached episode metadata.",
+        epilog=(
+            "Examples:\n"
+            "  raiplaysound-cli repair filenames musicalbox\n"
+            "  raiplaysound-cli repair filenames musicalbox --apply\n"
+            "  raiplaysound-cli repair filenames --favourites --apply"
+        ),
+        add_help=False,
+    )
+    parser.add_argument(
+        "target",
+        choices=["filenames"],
+        help="Repair target. Currently only `filenames` is supported.",
+    )
+    parser.add_argument(
+        "input",
+        nargs="?",
+        metavar="PROGRAM_SLUG_OR_URL",
+        help="Program slug or full program URL.",
+    )
+    general_group = parser.add_argument_group("General")
+    general_group.add_argument(
+        "-h",
+        "--help",
+        action="help",
+        help="Show this help message and exit.",
+    )
+    general_group.add_argument(
+        "--favourites",
+        action="store_true",
+        help="Repair each program configured in `FAVORITES`.",
+    )
+    general_group.add_argument(
+        "--favorites",
+        dest="favourites",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
+    execution_group = parser.add_argument_group("Execution")
+    execution_group.add_argument(
+        "--apply",
+        action="store_true",
+        help="Rename files. Without this flag, only print the planned changes.",
+    )
+    output_group = parser.add_argument_group("Outputs")
+    output_group.add_argument(
+        "--rss",
+        dest="rss",
+        action="store_true",
+        help="Regenerate `feed.xml` after applying filename repairs.",
+    )
+    output_group.add_argument(
+        "--no-rss",
+        dest="rss",
+        action="store_false",
+        help="Do not regenerate `feed.xml`.",
+    )
+    parser.set_defaults(rss=None)
+    output_group.add_argument(
+        "--rss-base-url",
+        default=None,
+        help="Public base URL used for RSS enclosure links.",
+    )
+    output_group.add_argument(
+        "--playlist",
+        dest="playlist",
+        action="store_true",
+        help="Regenerate `playlist.m3u` after applying filename repairs.",
+    )
+    output_group.add_argument(
+        "--no-playlist",
+        dest="playlist",
+        action="store_false",
+        help="Do not regenerate `playlist.m3u`.",
+    )
+    parser.set_defaults(playlist=None)
+    return parser
+
+
 def apply_download_overrides(settings: Settings, args: argparse.Namespace) -> Settings:
     updated = dataclasses.replace(settings)
     if args.format:
@@ -1478,6 +1563,17 @@ def apply_download_overrides(settings: Settings, args: argparse.Namespace) -> Se
         args.season = args.season_alias
     if args.episodes_legacy and not args.episode_ids:
         args.episode_ids = args.episodes_legacy
+    return updated
+
+
+def apply_repair_overrides(settings: Settings, args: argparse.Namespace) -> Settings:
+    updated = dataclasses.replace(settings)
+    if args.rss is not None:
+        updated.rss_feed = args.rss
+    if args.rss_base_url is not None:
+        updated.rss_base_url = args.rss_base_url.rstrip("/")
+    if args.playlist is not None:
+        updated.playlist = args.playlist
     return updated
 
 
@@ -1832,6 +1928,58 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
     return _download_one_program(settings, args, args.input or settings.input_value)
 
 
+def repair_command(settings: Settings, args: argparse.Namespace) -> int:
+    if args.favourites:
+        if args.input:
+            raise CLIError("--favourites cannot be combined with <program_slug|program_url>.")
+        if not settings.favorites:
+            raise CLIError("--favourites requires FAVORITES in ~/.raiplaysound-cli.conf.")
+        error_count = 0
+        for favorite in settings.favorites:
+            try:
+                error_count += _repair_one_program(settings, args, favorite)
+            except CLIError as exc:
+                err_console.print(f"Error ({favorite}): {exc}")
+                error_count += 1
+        return 1 if error_count else 0
+    return _repair_one_program(settings, args, args.input or settings.input_value)
+
+
+def _repair_one_program(settings: Settings, args: argparse.Namespace, input_value: str) -> int:
+    slug, program_url = detect_slug(input_value)
+    target_dir = settings.target_base / slug
+    metadata_cache_file = target_dir / ".metadata-cache.tsv"
+    if not target_dir.exists():
+        raise CLIError(f"local program folder not found: {target_dir}")
+    if not metadata_cache_file.exists():
+        raise CLIError(f"metadata cache not found: {metadata_cache_file}")
+    plan = plan_filename_repairs(target_dir, metadata_cache_file)
+    action = "Would rename" if not args.apply else "Renamed"
+    console.print(f"{action} {len(plan.repairs)} file(s) for {slug}")
+    for repair in plan.repairs:
+        console.print(f"  {repair.source.name}")
+        console.print(f"  -> {repair.target.name}")
+    if plan.conflicts:
+        console.print(f"Skipped {len(plan.conflicts)} conflict(s) for {slug}")
+    if plan.ambiguous:
+        console.print(f"Skipped {len(plan.ambiguous)} ambiguous title match(es) for {slug}")
+    if not args.apply:
+        return 0
+    apply_filename_repairs(plan.repairs)
+    if settings.rss_feed:
+        generate_rss_feed(
+            target_dir,
+            slug,
+            program_url,
+            metadata_cache_file,
+            settings.rss_base_url,
+        )
+    if settings.playlist:
+        generate_playlist(target_dir, metadata_cache_file)
+    generate_program_index(settings.target_base, settings.rss_base_url)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv:
@@ -1886,6 +2034,12 @@ def main(argv: list[str] | None = None) -> int:
         if command == "search":
             args = apply_search_defaults(settings, build_search_parser().parse_args(rest))
             return search_command(settings, args)
+        if command == "repair":
+            args = build_repair_parser().parse_args(rest)
+            if not args.favourites and not (args.input or settings.input_value):
+                raise CLIError("repair filenames requires <program_slug|program_url>.")
+            settings = apply_repair_overrides(settings, args)
+            return repair_command(settings, args)
         args = build_download_parser().parse_args(rest)
         if not args.favourites and not (args.input or settings.input_value):
             raise CLIError("download requires <program_slug|program_url>.")
