@@ -17,6 +17,11 @@ All notable changes to this project are documented in this file.
   refresh hits a write-time permission error, instead of failing the whole run.
 - Deduplicated generated RSS items by cached episode GUID so stale duplicate
   local files no longer produce repeated `<item>` entries in `feed.xml`.
+- Preserved cached artwork references when a metadata refresh succeeds but the
+  cover-art download fails, so existing local `cover.*` files remain visible in
+  RSS and the generated index.
+- Corrected RSS item ordering to sort by the real episode publish date instead
+  of the formatted `pubDate` text.
 
 ## [2.2.0] - 2026-06-01 - artwork, index, and feed improvements
 

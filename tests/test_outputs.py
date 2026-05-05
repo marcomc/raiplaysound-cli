@@ -202,6 +202,53 @@ def test_prepare_program_assets_preserves_cached_details_when_fetch_fails(
     )
 
 
+def test_prepare_program_assets_preserves_cached_artwork_when_download_fails(
+    monkeypatch, tmp_path: Path
+) -> None:
+    target_dir = tmp_path / "america7"
+    target_dir.mkdir()
+    cached = ProgramDetails(
+        slug="america7",
+        title="Cached Title",
+        author="Cached Author",
+        description="Cached description",
+        page_url="https://www.raiplaysound.it/programmi/america7",
+        image_url="https://www.raiplaysound.it/dl/img/cached-cover.png",
+        artwork_file="cover.png",
+    )
+    fetched = ProgramDetails(
+        slug="america7",
+        title="Fresh Title",
+        author="Fresh Author",
+        description="Fresh description",
+        page_url="https://www.raiplaysound.it/programmi/america7",
+        image_url="https://www.raiplaysound.it/dl/img/new-cover.png",
+        artwork_file="",
+    )
+    outputs.write_program_details(target_dir, cached)
+    (target_dir / "cover.png").write_bytes(b"cover")
+    monkeypatch.setattr(outputs, "fetch_program_details", lambda _slug: fetched)
+    monkeypatch.setattr(
+        outputs,
+        "http_get_bytes",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError()),
+    )
+
+    result = outputs.prepare_program_assets(
+        target_dir,
+        "america7",
+        "https://www.raiplaysound.it/programmi/america7",
+    )
+
+    assert result.title == "Fresh Title"
+    assert result.author == "Fresh Author"
+    assert result.description == "Fresh description"
+    assert result.artwork_file == "cover.png"
+    assert '"artwork_file": "cover.png"' in (target_dir / outputs.PROGRAM_INFO_FILE).read_text(
+        encoding="utf-8"
+    )
+
+
 def test_generate_program_index_hides_missing_feed_link(monkeypatch, tmp_path: Path) -> None:
     target_base = tmp_path / "RaiPlaySound"
     show_dir = target_base / "america7"
@@ -366,6 +413,32 @@ def test_generate_program_index_skips_folder_when_asset_refresh_cannot_write(
 
     assert "America7" in content
     assert "blocked-show" not in content
+
+
+def test_generate_rss_feed_sorts_items_by_real_publish_date(tmp_path: Path, monkeypatch) -> None:
+    target_dir = tmp_path / "musicalbox"
+    target_dir.mkdir()
+    metadata_cache_file = target_dir / ".metadata-cache.tsv"
+    metadata_cache_file.write_text(
+        "ep-older\t20231231\t1\tOlder Episode\n" "ep-newer\t20240101\t1\tNewer Episode\n",
+        encoding="utf-8",
+    )
+    (target_dir / "Musical Box - 2023-12-31 - older.m4a").write_bytes(b"old")
+    (target_dir / "Musical Box - 2024-01-01 - newer.m4a").write_bytes(b"new")
+    monkeypatch.setattr(outputs, "fetch_show_title", lambda _slug: "Musical Box")
+
+    feed_path = outputs.generate_rss_feed(
+        target_dir,
+        "musicalbox",
+        "https://www.raiplaysound.it/programmi/musicalbox",
+        metadata_cache_file,
+        "",
+    )
+    content = feed_path.read_text(encoding="utf-8")
+
+    assert content.index("<title>Newer Episode</title>") < content.index(
+        "<title>Older Episode</title>"
+    )
 
 
 def test_download_index_icon_saves_apple_touch_icon(monkeypatch, tmp_path: Path) -> None:

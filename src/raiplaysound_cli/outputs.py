@@ -136,11 +136,31 @@ def download_program_artwork(target_dir: Path, details: ProgramDetails) -> Progr
     return details
 
 
+def _merge_program_details(
+    preferred: ProgramDetails, cached: ProgramDetails | None
+) -> ProgramDetails:
+    if cached is None:
+        return preferred
+    return ProgramDetails(
+        slug=preferred.slug or cached.slug,
+        title=preferred.title or cached.title,
+        author=preferred.author or cached.author,
+        description=preferred.description or cached.description,
+        page_url=preferred.page_url or cached.page_url,
+        image_url=preferred.image_url or cached.image_url,
+        artwork_file=preferred.artwork_file or cached.artwork_file,
+    )
+
+
 def prepare_program_assets(target_dir: Path, slug: str, program_url: str) -> ProgramDetails:
     cached_details = load_program_details(target_dir / PROGRAM_INFO_FILE)
-    details = (
-        fetch_program_details(slug) or cached_details or fallback_program_details(slug, program_url)
-    )
+    fetched_details = fetch_program_details(slug)
+    if fetched_details is not None:
+        details = _merge_program_details(fetched_details, cached_details)
+    elif cached_details is not None:
+        details = cached_details
+    else:
+        details = fallback_program_details(slug, program_url)
     details = download_program_artwork(target_dir, details)
     write_program_details(target_dir, details)
     return details
@@ -215,7 +235,7 @@ def generate_rss_feed(
         if artwork_path is not None and artwork_path.exists()
         else ""
     )
-    items_by_guid: dict[str, tuple[int, str, str, str, str, str, str]] = {}
+    items_by_guid: dict[str, tuple[int, str, str, str, str, str, str, int]] = {}
     audio_entries = _local_audio_entries(target_dir) or []
     for file_date, file_path in sorted(audio_entries, reverse=True):
         dated_entries = cache_by_date.get(file_date, [])
@@ -225,17 +245,19 @@ def generate_rss_feed(
             title = re.sub(r"^.*\d{4}-\d{2}-\d{2}\s+-\s+", "", file_path.stem)
             guid = file_path.stem
         enclosure = _url_for_artifact(file_path, slug, base_url)
+        published_at = int(time.mktime(time.strptime(file_date, "%Y-%m-%d")))
         item = (
             file_path.stat().st_mtime_ns,
             title,
             guid,
             email.utils.formatdate(
-                time.mktime(time.strptime(file_date, "%Y-%m-%d")),
+                published_at,
                 usegmt=True,
             ),
             enclosure,
             str(file_path.stat().st_size),
             media_type_for_suffix(file_path),
+            published_at,
         )
         existing = items_by_guid.get(guid)
         if existing is None or item[0] >= existing[0]:
@@ -265,11 +287,11 @@ def generate_rss_feed(
         )
     items = sorted(
         items_by_guid.values(),
-        key=lambda item: (item[3], item[2]),
+        key=lambda item: (item[7], item[2]),
         reverse=True,
     )
     for item in items:
-        _mtime_ns, title, guid, pub_date, enclosure, size, mime = item
+        _mtime_ns, title, guid, pub_date, enclosure, size, mime, _published_at = item
         enclosure_tag = (
             f'      <enclosure url="{xml_escape(enclosure)}" '
             f'length="{size}" type="{xml_escape(mime)}"/>'
