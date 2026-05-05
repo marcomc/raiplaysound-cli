@@ -4,8 +4,30 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-05-05 - artwork, index, and feed improvements
+
+### Added
+
+- Added program artwork download during `download` runs. The CLI now stores the
+  program cover in the show folder and references it from generated RSS feeds
+  through standard RSS `<image>` and iTunes podcast image tags.
+- Added automatic `index.html` generation in the target root. The page lists
+  synchronized program folders with artwork, title, author, description, local
+  episode count, latest downloaded episode date, and an RSS link only when that
+  program folder currently contains `feed.xml`. Local folder and artwork links
+  are relative to the generated page, while RSS links use `RSS_BASE_URL` when it
+  is configured.
+- Added `apple-touch-icon.png` beside the generated root `index.html`, plus
+  Apple touch icon metadata, so iPhone Home Screen bookmarks can use the local
+  RaiPlaySound icon.
+- Made root index generation backfill missing per-program metadata and cover
+  art for existing program folders, so older downloads and folders outside the
+  current favourites list still get artwork when RaiPlaySound exposes it.
+
 ### Fixed
 
+- Made Ctrl-C interruptions exit cleanly with a short `Interrupted.` message
+  and status code 130 instead of printing a Python traceback.
 - Restored absolute local `file://` enclosure and artwork URLs in generated
   RSS feeds when `RSS_BASE_URL` is unset, so local feeds remain valid for
   podcast clients that reject relative artifact paths.
@@ -32,31 +54,6 @@ All notable changes to this project are documented in this file.
   RSS and the generated index.
 - Corrected RSS item ordering to sort by the real episode publish date instead
   of the formatted `pubDate` text.
-
-## [2.2.0] - 2026-06-01 - artwork, index, and feed improvements
-
-### Added
-
-- Added program artwork download during `download` runs. The CLI now stores the
-  program cover in the show folder and references it from generated RSS feeds
-  through standard RSS `<image>` and iTunes podcast image tags.
-- Added automatic `index.html` generation in the target root. The page lists
-  synchronized program folders with artwork, title, author, description, local
-  episode count, latest downloaded episode date, and an RSS link only when that
-  program folder currently contains `feed.xml`. Local folder and artwork links
-  are relative to the generated page, while RSS links use `RSS_BASE_URL` when it
-  is configured.
-- Added `apple-touch-icon.png` beside the generated root `index.html`, plus
-  Apple touch icon metadata, so iPhone Home Screen bookmarks can use the local
-  RaiPlaySound icon.
-- Made root index generation backfill missing per-program metadata and cover
-  art for existing program folders, so older downloads and folders outside the
-  current favourites list still get artwork when RaiPlaySound exposes it.
-
-### Fixed
-
-- Made Ctrl-C interruptions exit cleanly with a short `Interrupted.` message
-  and status code 130 instead of printing a Python traceback.
 
 ## [2.1.4] - 2026-04-10 - resilient launcher install
 
