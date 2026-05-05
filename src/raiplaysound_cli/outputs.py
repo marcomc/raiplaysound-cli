@@ -215,7 +215,7 @@ def generate_rss_feed(
         if artwork_path is not None and artwork_path.exists()
         else ""
     )
-    items = []
+    items_by_guid: dict[str, tuple[int, str, str, str, str, str, str]] = {}
     audio_entries = _local_audio_entries(target_dir) or []
     for file_date, file_path in sorted(audio_entries, reverse=True):
         dated_entries = cache_by_date.get(file_date, [])
@@ -225,19 +225,21 @@ def generate_rss_feed(
             title = re.sub(r"^.*\d{4}-\d{2}-\d{2}\s+-\s+", "", file_path.stem)
             guid = file_path.stem
         enclosure = _url_for_artifact(file_path, slug, base_url)
-        items.append(
-            {
-                "title": title,
-                "guid": guid,
-                "pub_date": email.utils.formatdate(
-                    time.mktime(time.strptime(file_date, "%Y-%m-%d")),
-                    usegmt=True,
-                ),
-                "enclosure": enclosure,
-                "size": str(file_path.stat().st_size),
-                "mime": media_type_for_suffix(file_path),
-            }
+        item = (
+            file_path.stat().st_mtime_ns,
+            title,
+            guid,
+            email.utils.formatdate(
+                time.mktime(time.strptime(file_date, "%Y-%m-%d")),
+                usegmt=True,
+            ),
+            enclosure,
+            str(file_path.stat().st_size),
+            media_type_for_suffix(file_path),
         )
+        existing = items_by_guid.get(guid)
+        if existing is None or item[0] >= existing[0]:
+            items_by_guid[guid] = item
     lines = [
         '<?xml version="1.0" encoding="UTF-8"?>',
         '<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">',
@@ -261,18 +263,24 @@ def generate_rss_feed(
                 f'    <itunes:image href="{xml_escape(artwork_url)}"/>',
             ]
         )
+    items = sorted(
+        items_by_guid.values(),
+        key=lambda item: (item[3], item[2]),
+        reverse=True,
+    )
     for item in items:
+        _mtime_ns, title, guid, pub_date, enclosure, size, mime = item
         enclosure_tag = (
-            f"      <enclosure url=\"{xml_escape(item['enclosure'])}\" "
-            f"length=\"{item['size']}\" type=\"{xml_escape(item['mime'])}\"/>"
+            f'      <enclosure url="{xml_escape(enclosure)}" '
+            f'length="{size}" type="{xml_escape(mime)}"/>'
         )
         lines.extend(
             [
                 "    <item>",
-                f"      <title>{xml_escape(item['title'])}</title>",
+                f"      <title>{xml_escape(title)}</title>",
                 f"      <link>{xml_escape(program_url)}</link>",
-                f"      <guid isPermaLink=\"false\">{xml_escape(item['guid'])}</guid>",
-                f"      <pubDate>{item['pub_date']}</pubDate>",
+                f'      <guid isPermaLink="false">{xml_escape(guid)}</guid>',
+                f"      <pubDate>{pub_date}</pubDate>",
                 enclosure_tag,
                 "    </item>",
             ]

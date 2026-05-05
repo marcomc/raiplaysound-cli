@@ -110,6 +110,34 @@ def test_outputs_fall_back_to_filename_when_date_is_ambiguous(tmp_path: Path, mo
     assert "#EXTINF:-1,file-two" in playlist_content
 
 
+def test_generate_rss_feed_deduplicates_same_cached_episode_guid(
+    monkeypatch, tmp_path: Path
+) -> None:
+    target_dir = tmp_path / "musicalbox"
+    target_dir.mkdir()
+    metadata_cache_file = target_dir / ".metadata-cache.tsv"
+    metadata_cache_file.write_text(
+        "ep-1\t20240101\t1\tEpisode One\n",
+        encoding="utf-8",
+    )
+    (target_dir / "Musical Box - 2024-01-01 - old-title.m4a").write_bytes(b"old")
+    (target_dir / "Musical Box - 2024-01-01 - new-title.m4a").write_bytes(b"new")
+    monkeypatch.setattr(outputs, "fetch_show_title", lambda _slug: "Musical Box")
+
+    feed_path = outputs.generate_rss_feed(
+        target_dir,
+        "musicalbox",
+        "https://www.raiplaysound.it/programmi/musicalbox",
+        metadata_cache_file,
+        "",
+    )
+    content = feed_path.read_text(encoding="utf-8")
+
+    assert content.count("<item>") == 1
+    assert content.count('<guid isPermaLink="false">ep-1</guid>') == 1
+    assert "<title>Episode One</title>" in content
+
+
 def test_prepare_program_assets_downloads_artwork_and_writes_details(
     monkeypatch, tmp_path: Path
 ) -> None:

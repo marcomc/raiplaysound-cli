@@ -15,6 +15,8 @@ All notable changes to this project are documented in this file.
   artwork links when a live program-detail refresh temporarily fails.
 - Made root `index.html` generation also skip folders whose metadata or artwork
   refresh hits a write-time permission error, instead of failing the whole run.
+- Deduplicated generated RSS items by cached episode GUID so stale duplicate
+  local files no longer produce repeated `<item>` entries in `feed.xml`.
 
 ## [2.2.0] - 2026-06-01 - artwork, index, and feed improvements
 
