@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- Restored absolute local `file://` enclosure and artwork URLs in generated
+  RSS feeds when `RSS_BASE_URL` is unset, so local feeds remain valid for
+  podcast clients that reject relative artifact paths.
+
 ## [2.2.0] - 2026-06-01 - artwork, index, and feed improvements
 
 ### Added

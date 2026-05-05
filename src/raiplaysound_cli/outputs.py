@@ -24,7 +24,7 @@ INDEX_ICON_URL = "https://www.raiplaysound.it/assets/img/icons/apple/apple-touch
 def _url_for_artifact(path: Path, slug: str, base_url: str) -> str:
     if base_url:
         return f"{base_url.rstrip('/')}/{slug}/{urllib.parse.quote(path.name)}"
-    return urllib.parse.quote(path.name)
+    return path.resolve().as_uri()
 
 
 def fetch_show_title(slug: str) -> str:

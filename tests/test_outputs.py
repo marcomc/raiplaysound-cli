@@ -103,7 +103,8 @@ def test_outputs_fall_back_to_filename_when_date_is_ambiguous(tmp_path: Path, mo
     assert "file-two" in feed_content
     assert "First Title" not in feed_content
     assert "Second Title" not in feed_content
-    assert "file://" not in feed_content
+    assert f'<enclosure url="{first.resolve().as_uri()}"' in feed_content
+    assert f'<enclosure url="{second.resolve().as_uri()}"' in feed_content
     assert "#EXTINF:-1,file-one" in playlist_content
     assert "#EXTINF:-1,file-two" in playlist_content
 
