@@ -572,7 +572,7 @@ Validation currently includes:
 
 ## Testing
 
-See [`docs/TESTING.md`](/Users/mmassari/Development/raiplaysound-cli/docs/TESTING.md)
+See [`docs/TESTING.md`](docs/TESTING.md)
 for the full validation and regression-test guide for users and AI agents.
 
 ## Disclaimer

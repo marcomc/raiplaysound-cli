@@ -38,23 +38,23 @@ information in multiple inconsistent shapes.
 
 The implementation is intentionally split into focused Python modules:
 
-- [`src/raiplaysound_cli/cli.py`](/Users/mmassari/Development/raiplaysound-cli/src/raiplaysound_cli/cli.py)
+- [`src/raiplaysound_cli/cli.py`](../src/raiplaysound_cli/cli.py)
   is the main entrypoint and command dispatcher.
-- [`src/raiplaysound_cli/config.py`](/Users/mmassari/Development/raiplaysound-cli/src/raiplaysound_cli/config.py)
+- [`src/raiplaysound_cli/config.py`](../src/raiplaysound_cli/config.py)
   parses `~/.raiplaysound-cli.conf` and builds `Settings`.
-- [`src/raiplaysound_cli/catalog.py`](/Users/mmassari/Development/raiplaysound-cli/src/raiplaysound_cli/catalog.py)
+- [`src/raiplaysound_cli/catalog.py`](../src/raiplaysound_cli/catalog.py)
   handles station parsing, program catalog collection, and catalog cache I/O.
-- [`src/raiplaysound_cli/episodes.py`](/Users/mmassari/Development/raiplaysound-cli/src/raiplaysound_cli/episodes.py)
+- [`src/raiplaysound_cli/episodes.py`](../src/raiplaysound_cli/episodes.py)
   resolves program slugs, discovers season/feed sources, enumerates episodes,
   and normalizes season and episode metadata.
-- [`src/raiplaysound_cli/downloads.py`](/Users/mmassari/Development/raiplaysound-cli/src/raiplaysound_cli/downloads.py)
+- [`src/raiplaysound_cli/downloads.py`](../src/raiplaysound_cli/downloads.py)
   runs staged downloads: `yt-dlp` fetches source audio into a hidden work
   directory, a separate `ffmpeg` queue converts into the requested final
   format, progress is parsed for both stages, and archive cleanup for missing
   files is managed there too.
-- [`src/raiplaysound_cli/outputs.py`](/Users/mmassari/Development/raiplaysound-cli/src/raiplaysound_cli/outputs.py)
+- [`src/raiplaysound_cli/outputs.py`](../src/raiplaysound_cli/outputs.py)
   generates RSS and M3U outputs from local files and cached metadata.
-- [`src/raiplaysound_cli/runtime.py`](/Users/mmassari/Development/raiplaysound-cli/src/raiplaysound_cli/runtime.py)
+- [`src/raiplaysound_cli/runtime.py`](../src/raiplaysound_cli/runtime.py)
   wraps HTTP requests, `yt-dlp` execution, and stale-lock recovery.
 
 ## External Dependencies
@@ -86,7 +86,7 @@ Source:
 Used by:
 
 - `parse_stations()` in
-  [`catalog.py`](/Users/mmassari/Development/raiplaysound-cli/src/raiplaysound_cli/catalog.py)
+  [`catalog.py`](../src/raiplaysound_cli/catalog.py)
 
 ### Program catalog
 
@@ -240,7 +240,7 @@ Detection rules:
 Current implementation notes:
 
 - grouping discovery is centralized in
-  [`discover_groups_from_program_payload()`](/Users/mmassari/Development/raiplaysound-cli/src/raiplaysound_cli/episodes.py)
+  [`discover_groups_from_program_payload()`](../src/raiplaysound_cli/episodes.py)
 - `list seasons` and `list episodes` should use the same discoverable grouping
   surfaces
 - the `Groupings` column in `list programs` should be derived from the same
@@ -359,7 +359,7 @@ Important distinction:
 ## Season Detection Strategy
 
 Current implementation in
-[`episodes.py`](/Users/mmassari/Development/raiplaysound-cli/src/raiplaysound_cli/episodes.py):
+[`episodes.py`](../src/raiplaysound_cli/episodes.py):
 
 1. Parse the main program page for season paths matching either:
    - `/programmi/<slug>/episodi/stagione-N`

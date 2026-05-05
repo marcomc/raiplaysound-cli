@@ -57,7 +57,7 @@ Current test coverage is split by concern.
 
 File:
 
-- [`tests/test_cli_utils.py`](/Users/mmassari/Development/raiplaysound-cli/tests/test_cli_utils.py)
+- [`tests/test_cli_utils.py`](../tests/test_cli_utils.py)
 
 Covers:
 
@@ -75,7 +75,7 @@ Covers:
 
 File:
 
-- [`tests/test_cli_entrypoints.py`](/Users/mmassari/Development/raiplaysound-cli/tests/test_cli_entrypoints.py)
+- [`tests/test_cli_entrypoints.py`](../tests/test_cli_entrypoints.py)
 
 Covers:
 
@@ -87,7 +87,7 @@ Covers:
 
 File:
 
-- [`tests/test_outputs.py`](/Users/mmassari/Development/raiplaysound-cli/tests/test_outputs.py)
+- [`tests/test_outputs.py`](../tests/test_outputs.py)
 
 Covers:
 
@@ -99,7 +99,7 @@ Covers:
 
 File:
 
-- [`tests/test_downloads.py`](/Users/mmassari/Development/raiplaysound-cli/tests/test_downloads.py)
+- [`tests/test_downloads.py`](../tests/test_downloads.py)
 
 Covers:
 
@@ -113,7 +113,7 @@ These tests are mocked. They do not start a real `yt-dlp` process.
 
 File:
 
-- [`tests/test_discovery.py`](/Users/mmassari/Development/raiplaysound-cli/tests/test_discovery.py)
+- [`tests/test_discovery.py`](../tests/test_discovery.py)
 
 Covers:
 
@@ -186,9 +186,9 @@ AI agents working in this repository should follow these rules:
    - downloader progress parsing
    - discovery/catalog logic
 5. document new validation workflows in:
-   - [`README.md`](/Users/mmassari/Development/raiplaysound-cli/README.md)
-   - [`AGENTS.md`](/Users/mmassari/Development/raiplaysound-cli/AGENTS.md)
-   - [`CHANGELOG.md`](/Users/mmassari/Development/raiplaysound-cli/CHANGELOG.md)
+   - [`README.md`](../README.md)
+   - [`AGENTS.md`](../AGENTS.md)
+   - [`CHANGELOG.md`](../CHANGELOG.md)
 
 ## Live Smoke Tests
 
