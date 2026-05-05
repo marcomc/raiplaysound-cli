@@ -512,7 +512,12 @@ episode date, and an RSS link only when that program folder currently contains
 `program-slug/cover.jpg`, for local folder and artwork links. RSS links are
 shown only for program folders that currently contain `feed.xml`; when
 `RSS_BASE_URL` is configured, those RSS links point to
-`<RSS_BASE_URL>/<program_slug>/feed.xml`.
+`<RSS_BASE_URL>/<program_slug>/feed.xml`. The index generator also stores
+`apple-touch-icon.png` beside `index.html` and references it with Apple touch
+icon metadata, so iPhone Home Screen bookmarks can use a RaiPlaySound-style
+icon. When the target root already contains older program folders without
+program metadata or cover art, index generation refreshes those missing assets
+for each folder.
 
 Command forms:
 
@@ -540,6 +545,7 @@ Target root contents:
 | File | Producer | Purpose |
 | --- | --- | --- |
 | `index.html` | CLI | Static browsable program index for the target root |
+| `apple-touch-icon.png` | CLI | Home Screen icon for iPhone bookmarks |
 
 ## Development
 

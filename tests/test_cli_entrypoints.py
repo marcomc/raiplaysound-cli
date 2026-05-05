@@ -308,6 +308,25 @@ def test_main_download_favourites_uses_configured_programs(monkeypatch, capsys) 
     assert "Favourites run completed: done=3, errors=0" in captured.out
 
 
+def test_main_handles_keyboard_interrupt_without_traceback(monkeypatch, capsys) -> None:
+    settings = Settings()
+
+    monkeypatch.setattr(cli, "parse_env_file", lambda _path: {})
+    monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
+    monkeypatch.setattr(
+        cli,
+        "_download_one_program",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(KeyboardInterrupt()),
+    )
+
+    result = cli.main(["download", "america7"])
+    captured = capsys.readouterr()
+
+    assert result == 130
+    assert "Interrupted." in captured.err
+    assert "Traceback" not in captured.err
+
+
 def test_main_list_programs_uses_config_filter_and_json(
     monkeypatch, tmp_path: Path, capsys
 ) -> None:

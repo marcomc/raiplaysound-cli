@@ -1890,6 +1890,9 @@ def main(argv: list[str] | None = None) -> int:
     except CLIError as exc:
         err_console.print(f"Error: {exc}")
         return 1
+    except KeyboardInterrupt:
+        err_console.print("Interrupted.")
+        return 130
     except SystemExit as exc:
         code = exc.code
         return code if isinstance(code, int) else 1

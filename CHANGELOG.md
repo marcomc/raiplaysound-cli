@@ -15,6 +15,17 @@ All notable changes to this project are documented in this file.
   program folder currently contains `feed.xml`. Local folder and artwork links
   are relative to the generated page, while RSS links use `RSS_BASE_URL` when it
   is configured.
+- Added `apple-touch-icon.png` beside the generated root `index.html`, plus
+  Apple touch icon metadata, so iPhone Home Screen bookmarks can use the local
+  RaiPlaySound icon.
+- Made root index generation backfill missing per-program metadata and cover
+  art for existing program folders, so older downloads and folders outside the
+  current favourites list still get artwork when RaiPlaySound exposes it.
+
+### Fixed
+
+- Made Ctrl-C interruptions exit cleanly with a short `Interrupted.` message
+  and status code 130 instead of printing a Python traceback.
 
 ## [2.1.4] - 2026-04-10 - resilient launcher install
 

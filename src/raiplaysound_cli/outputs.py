@@ -17,6 +17,8 @@ DATE_IN_NAME_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
 AUDIO_SUFFIXES = {".mp3", ".m4a", ".aac", ".ogg", ".opus", ".flac", ".wav"}
 PROGRAM_INFO_FILE = ".program-info.json"
 ARTWORK_STEM = "cover"
+INDEX_ICON_FILE = "apple-touch-icon.png"
+INDEX_ICON_URL = "https://www.raiplaysound.it/assets/img/icons/apple/apple-touch-icon.png"
 
 
 def _url_for_artifact(path: Path, slug: str, base_url: str) -> str:
@@ -139,6 +141,31 @@ def prepare_program_assets(target_dir: Path, slug: str, program_url: str) -> Pro
     details = download_program_artwork(target_dir, details)
     write_program_details(target_dir, details)
     return details
+
+
+def ensure_program_assets(target_dir: Path, slug: str) -> ProgramDetails:
+    program_url = f"https://www.raiplaysound.it/programmi/{slug}"
+    details = load_program_details(target_dir / PROGRAM_INFO_FILE)
+    artwork_path = target_dir / details.artwork_file if details and details.artwork_file else None
+    if details is not None and artwork_path is not None and artwork_path.exists():
+        return details
+    if details is None or not details.image_url:
+        details = (
+            fetch_program_details(slug) or details or fallback_program_details(slug, program_url)
+        )
+    details = download_program_artwork(target_dir, details)
+    write_program_details(target_dir, details)
+    return details
+
+
+def download_index_icon(target_base: Path) -> Path | None:
+    icon_path = target_base / INDEX_ICON_FILE
+    try:
+        raw, _content_type = http_get_bytes(INDEX_ICON_URL, timeout=30.0)
+    except Exception:
+        return icon_path if icon_path.exists() else None
+    icon_path.write_bytes(raw)
+    return icon_path
 
 
 def _local_audio_entries(target_dir: Path) -> list[tuple[str, Path]]:
@@ -283,10 +310,7 @@ def generate_playlist(target_dir: Path, metadata_cache_file: Path) -> Path:
 
 def _program_index_item(show_dir: Path, base_url: str) -> dict[str, str | int]:
     slug = show_dir.name
-    details = load_program_details(show_dir / PROGRAM_INFO_FILE) or fallback_program_details(
-        slug,
-        f"https://www.raiplaysound.it/programmi/{slug}",
-    )
+    details = ensure_program_assets(show_dir, slug)
     audio_entries = _local_audio_entries(show_dir)
     latest_date = max((date for date, _path in audio_entries), default="")
     artwork_path = show_dir / details.artwork_file if details.artwork_file else None
@@ -317,6 +341,8 @@ def _program_index_item(show_dir: Path, base_url: str) -> dict[str, str | int]:
 
 def generate_program_index(target_base: Path, base_url: str = "") -> Path:
     target_base.mkdir(parents=True, exist_ok=True)
+    icon_path = download_index_icon(target_base)
+    icon_href = urllib.parse.quote(icon_path.name) if icon_path is not None else ""
     items = [
         _program_index_item(show_dir, base_url)
         for show_dir in sorted(target_base.iterdir(), key=lambda item: item.name.casefold())
@@ -362,6 +388,11 @@ def generate_program_index(target_base: Path, base_url: str = "") -> Path:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="RaiPlaySound">
+  <meta name="theme-color" content="#f5f7fb">
+  {f'<link rel="apple-touch-icon" href="{icon_href}">' if icon_href else ''}
+  {f'<link rel="icon" href="{icon_href}">' if icon_href else ''}
   <title>RaiPlaySound Podcast</title>
   <style>
     :root {{

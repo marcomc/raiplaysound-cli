@@ -137,10 +137,15 @@ def test_prepare_program_assets_downloads_artwork_and_writes_details(
     )
 
 
-def test_generate_program_index_hides_missing_feed_link(tmp_path: Path) -> None:
+def test_generate_program_index_hides_missing_feed_link(monkeypatch, tmp_path: Path) -> None:
     target_base = tmp_path / "RaiPlaySound"
     show_dir = target_base / "america7"
     show_dir.mkdir(parents=True)
+    monkeypatch.setattr(
+        outputs,
+        "download_index_icon",
+        lambda root: (root / outputs.INDEX_ICON_FILE),
+    )
     details = ProgramDetails(
         slug="america7",
         title="America7",
@@ -159,6 +164,8 @@ def test_generate_program_index_hides_missing_feed_link(tmp_path: Path) -> None:
 
     assert index_path == target_base / "index.html"
     assert "America7" in content
+    assert '<link rel="apple-touch-icon" href="apple-touch-icon.png">' in content
+    assert '<link rel="icon" href="apple-touch-icon.png">' in content
     assert "Oliviero Bergamini" in content
     assert "1 episodi" in content
     assert "Ultimo: 2024-01-01" in content
@@ -174,3 +181,49 @@ def test_generate_program_index_hides_missing_feed_link(tmp_path: Path) -> None:
 
     assert '<a class="feed" href="https://example.test/audio/america7/feed.xml">RSS</a>' in content
     assert "america7/cover.jpg" in content
+
+
+def test_generate_program_index_backfills_missing_program_artwork(
+    monkeypatch, tmp_path: Path
+) -> None:
+    target_base = tmp_path / "RaiPlaySound"
+    show_dir = target_base / "radio2storierock"
+    show_dir.mkdir(parents=True)
+    (show_dir / "Radio2 Storie Rock - 2024-01-01 - one.m4a").write_bytes(b"one")
+    monkeypatch.setattr(
+        outputs,
+        "download_index_icon",
+        lambda root: (root / outputs.INDEX_ICON_FILE),
+    )
+    monkeypatch.setattr(
+        outputs,
+        "fetch_program_details",
+        lambda slug: ProgramDetails(
+            slug=slug,
+            title="Radio2 Storie Rock",
+            author="RAI",
+            description="Storie rock.",
+            page_url=f"https://www.raiplaysound.it/programmi/{slug}",
+            image_url=(
+                "https://www.raiplaysound.it/dl/img/2021/11/19/"
+                "1637311880369_radio2%20storie-rock_2048x2048.jpg"
+            ),
+        ),
+    )
+    monkeypatch.setattr(outputs, "http_get_bytes", lambda *_args, **_kwargs: (b"jpg", "image/jpeg"))
+
+    content = outputs.generate_program_index(target_base, "").read_text(encoding="utf-8")
+
+    assert (show_dir / "cover.jpg").read_bytes() == b"jpg"
+    assert (show_dir / outputs.PROGRAM_INFO_FILE).exists()
+    assert "radio2storierock/cover.jpg" in content
+    assert "Radio2 Storie Rock" in content
+
+
+def test_download_index_icon_saves_apple_touch_icon(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(outputs, "http_get_bytes", lambda *_args, **_kwargs: (b"png", "image/png"))
+
+    icon_path = outputs.download_index_icon(tmp_path)
+
+    assert icon_path == tmp_path / "apple-touch-icon.png"
+    assert icon_path.read_bytes() == b"png"
