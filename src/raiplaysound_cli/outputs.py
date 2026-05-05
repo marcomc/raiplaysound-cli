@@ -21,6 +21,7 @@ ARTWORK_STEM = "cover"
 INDEX_ICON_FILE = "apple-touch-icon.png"
 INDEX_ICON_URL = "https://www.raiplaysound.it/assets/img/icons/apple/apple-touch-icon.png"
 TITLE_SEPARATOR_RE = re.compile(r"^.*\d{4}-\d{2}-\d{2}\s+-\s+")
+TitleEntry = tuple[str, str, str]
 
 
 def _url_for_artifact(path: Path, slug: str, base_url: str) -> str:
@@ -222,6 +223,18 @@ def _title_key(title: str) -> str:
     return " ".join(title.replace("\u29f8", "/").split()).casefold()
 
 
+def _store_unique_title_entry(
+    cache_by_title: dict[str, TitleEntry | None],
+    title: str,
+    entry: TitleEntry,
+) -> None:
+    key = _title_key(title)
+    if key in cache_by_title:
+        cache_by_title[key] = None
+    else:
+        cache_by_title[key] = entry
+
+
 def generate_rss_feed(
     target_dir: Path,
     slug: str,
@@ -230,15 +243,15 @@ def generate_rss_feed(
     base_url: str,
     details: ProgramDetails | None = None,
 ) -> Path:
-    cache_by_date: dict[str, list[tuple[str, str, str]]] = {}
-    cache_by_title: dict[str, tuple[str, str, str]] = {}
+    cache_by_date: dict[str, list[TitleEntry]] = {}
+    cache_by_title: dict[str, TitleEntry | None] = {}
     for episode_id, metadata in load_metadata_cache(metadata_cache_file).items():
         metadata_date = _metadata_date(metadata.upload_date)
         if metadata_date is None:
             continue
         entry = (metadata.title, episode_id, metadata_date)
         cache_by_date.setdefault(metadata_date, []).append(entry)
-        cache_by_title[_title_key(metadata.title)] = entry
+        _store_unique_title_entry(cache_by_title, metadata.title, entry)
     details = details or load_program_details(target_dir / PROGRAM_INFO_FILE)
     if details is None:
         details = fetch_program_details(slug) or fallback_program_details(slug, program_url)
@@ -338,13 +351,17 @@ def generate_rss_feed(
 
 def generate_playlist(target_dir: Path, metadata_cache_file: Path) -> Path:
     cache_by_date: dict[str, list[str]] = {}
-    cache_by_title: dict[str, str] = {}
+    cache_by_title: dict[str, str | None] = {}
     for _episode_id, metadata in load_metadata_cache(metadata_cache_file).items():
         metadata_date = _metadata_date(metadata.upload_date)
         if metadata_date is None:
             continue
         cache_by_date.setdefault(metadata_date, []).append(metadata.title)
-        cache_by_title[_title_key(metadata.title)] = metadata.title
+        key = _title_key(metadata.title)
+        if key in cache_by_title:
+            cache_by_title[key] = None
+        else:
+            cache_by_title[key] = metadata.title
     entries: list[tuple[str, Path]] = []
     entries.extend(_local_audio_entries(target_dir) or [])
     entries.sort(key=lambda item: item[0])

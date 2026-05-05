@@ -598,6 +598,36 @@ def test_outputs_match_cache_by_title_when_filename_date_is_shifted(
     assert "#EXTINF:-1,Musical Box del 03/05/2026" in playlist_content
 
 
+def test_outputs_do_not_match_duplicate_titles_by_name(tmp_path: Path, monkeypatch) -> None:
+    target_dir = tmp_path / "show"
+    target_dir.mkdir()
+    metadata_cache_file = target_dir / ".metadata-cache.tsv"
+    metadata_cache_file.write_text(
+        "ep-older\t20260502\tNA\tRepeated Title\n" "ep-newer\t20260503\tNA\tRepeated Title\n",
+        encoding="utf-8",
+    )
+    audio = target_dir / "Show - 2026-05-04 - Repeated Title.m4a"
+    audio.write_bytes(b"audio")
+    monkeypatch.setattr(outputs, "fetch_show_title", lambda _slug: "Show")
+
+    feed_path = outputs.generate_rss_feed(
+        target_dir,
+        "show",
+        "https://www.raiplaysound.it/programmi/show",
+        metadata_cache_file,
+        "",
+    )
+    playlist_path = outputs.generate_playlist(target_dir, metadata_cache_file)
+    feed_content = feed_path.read_text(encoding="utf-8")
+    playlist_content = playlist_path.read_text(encoding="utf-8")
+
+    assert '<guid isPermaLink="false">Show - 2026-05-04 - Repeated Title</guid>' in feed_content
+    assert '<guid isPermaLink="false">ep-newer</guid>' not in feed_content
+    assert '<guid isPermaLink="false">ep-older</guid>' not in feed_content
+    assert "Mon, 04 May 2026 00:00:00 GMT" in feed_content
+    assert "#EXTINF:-1,Repeated Title" in playlist_content
+
+
 def test_download_index_icon_saves_apple_touch_icon(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(outputs, "http_get_bytes", lambda *_args, **_kwargs: (b"png", "image/png"))
 
