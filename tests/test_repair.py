@@ -72,6 +72,26 @@ def test_plan_filename_repairs_skips_ambiguous_titles(tmp_path: Path) -> None:
     assert result.ambiguous == [audio]
 
 
+def test_plan_filename_repairs_treats_duplicate_targets_as_conflicts(tmp_path: Path) -> None:
+    show_dir = tmp_path / "show"
+    show_dir.mkdir()
+    metadata_cache = show_dir / ".metadata-cache.tsv"
+    metadata_cache.write_text(
+        "ep-1\t20260502\tNA\tRepeated Title\n",
+        encoding="utf-8",
+    )
+    first = show_dir / "Show - 2026-05-03 - Repeated Title.m4a"
+    second = show_dir / "Show - 2026-05-04 - Repeated Title.m4a"
+    first.write_bytes(b"one")
+    second.write_bytes(b"two")
+
+    result = plan_filename_repairs(show_dir, metadata_cache)
+
+    target = show_dir / "Show - 2026-05-02 - Repeated Title.m4a"
+    assert [(item.source, item.target) for item in result.repairs] == [(first, target)]
+    assert result.conflicts == [(second, target)]
+
+
 def test_plan_filename_repairs_falls_back_to_date_in_title_when_cache_is_partial(
     tmp_path: Path,
 ) -> None:

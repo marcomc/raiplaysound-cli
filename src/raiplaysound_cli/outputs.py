@@ -265,13 +265,18 @@ def generate_rss_feed(
     items_by_guid: dict[str, tuple[int, str, str, str, str, str, str, int]] = {}
     audio_entries = _local_audio_entries(target_dir) or []
     audio_count_by_date: dict[str, int] = {}
+    audio_count_by_title: dict[str, int] = {}
     for file_date, _file_path in audio_entries:
         audio_count_by_date[file_date] = audio_count_by_date.get(file_date, 0) + 1
+    for _file_date, file_path in audio_entries:
+        title_key = _title_key(_filename_title(file_path))
+        audio_count_by_title[title_key] = audio_count_by_title.get(title_key, 0) + 1
     for file_date, file_path in sorted(audio_entries, reverse=True):
         dated_entries = cache_by_date.get(file_date, [])
         filename_title = _filename_title(file_path)
-        title_entry = cache_by_title.get(_title_key(filename_title))
-        if title_entry is not None:
+        filename_title_key = _title_key(filename_title)
+        title_entry = cache_by_title.get(filename_title_key)
+        if title_entry is not None and audio_count_by_title.get(filename_title_key) == 1:
             title, guid, metadata_date = title_entry
             publish_date = metadata_date
         elif len(dated_entries) == 1 and audio_count_by_date.get(file_date, 0) == 1:

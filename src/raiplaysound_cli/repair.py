@@ -42,6 +42,7 @@ def plan_filename_repairs(show_dir: Path, metadata_cache_file: Path) -> Filename
     ambiguous: list[Path] = []
     conflicts: list[tuple[Path, Path]] = []
     unmatched: list[Path] = []
+    planned_targets: set[Path] = set()
 
     for source in _iter_audio_files(show_dir):
         match = DATE_IN_NAME_RE.search(source.name)
@@ -66,9 +67,10 @@ def plan_filename_repairs(show_dir: Path, metadata_cache_file: Path) -> Filename
             continue
         target_name = DATE_IN_NAME_RE.sub(metadata_date, source.name, count=1)
         target = source.with_name(target_name)
-        if target.exists():
+        if target.exists() or target in planned_targets:
             conflicts.append((source, target))
             continue
+        planned_targets.add(target)
         repairs.append(
             FilenameRepair(
                 source=source,

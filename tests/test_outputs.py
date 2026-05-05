@@ -628,6 +628,40 @@ def test_outputs_do_not_match_duplicate_titles_by_name(tmp_path: Path, monkeypat
     assert "#EXTINF:-1,Repeated Title" in playlist_content
 
 
+def test_outputs_do_not_reuse_one_title_match_for_multiple_local_files(
+    tmp_path: Path, monkeypatch
+) -> None:
+    target_dir = tmp_path / "show"
+    target_dir.mkdir()
+    metadata_cache_file = target_dir / ".metadata-cache.tsv"
+    metadata_cache_file.write_text(
+        "ep-single\t20260502\tNA\tRepeated Title\n",
+        encoding="utf-8",
+    )
+    first = target_dir / "Show - 2026-05-04 - Repeated Title.m4a"
+    second = target_dir / "Show - 2026-05-05 - Repeated Title.mp3"
+    first.write_bytes(b"one")
+    second.write_bytes(b"two")
+    monkeypatch.setattr(outputs, "fetch_show_title", lambda _slug: "Show")
+
+    feed_path = outputs.generate_rss_feed(
+        target_dir,
+        "show",
+        "https://www.raiplaysound.it/programmi/show",
+        metadata_cache_file,
+        "",
+    )
+    playlist_path = outputs.generate_playlist(target_dir, metadata_cache_file)
+    feed_content = feed_path.read_text(encoding="utf-8")
+    playlist_content = playlist_path.read_text(encoding="utf-8")
+
+    assert feed_content.count("<item>") == 2
+    assert '<guid isPermaLink="false">ep-single</guid>' not in feed_content
+    assert f'<guid isPermaLink="false">{first.stem}</guid>' in feed_content
+    assert f'<guid isPermaLink="false">{second.stem}</guid>' in feed_content
+    assert playlist_content.count("#EXTINF:-1,Repeated Title") == 2
+
+
 def test_download_index_icon_saves_apple_touch_icon(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(outputs, "http_get_bytes", lambda *_args, **_kwargs: (b"png", "image/png"))
 
