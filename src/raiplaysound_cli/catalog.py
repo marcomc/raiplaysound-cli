@@ -7,10 +7,18 @@ import time
 from pathlib import Path
 
 from .episodes import discover_groups_from_program_payload
-from .models import Program, Station
+from .models import Program, ProgramDetails, Station
 from .runtime import http_get
 
 PROGRAM_CACHE_VERSION = "2"
+
+
+def _absolute_raiplaysound_url(value: str) -> str:
+    if value.startswith("https://") or value.startswith("http://"):
+        return value
+    if value.startswith("/"):
+        return f"https://www.raiplaysound.it{value}"
+    return ""
 
 
 def _normalize_program_excerpt(value: str) -> str:
@@ -139,6 +147,58 @@ def fetch_program_metadata(slug: str, last_year: str = "") -> Program | None:
         page_url=f"https://www.raiplaysound.it/programmi/{slug}",
         description_excerpt=description_excerpt,
         grouping_count=len(discover_groups_from_program_payload(slug, payload)),
+    )
+
+
+def fetch_program_details(slug: str) -> ProgramDetails | None:
+    try:
+        raw = http_get(f"https://www.raiplaysound.it/programmi/{slug}.json", timeout=20.0)
+    except Exception:
+        return None
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    payload_data: dict[str, object] = payload
+    raw_info = payload_data.get("podcast_info")
+    info: dict[str, object] = raw_info if isinstance(raw_info, dict) else {}
+    title = str(info.get("title") or payload_data.get("title") or slug)
+    description = " ".join(
+        str(
+            info.get("description")
+            or info.get("vanity")
+            or payload_data.get("description")
+            or payload_data.get("subtitle")
+            or ""
+        ).split()
+    )
+    raw_people = info.get("people")
+    people: list[object] = raw_people if isinstance(raw_people, list) else []
+    author = ""
+    for person in people:
+        if not isinstance(person, dict):
+            continue
+        author = str(person.get("name") or person.get("fullname") or "").strip()
+        if author:
+            break
+    if not author:
+        author = str(info.get("editor") or "RAI Play Sound").strip()
+    image_url = _absolute_raiplaysound_url(str(info.get("image") or ""))
+    raw_images = info.get("images")
+    images: dict[str, object] = raw_images if isinstance(raw_images, dict) else {}
+    for key in ("square_external", "square", "landscape", "landscape_logo"):
+        if image_url:
+            break
+        image_url = _absolute_raiplaysound_url(str(images.get(key) or ""))
+    return ProgramDetails(
+        slug=slug,
+        title=title,
+        author=author or "RAI Play Sound",
+        description=description,
+        page_url=f"https://www.raiplaysound.it/programmi/{slug}",
+        image_url=image_url,
     )
 
 

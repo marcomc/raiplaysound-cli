@@ -4,6 +4,18 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Added program artwork download during `download` runs. The CLI now stores the
+  program cover in the show folder and references it from generated RSS feeds
+  through standard RSS `<image>` and iTunes podcast image tags.
+- Added automatic `index.html` generation in the target root. The page lists
+  synchronized program folders with artwork, title, author, description, local
+  episode count, latest downloaded episode date, and an RSS link only when that
+  program folder currently contains `feed.xml`. Local folder and artwork links
+  are relative to the generated page, while RSS links use `RSS_BASE_URL` when it
+  is configured.
+
 ## [2.1.4] - 2026-04-10 - resilient launcher install
 
 ### Changed

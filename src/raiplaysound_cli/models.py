@@ -17,6 +17,17 @@ class Program:
 
 
 @dataclasses.dataclass(slots=True)
+class ProgramDetails:
+    slug: str
+    title: str
+    author: str
+    description: str
+    page_url: str
+    image_url: str
+    artwork_file: str = ""
+
+
+@dataclasses.dataclass(slots=True)
 class Station:
     short: str
     name: str

@@ -133,6 +133,11 @@ Uninstalling:
   tracking and aggregate transfer speed
 - Caches program catalog metadata and per-show episode metadata
 - Generates optional `feed.xml` RSS output and `playlist.m3u` playlist output
+- Downloads each program cover image into the program folder and references it
+  from generated RSS feeds
+- Keeps an `index.html` landing page in the target root with program artwork,
+  descriptions, local episode counts, latest downloaded episode dates, and RSS
+  links only for programs that currently have a `feed.xml`
 - Preserves the existing `KEY=VALUE` dot-config format at
   `~/.raiplaysound-cli.conf`
 
@@ -495,6 +500,20 @@ raiplaysound-cli download --episode-url <episode-url> america7
 raiplaysound-cli download --rss --playlist musicalbox
 ```
 
+The RSS feed is written as `feed.xml`. RSS is an XML format, and `.xml` is the
+most compatible extension for podcast clients and static file hosting.
+
+Every download run also refreshes program-level assets in the show's folder:
+the program details cache, the local cover image, and the root
+`~/Music/RaiPlaySound/index.html` page. The index page lists each program folder
+with artwork, title, author, description, local episode count, latest local
+episode date, and an RSS link only when that program folder currently contains
+`feed.xml`. The generated index uses paths relative to itself, such as
+`program-slug/cover.jpg`, for local folder and artwork links. RSS links are
+shown only for program folders that currently contain `feed.xml`; when
+`RSS_BASE_URL` is configured, those RSS links point to
+`<RSS_BASE_URL>/<program_slug>/feed.xml`.
+
 Command forms:
 
 ```bash
@@ -508,11 +527,19 @@ Output folder contents:
 | File | Producer | Purpose |
 | --- | --- | --- |
 | `*.m4a` / `*.mp3` / ... | `yt-dlp` | Downloaded audio episodes |
+| `cover.*` | CLI | Local program artwork |
+| `.program-info.json` | CLI | Per-show program title, author, description, and artwork metadata |
 | `.download-archive.txt` | `yt-dlp` | Idempotency archive |
 | `.metadata-cache.tsv` | CLI | Per-show metadata cache |
 | `feed.xml` | CLI | Optional RSS 2.0 podcast feed |
 | `playlist.m3u` | CLI | Optional local playlist |
 | `*.log` | CLI | Optional run/debug log |
+
+Target root contents:
+
+| File | Producer | Purpose |
+| --- | --- | --- |
+| `index.html` | CLI | Static browsable program index for the target root |
 
 ## Development
 

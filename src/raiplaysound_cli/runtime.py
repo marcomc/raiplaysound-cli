@@ -33,6 +33,29 @@ def http_get(url: str, *, timeout: float = 30.0) -> str:
         raise HTTPRequestError(url, f"network request failed for {url}: {reason}") from exc
 
 
+def http_get_bytes(url: str, *, timeout: float = 30.0) -> tuple[bytes, str]:
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "raiplaysound-cli/2.0",
+            "Accept": "*/*",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            content_type = response.headers.get_content_type()
+            return response.read(), content_type
+    except urllib.error.HTTPError as exc:
+        raise HTTPRequestError(
+            url,
+            f"RaiPlaySound returned HTTP {exc.code} for {url}.",
+            code=exc.code,
+        ) from exc
+    except urllib.error.URLError as exc:
+        reason = getattr(exc, "reason", exc)
+        raise HTTPRequestError(url, f"network request failed for {url}: {reason}") from exc
+
+
 def run_yt_dlp(
     args: list[str],
     *,

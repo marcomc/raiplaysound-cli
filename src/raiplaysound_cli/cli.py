@@ -62,7 +62,12 @@ from .episodes import (
 )
 from .errors import CLIError
 from .models import Episode, EpisodeMetadata, GroupSource, SeasonSummary
-from .outputs import generate_playlist, generate_rss_feed
+from .outputs import (
+    generate_playlist,
+    generate_program_index,
+    generate_rss_feed,
+    prepare_program_assets,
+)
 from .runtime import acquire_lock, http_get, release_lock, run_yt_dlp
 from .search import search_all
 
@@ -1594,6 +1599,8 @@ def _download_one_program(settings: Settings, args: argparse.Namespace, input_va
         print_download_prep_step("refreshing metadata for selected episodes")
         cache.update(collect_metadata([episode.url for episode in filtered], single_entries=True))
         write_metadata_cache(metadata_cache_file, cache)
+    print_download_prep_step("refreshing program artwork and page metadata")
+    program_details = prepare_program_assets(target_dir, slug, program_url)
     filtered_summary = normalize_episode_metadata(filtered, cache)
     if non_season_groups:
         filtered_summary.has_seasons = False
@@ -1775,9 +1782,17 @@ def _download_one_program(settings: Settings, args: argparse.Namespace, input_va
         release_lock(lock_dir)
         shutil.rmtree(work_root, ignore_errors=True)
     if settings.rss_feed:
-        generate_rss_feed(target_dir, slug, program_url, metadata_cache_file, settings.rss_base_url)
+        generate_rss_feed(
+            target_dir,
+            slug,
+            program_url,
+            metadata_cache_file,
+            settings.rss_base_url,
+            program_details,
+        )
     if settings.playlist:
         generate_playlist(target_dir, metadata_cache_file)
+    generate_program_index(settings.target_base, settings.rss_base_url)
     return 0
 
 

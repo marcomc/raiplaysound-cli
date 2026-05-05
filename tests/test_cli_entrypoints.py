@@ -10,7 +10,7 @@ from raiplaysound_cli import cli
 from raiplaysound_cli import episodes as episode_module
 from raiplaysound_cli.config import Settings
 from raiplaysound_cli.errors import HTTPRequestError
-from raiplaysound_cli.models import EpisodeMetadata, GroupSource, Program
+from raiplaysound_cli.models import EpisodeMetadata, GroupSource, Program, ProgramDetails
 
 
 def test_main_version_prints_cli_version() -> None:
@@ -1798,6 +1798,19 @@ def test_download_uses_grouped_episode_sources(monkeypatch, tmp_path: Path, caps
     monkeypatch.setattr(cli, "acquire_lock", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(cli, "release_lock", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(cli, "resolve_log_file", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        cli,
+        "prepare_program_assets",
+        lambda target_dir, slug, program_url: ProgramDetails(
+            slug=slug,
+            title=slug,
+            author="RAI",
+            description="",
+            page_url=program_url,
+            image_url="",
+        ),
+    )
+    monkeypatch.setattr(cli, "generate_program_index", lambda *_args, **_kwargs: None)
 
     class FakeDownloader:
         def __init__(self, **_kwargs) -> None:
@@ -1914,6 +1927,19 @@ def test_download_refreshes_metadata_only_for_filtered_episodes(
     monkeypatch.setattr(cli, "acquire_lock", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(cli, "release_lock", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(cli, "resolve_log_file", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        cli,
+        "prepare_program_assets",
+        lambda target_dir, slug, program_url: ProgramDetails(
+            slug=slug,
+            title=slug,
+            author="RAI",
+            description="",
+            page_url=program_url,
+            image_url="",
+        ),
+    )
+    monkeypatch.setattr(cli, "generate_program_index", lambda *_args, **_kwargs: None)
 
     class FakeDownloader:
         def __init__(self, **_kwargs) -> None:
@@ -2024,6 +2050,19 @@ def test_download_skips_missing_scan_when_missing_not_enabled(
     monkeypatch.setattr(cli, "acquire_lock", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(cli, "release_lock", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(cli, "resolve_log_file", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        cli,
+        "prepare_program_assets",
+        lambda target_dir, slug, program_url: ProgramDetails(
+            slug=slug,
+            title=slug,
+            author="RAI",
+            description="",
+            page_url=program_url,
+            image_url="",
+        ),
+    )
+    monkeypatch.setattr(cli, "generate_program_index", lambda *_args, **_kwargs: None)
 
     class FakeDownloader:
         def __init__(self, **_kwargs) -> None:
