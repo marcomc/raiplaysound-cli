@@ -321,7 +321,10 @@ def _program_index_item(show_dir: Path, base_url: str) -> dict[str, str | int] |
     audio_entries = _local_audio_entries(show_dir)
     if audio_entries is None:
         return None
-    details = ensure_program_assets(show_dir, slug)
+    try:
+        details = ensure_program_assets(show_dir, slug)
+    except OSError:
+        return None
     latest_date = max((date for date, _path in audio_entries), default="")
     artwork_path = show_dir / details.artwork_file if details.artwork_file else None
     feed_path = show_dir / "feed.xml"

@@ -298,6 +298,48 @@ def test_generate_program_index_skips_unreadable_program_folder(
     assert "broken-show" not in content
 
 
+def test_generate_program_index_skips_folder_when_asset_refresh_cannot_write(
+    monkeypatch, tmp_path: Path
+) -> None:
+    target_base = tmp_path / "RaiPlaySound"
+    good_dir = target_base / "america7"
+    blocked_dir = target_base / "blocked-show"
+    good_dir.mkdir(parents=True)
+    blocked_dir.mkdir(parents=True)
+    monkeypatch.setattr(
+        outputs,
+        "download_index_icon",
+        lambda root: (root / outputs.INDEX_ICON_FILE),
+    )
+    details = ProgramDetails(
+        slug="america7",
+        title="America7",
+        author="Oliviero Bergamini",
+        description="America oltre gli stereotipi.",
+        page_url="https://www.raiplaysound.it/programmi/america7",
+        image_url="",
+        artwork_file="cover.jpg",
+    )
+    outputs.write_program_details(good_dir, details)
+    (good_dir / "cover.jpg").write_bytes(b"cover")
+    (good_dir / "America7 - 2024-01-01 - one.m4a").write_bytes(b"one")
+    (blocked_dir / "Blocked - 2024-01-01 - one.m4a").write_bytes(b"one")
+
+    original_ensure_program_assets = outputs.ensure_program_assets
+
+    def patched_ensure_program_assets(target_dir: Path, slug: str) -> ProgramDetails:
+        if target_dir == blocked_dir:
+            raise PermissionError("read-only folder")
+        return original_ensure_program_assets(target_dir, slug)
+
+    monkeypatch.setattr(outputs, "ensure_program_assets", patched_ensure_program_assets)
+
+    content = outputs.generate_program_index(target_base, "").read_text(encoding="utf-8")
+
+    assert "America7" in content
+    assert "blocked-show" not in content
+
+
 def test_download_index_icon_saves_apple_touch_icon(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(outputs, "http_get_bytes", lambda *_args, **_kwargs: (b"png", "image/png"))
 
