@@ -139,6 +139,41 @@ def test_prepare_program_assets_downloads_artwork_and_writes_details(
     )
 
 
+def test_prepare_program_assets_preserves_cached_details_when_fetch_fails(
+    monkeypatch, tmp_path: Path
+) -> None:
+    target_dir = tmp_path / "america7"
+    target_dir.mkdir()
+    cached = ProgramDetails(
+        slug="america7",
+        title="Cached Title",
+        author="Cached Author",
+        description="Cached description",
+        page_url="https://www.raiplaysound.it/programmi/america7",
+        image_url="https://www.raiplaysound.it/dl/img/cover.png",
+        artwork_file="cover.png",
+    )
+    outputs.write_program_details(target_dir, cached)
+    (target_dir / "cover.png").write_bytes(b"cover")
+    monkeypatch.setattr(outputs, "fetch_program_details", lambda _slug: None)
+    monkeypatch.setattr(outputs, "http_get_bytes", lambda *_args, **_kwargs: (b"png", "image/png"))
+
+    result = outputs.prepare_program_assets(
+        target_dir,
+        "america7",
+        "https://www.raiplaysound.it/programmi/america7",
+    )
+
+    assert result.title == "Cached Title"
+    assert result.author == "Cached Author"
+    assert result.description == "Cached description"
+    assert result.image_url == "https://www.raiplaysound.it/dl/img/cover.png"
+    assert result.artwork_file == "cover.png"
+    assert '"title": "Cached Title"' in (target_dir / outputs.PROGRAM_INFO_FILE).read_text(
+        encoding="utf-8"
+    )
+
+
 def test_generate_program_index_hides_missing_feed_link(monkeypatch, tmp_path: Path) -> None:
     target_base = tmp_path / "RaiPlaySound"
     show_dir = target_base / "america7"

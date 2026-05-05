@@ -11,6 +11,8 @@ All notable changes to this project are documented in this file.
   podcast clients that reject relative artifact paths.
 - Made root `index.html` generation skip unreadable program folders instead of
   aborting the whole run after downloads complete.
+- Preserved cached program titles, authors, descriptions, image URLs, and
+  artwork links when a live program-detail refresh temporarily fails.
 
 ## [2.2.0] - 2026-06-01 - artwork, index, and feed improvements
 

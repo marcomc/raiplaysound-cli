@@ -137,7 +137,10 @@ def download_program_artwork(target_dir: Path, details: ProgramDetails) -> Progr
 
 
 def prepare_program_assets(target_dir: Path, slug: str, program_url: str) -> ProgramDetails:
-    details = fetch_program_details(slug) or fallback_program_details(slug, program_url)
+    cached_details = load_program_details(target_dir / PROGRAM_INFO_FILE)
+    details = (
+        fetch_program_details(slug) or cached_details or fallback_program_details(slug, program_url)
+    )
     details = download_program_artwork(target_dir, details)
     write_program_details(target_dir, details)
     return details
