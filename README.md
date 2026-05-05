@@ -126,6 +126,9 @@ Uninstalling:
   cached episode metadata
 - Downloads episodes into `~/Music/RaiPlaySound/<slug>/`
 - Uses `yt-dlp --download-archive` for idempotent repeat runs
+- Uses RaiPlaySound episode `date_tracking` metadata for episode dates, so
+  filenames and generated feeds follow the editorial episode date rather than
+  a later technical publication date when Rai exposes both.
 - Supports audio formats `mp3`, `m4a`, `aac`, `ogg`, `opus`, `flac`, and `wav`
 - Supports season filtering, episode ID filtering, and episode URL filtering
 - Supports automatic re-download of archive-marked but missing local files
@@ -447,6 +450,11 @@ free.
 The staged conversion path also preserves richer embedded tags for seasonal
 shows by restoring episode titles plus season and episode numbering from the
 downloaded sidecar metadata.
+
+When RaiPlaySound exposes both an editorial episode date and a later technical
+publication date, the CLI uses the editorial `date_tracking` value from the
+episode JSON. That date is used for the final audio filename, RSS `pubDate`,
+RSS item matching, playlist titles, and missing-file detection.
 
 When `--missing` is not enabled, the CLI now skips the archive/file existence
 scan entirely instead of paying that startup cost on every download.

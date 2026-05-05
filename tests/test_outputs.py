@@ -558,6 +558,46 @@ def test_generate_rss_feed_sorts_items_by_real_publish_date(tmp_path: Path, monk
     )
 
 
+def test_outputs_match_cache_by_title_when_filename_date_is_shifted(
+    tmp_path: Path, monkeypatch
+) -> None:
+    target_dir = tmp_path / "musicalbox"
+    target_dir.mkdir()
+    metadata_cache_file = target_dir / ".metadata-cache.tsv"
+    metadata_cache_file.write_text(
+        "ep-sat\t20260502\tNA\tMusical Box del 02/05/2026\n"
+        "ep-sun\t20260503\tNA\tMusical Box del 03/05/2026\n",
+        encoding="utf-8",
+    )
+    (
+        target_dir / "Musical Box - 2026-05-03 - Musical Box del 02\u29f805\u29f82026.m4a"
+    ).write_bytes(b"sat")
+    (
+        target_dir / "Musical Box - 2026-05-04 - Musical Box del 03\u29f805\u29f82026.m4a"
+    ).write_bytes(b"sun")
+    monkeypatch.setattr(outputs, "fetch_show_title", lambda _slug: "Musical Box")
+
+    feed_path = outputs.generate_rss_feed(
+        target_dir,
+        "musicalbox",
+        "https://www.raiplaysound.it/programmi/musicalbox",
+        metadata_cache_file,
+        "",
+    )
+    playlist_path = outputs.generate_playlist(target_dir, metadata_cache_file)
+    feed_content = feed_path.read_text(encoding="utf-8")
+    playlist_content = playlist_path.read_text(encoding="utf-8")
+
+    assert "<title>Musical Box del 02/05/2026</title>" in feed_content
+    assert "<title>Musical Box del 03/05/2026</title>" in feed_content
+    assert '<guid isPermaLink="false">ep-sat</guid>' in feed_content
+    assert '<guid isPermaLink="false">ep-sun</guid>' in feed_content
+    assert "Sat, 02 May 2026 00:00:00 GMT" in feed_content
+    assert "Sun, 03 May 2026 00:00:00 GMT" in feed_content
+    assert "#EXTINF:-1,Musical Box del 02/05/2026" in playlist_content
+    assert "#EXTINF:-1,Musical Box del 03/05/2026" in playlist_content
+
+
 def test_download_index_icon_saves_apple_touch_icon(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(outputs, "http_get_bytes", lambda *_args, **_kwargs: (b"png", "image/png"))
 

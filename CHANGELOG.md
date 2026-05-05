@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Made episode metadata refresh prefer RaiPlaySound `date_tracking` from
+  episode JSON over `yt-dlp`'s technical `upload_date`, so downloaded filenames,
+  RSS item titles, RSS publish dates, playlists, and missing-file checks stay
+  aligned with the editorial episode date.
+
 ## [2.2.1] - 2026-05-05 - RSS and index follow-up fixes
 
 ### Fixed

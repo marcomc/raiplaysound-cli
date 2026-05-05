@@ -881,7 +881,14 @@ def collect_metadata(
             "--skip-download",
             "--ignore-errors",
             "--print",
-            "%(id)s\t%(upload_date|NA)s\t%(title|NA)s\t%(season_number|NA)s",
+            (
+                "%(id)s\t%(upload_date|NA)s\t%(title|NA)s\t%(season_number|NA)s"
+                if single_entries
+                else (
+                    "%(id)s\t%(upload_date|NA)s\t%(title|NA)s\t"
+                    "%(season_number|NA)s\t%(webpage_url|NA)s"
+                )
+            ),
         ]
         if single_entries:
             args.append("--no-playlist")
@@ -899,6 +906,14 @@ def collect_metadata(
                 parts[2],
                 parts[3],
             )
+            if len(parts) >= 5 and parts[4] and parts[4] != "NA":
+                try:
+                    json_metadata = _collect_metadata_from_episode_json(parts[4])
+                except Exception:
+                    json_metadata = {}
+                if episode_id in json_metadata:
+                    result.setdefault(episode_id, json_metadata[episode_id])
+                    continue
             result.setdefault(
                 episode_id,
                 EpisodeMetadata(

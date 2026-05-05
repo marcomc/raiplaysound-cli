@@ -109,6 +109,51 @@ def test_downloader_parses_progress_lines(monkeypatch, tmp_path: Path) -> None:
     } in progress.updated
 
 
+def test_downloader_uses_episode_publish_date_for_final_filename(
+    monkeypatch, tmp_path: Path
+) -> None:
+    progress = RecordingProgress()
+    task = DownloadTask(
+        episode_id="ep-1",
+        episode_url="https://example.test/ep-1",
+        episode_label="Musical Box del 02/05/2026",
+        task_id=cast(TaskID, 7),
+        publish_date="2026-05-02",
+    )
+    work_file = (
+        tmp_path
+        / "work"
+        / "ep-1"
+        / "Musical Box - 2026-05-03 - Musical Box del 02\u29f805\u29f82026.mp3"
+    )
+    work_file.parent.mkdir(parents=True)
+    work_file.write_bytes(b"audio")
+    fake_process = FakeProcess([str(work_file)])
+    monkeypatch.setattr(
+        "raiplaysound_cli.downloads.subprocess.Popen",
+        lambda *args, **kwargs: fake_process,
+    )
+    monkeypatch.setattr("raiplaysound_cli.downloads.shutil.rmtree", lambda *_args, **_kwargs: None)
+
+    downloader = Downloader(
+        archive_file=tmp_path / ".download-archive.txt",
+        output_template=str(tmp_path / "%(title)s.%(ext)s"),
+        work_root=tmp_path / "work",
+        audio_format="m4a",
+        log_file=None,
+        rich_progress=progress,  # type: ignore[arg-type]
+        debug_pids=False,
+    )
+
+    state, _detail, prepared = downloader.download_source(task)
+
+    assert state == "READY"
+    assert prepared is not None
+    assert prepared.final_path == (
+        tmp_path / "Musical Box - 2026-05-02 - Musical Box del 02\u29f805\u29f82026.m4a"
+    )
+
+
 def test_downloader_formats_megabytes_and_updates_overall_speed(
     monkeypatch, tmp_path: Path
 ) -> None:

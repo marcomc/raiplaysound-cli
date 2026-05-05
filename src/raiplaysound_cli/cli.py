@@ -36,6 +36,7 @@ from .config import Settings, choose_command, parse_env_file
 from .downloads import (
     Downloader,
     DownloadTask,
+    _replace_stem_date,
     remove_missing_ids_from_archive,
     resolve_log_file,
 )
@@ -1504,7 +1505,9 @@ def apply_search_defaults(settings: Settings, args: argparse.Namespace) -> argpa
     return args
 
 
-def predicted_media_exists(episode_url: str, output_template: str, audio_format: str) -> bool:
+def predicted_media_exists(
+    episode_url: str, output_template: str, audio_format: str, publish_date: str = ""
+) -> bool:
     parse_metadata_expr = (
         r"title:^(?P<series>.+?) "
         r"S(?P<season_number>[0-9]+)E(?P<episode_number>[0-9]+)\s*(?P<episode>.*)$"
@@ -1527,7 +1530,8 @@ def predicted_media_exists(episode_url: str, output_template: str, audio_format:
     resolved = result.stdout.splitlines()[0].strip() if result.stdout.strip() else ""
     if not resolved:
         return False
-    base = str(Path(resolved).with_suffix(""))
+    resolved_path = Path(resolved)
+    base = str(resolved_path.with_name(_replace_stem_date(resolved_path.stem, publish_date)))
     for ext in [
         audio_format,
         "mp3",
@@ -1638,6 +1642,7 @@ def _download_one_program(settings: Settings, args: argparse.Namespace, input_va
                     episode.url,
                     output_template,
                     settings.audio_format,
+                    episode.pretty_date,
                 ): episode
                 for episode in filtered
                 if episode.episode_id in archived_ids
@@ -1709,6 +1714,7 @@ def _download_one_program(settings: Settings, args: argparse.Namespace, input_va
                         size_text="0.0 MB",
                         speed_text="",
                     ),
+                    publish_date=episode.pretty_date,
                 )
                 for episode in filtered
             ]

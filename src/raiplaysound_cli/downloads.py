@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import json
+import re
 import shutil
 import subprocess
 import threading
@@ -18,6 +19,7 @@ class DownloadTask:
     episode_url: str
     episode_label: str
     task_id: TaskID
+    publish_date: str = ""
 
 
 @dataclasses.dataclass(slots=True)
@@ -223,7 +225,8 @@ class Downloader:
             episode_label=task.episode_label,
             work_dir=work_dir,
             media_path=output_path,
-            final_path=self.archive_file.parent / f"{output_path.stem}.{self.audio_format}",
+            final_path=self.archive_file.parent
+            / f"{_replace_stem_date(output_path.stem, task.publish_date)}.{self.audio_format}",
             info_json_path=info_json_path if info_json_path.exists() else None,
             thumbnail_path=thumbnail_path,
             duration_seconds=(
@@ -315,6 +318,12 @@ def _format_transfer_speed(bytes_per_second: float) -> str:
         return f"{megabytes_per_second:.1f} MB/s"
     kilobytes_per_second = bytes_per_second / 1_000
     return f"{kilobytes_per_second:.0f} KB/s"
+
+
+def _replace_stem_date(stem: str, publish_date: str) -> str:
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", publish_date):
+        return stem
+    return re.sub(r"\d{4}-\d{2}-\d{2}", publish_date, stem, count=1)
 
 
 def _find_thumbnail(media_path: Path) -> Path | None:
