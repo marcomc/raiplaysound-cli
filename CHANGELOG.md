@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## [Unreleased]
+## [2.2.0] - 2026-06-01 - artwork, index, and feed improvements
 
 ### Added
 
