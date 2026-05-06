@@ -120,12 +120,17 @@ Uninstalling:
 ## Capabilities
 
 - Accepts either a RaiPlaySound `program_slug` or full `program_url`
-- Supports `list`, `search`, and `download` commands
+- Supports `list`, `search`, `download`, and `repair` commands
 - Lists stations, programs, seasons, and episodes
 - Searches stations, programs, locally cached seasons/groupings, and locally
   cached episode metadata
 - Downloads episodes into `~/Music/RaiPlaySound/<slug>/`
+- Repairs existing local filenames from the per-show metadata cache without
+  deleting or re-downloading audio
 - Uses `yt-dlp --download-archive` for idempotent repeat runs
+- Uses RaiPlaySound episode `date_tracking` metadata for episode dates, so
+  filenames and generated feeds follow the editorial episode date rather than
+  a later technical publication date when Rai exposes both.
 - Supports audio formats `mp3`, `m4a`, `aac`, `ogg`, `opus`, `flac`, and `wav`
 - Supports season filtering, episode ID filtering, and episode URL filtering
 - Supports automatic re-download of archive-marked but missing local files
@@ -239,6 +244,7 @@ raiplaysound-cli search lucio dalla
 raiplaysound-cli list episodes america7
 raiplaysound-cli download america7
 raiplaysound-cli download --favourites
+raiplaysound-cli repair filenames musicalbox
 ```
 
 ## Common Workflows
@@ -448,8 +454,49 @@ The staged conversion path also preserves richer embedded tags for seasonal
 shows by restoring episode titles plus season and episode numbering from the
 downloaded sidecar metadata.
 
+When RaiPlaySound exposes both an editorial episode date and a later technical
+publication date, the CLI uses the editorial `date_tracking` value from the
+episode JSON. That date is used for the final audio filename, RSS `pubDate`,
+RSS item matching, playlist titles, and missing-file detection.
+
 When `--missing` is not enabled, the CLI now skips the archive/file existence
 scan entirely instead of paying that startup cost on every download.
+
+### Repair existing filenames
+
+Use `repair filenames` when local audio files were downloaded with a technical
+publication date but the metadata cache has the corrected RaiPlaySound
+`date_tracking` date.
+
+Preview changes without touching files:
+
+```bash
+raiplaysound-cli repair filenames musicalbox
+raiplaysound-cli repair filenames --favourites
+```
+
+Apply the planned renames:
+
+```bash
+raiplaysound-cli repair filenames musicalbox --apply
+raiplaysound-cli repair filenames --favourites --apply
+```
+
+The repair command matches local audio files to `.metadata-cache.tsv` by
+normalized title. If the cache is partial, it can also use an unambiguous
+`DD/MM/YYYY` date embedded in the local title, such as
+`Musical Box del 12/04/2026`. It changes only the first date segment in the
+filename and skips ambiguous titles or destination conflicts. When `RSS_FEED`
+or `PLAYLIST` is enabled in configuration, `--apply` also regenerates
+`feed.xml`, `playlist.m3u`, and the root `index.html`.
+
+If the metadata cache itself needs to be refreshed first, run:
+
+```bash
+raiplaysound-cli download PROGRAM_SLUG --clear-metadata-cache --refresh-metadata --rss --playlist
+```
+
+Then run the filename repair in dry-run mode before applying it.
 
 Example output:
 

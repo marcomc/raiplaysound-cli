@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [2.2.2] - 2026-05-05 - Date-tracking filename repairs
+
+### Fixed
+
+- Made episode metadata refresh prefer RaiPlaySound `date_tracking` from
+  episode JSON over `yt-dlp`'s technical `upload_date`, so downloaded filenames,
+  RSS item titles, RSS publish dates, playlists, and missing-file checks stay
+  aligned with the editorial episode date.
+- Added `raiplaysound-cli repair filenames` with dry-run-by-default output and
+  `--apply` renaming, so existing local audio files can be migrated to the
+  corrected editorial episode date without deleting or re-downloading audio.
+- Made filename repair fall back to an unambiguous `DD/MM/YYYY` date embedded
+  in the local title when the per-show metadata cache is partial.
+
 ## [2.2.1] - 2026-05-05 - RSS and index follow-up fixes
 
 ### Fixed

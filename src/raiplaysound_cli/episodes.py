@@ -866,6 +866,10 @@ def _collect_metadata_from_episode_json(source: str) -> dict[str, EpisodeMetadat
     }
 
 
+def _has_usable_upload_date(metadata: EpisodeMetadata) -> bool:
+    return re.fullmatch(r"\d{8}", metadata.upload_date) is not None
+
+
 def collect_metadata(
     sources: list[str], *, single_entries: bool = False
 ) -> dict[str, EpisodeMetadata]:
@@ -873,15 +877,25 @@ def collect_metadata(
     for source in sources:
         if single_entries:
             try:
-                result.update(_collect_metadata_from_episode_json(source))
-                continue
+                json_metadata = _collect_metadata_from_episode_json(source)
             except Exception:
                 pass
+            else:
+                if all(_has_usable_upload_date(item) for item in json_metadata.values()):
+                    result.update(json_metadata)
+                    continue
         args = [
             "--skip-download",
             "--ignore-errors",
             "--print",
-            "%(id)s\t%(upload_date|NA)s\t%(title|NA)s\t%(season_number|NA)s",
+            (
+                "%(id)s\t%(upload_date|NA)s\t%(title|NA)s\t%(season_number|NA)s"
+                if single_entries
+                else (
+                    "%(id)s\t%(upload_date|NA)s\t%(title|NA)s\t"
+                    "%(season_number|NA)s\t%(webpage_url|NA)s"
+                )
+            ),
         ]
         if single_entries:
             args.append("--no-playlist")
@@ -899,6 +913,15 @@ def collect_metadata(
                 parts[2],
                 parts[3],
             )
+            if len(parts) >= 5 and parts[4] and parts[4] != "NA":
+                try:
+                    json_metadata = _collect_metadata_from_episode_json(parts[4])
+                except Exception:
+                    json_metadata = {}
+                json_entry = json_metadata.get(episode_id)
+                if json_entry is not None and _has_usable_upload_date(json_entry):
+                    result.setdefault(episode_id, json_entry)
+                    continue
             result.setdefault(
                 episode_id,
                 EpisodeMetadata(

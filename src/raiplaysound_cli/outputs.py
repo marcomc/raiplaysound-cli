@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import calendar
 import email.utils
 import html
 import json
@@ -19,6 +20,8 @@ PROGRAM_INFO_FILE = ".program-info.json"
 ARTWORK_STEM = "cover"
 INDEX_ICON_FILE = "apple-touch-icon.png"
 INDEX_ICON_URL = "https://www.raiplaysound.it/assets/img/icons/apple/apple-touch-icon.png"
+TITLE_SEPARATOR_RE = re.compile(r"^.*\d{4}-\d{2}-\d{2}\s+-\s+")
+TitleEntry = tuple[str, str, str]
 
 
 def _url_for_artifact(path: Path, slug: str, base_url: str) -> str:
@@ -206,6 +209,32 @@ def _local_audio_entries(target_dir: Path) -> list[tuple[str, Path]] | None:
     return entries
 
 
+def _metadata_date(upload_date: str) -> str | None:
+    if not re.fullmatch(r"\d{8}", upload_date):
+        return None
+    return f"{upload_date[:4]}-{upload_date[4:6]}-{upload_date[6:8]}"
+
+
+def _filename_title(file_path: Path) -> str:
+    return TITLE_SEPARATOR_RE.sub("", file_path.stem)
+
+
+def _title_key(title: str) -> str:
+    return " ".join(title.replace("\u29f8", "/").split()).casefold()
+
+
+def _store_unique_title_entry(
+    cache_by_title: dict[str, TitleEntry | None],
+    title: str,
+    entry: TitleEntry,
+) -> None:
+    key = _title_key(title)
+    if key in cache_by_title:
+        cache_by_title[key] = None
+    else:
+        cache_by_title[key] = entry
+
+
 def generate_rss_feed(
     target_dir: Path,
     slug: str,
@@ -214,17 +243,15 @@ def generate_rss_feed(
     base_url: str,
     details: ProgramDetails | None = None,
 ) -> Path:
-    cache_by_date: dict[str, list[tuple[str, str]]] = {}
+    cache_by_date: dict[str, list[TitleEntry]] = {}
+    cache_by_title: dict[str, TitleEntry | None] = {}
     for episode_id, metadata in load_metadata_cache(metadata_cache_file).items():
-        if re.fullmatch(r"\d{8}", metadata.upload_date):
-            cache_by_date.setdefault(
-                (
-                    f"{metadata.upload_date[:4]}-"
-                    f"{metadata.upload_date[4:6]}-"
-                    f"{metadata.upload_date[6:8]}"
-                ),
-                [],
-            ).append((metadata.title, episode_id))
+        metadata_date = _metadata_date(metadata.upload_date)
+        if metadata_date is None:
+            continue
+        entry = (metadata.title, episode_id, metadata_date)
+        cache_by_date.setdefault(metadata_date, []).append(entry)
+        _store_unique_title_entry(cache_by_title, metadata.title, entry)
     details = details or load_program_details(target_dir / PROGRAM_INFO_FILE)
     if details is None:
         details = fetch_program_details(slug) or fallback_program_details(slug, program_url)
@@ -238,17 +265,28 @@ def generate_rss_feed(
     items_by_guid: dict[str, tuple[int, str, str, str, str, str, str, int]] = {}
     audio_entries = _local_audio_entries(target_dir) or []
     audio_count_by_date: dict[str, int] = {}
+    audio_count_by_title: dict[str, int] = {}
     for file_date, _file_path in audio_entries:
         audio_count_by_date[file_date] = audio_count_by_date.get(file_date, 0) + 1
+    for _file_date, file_path in audio_entries:
+        title_key = _title_key(_filename_title(file_path))
+        audio_count_by_title[title_key] = audio_count_by_title.get(title_key, 0) + 1
     for file_date, file_path in sorted(audio_entries, reverse=True):
         dated_entries = cache_by_date.get(file_date, [])
-        if len(dated_entries) == 1 and audio_count_by_date.get(file_date, 0) == 1:
-            title, guid = dated_entries[0]
+        filename_title = _filename_title(file_path)
+        filename_title_key = _title_key(filename_title)
+        title_entry = cache_by_title.get(filename_title_key)
+        if title_entry is not None and audio_count_by_title.get(filename_title_key) == 1:
+            title, guid, metadata_date = title_entry
+            publish_date = metadata_date
+        elif len(dated_entries) == 1 and audio_count_by_date.get(file_date, 0) == 1:
+            title, guid, publish_date = dated_entries[0]
         else:
-            title = re.sub(r"^.*\d{4}-\d{2}-\d{2}\s+-\s+", "", file_path.stem)
+            title = filename_title
             guid = file_path.stem
+            publish_date = file_date
         enclosure = _url_for_artifact(file_path, slug, base_url)
-        published_at = int(time.mktime(time.strptime(file_date, "%Y-%m-%d")))
+        published_at = calendar.timegm(time.strptime(publish_date, "%Y-%m-%d"))
         item = (
             file_path.stat().st_mtime_ns,
             title,
@@ -318,30 +356,31 @@ def generate_rss_feed(
 
 def generate_playlist(target_dir: Path, metadata_cache_file: Path) -> Path:
     cache_by_date: dict[str, list[str]] = {}
+    cache_by_title: dict[str, str | None] = {}
     for _episode_id, metadata in load_metadata_cache(metadata_cache_file).items():
-        if re.fullmatch(r"\d{8}", metadata.upload_date):
-            cache_by_date.setdefault(
-                (
-                    f"{metadata.upload_date[:4]}-"
-                    f"{metadata.upload_date[4:6]}-"
-                    f"{metadata.upload_date[6:8]}"
-                ),
-                [],
-            ).append(metadata.title)
+        metadata_date = _metadata_date(metadata.upload_date)
+        if metadata_date is None:
+            continue
+        cache_by_date.setdefault(metadata_date, []).append(metadata.title)
+        key = _title_key(metadata.title)
+        if key in cache_by_title:
+            cache_by_title[key] = None
+        else:
+            cache_by_title[key] = metadata.title
     entries: list[tuple[str, Path]] = []
     entries.extend(_local_audio_entries(target_dir) or [])
     entries.sort(key=lambda item: item[0])
     lines = ["#EXTM3U"]
     for file_date, file_path in entries:
+        filename_title = _filename_title(file_path)
+        title_by_name = cache_by_title.get(_title_key(filename_title))
         dated_titles = cache_by_date.get(file_date, [])
-        if len(dated_titles) == 1:
+        if title_by_name is not None:
+            title = title_by_name
+        elif len(dated_titles) == 1:
             title = dated_titles[0]
         else:
-            title = re.sub(
-                r"^.*\d{4}-\d{2}-\d{2}\s+-\s+",
-                "",
-                file_path.stem,
-            )
+            title = filename_title
         lines.append(f"#EXTINF:-1,{title}")
         lines.append(file_path.name)
     playlist_path = target_dir / "playlist.m3u"
