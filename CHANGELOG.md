@@ -2,13 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
-## [Unreleased]
+## [2.3.0] - Unreleased - index page, artwork, and feed improvements
 
 ### Changed
 
 - Renamed the generated root index page branding to `RaiPlayPodcast`, showed
   the bundled app icon in the page heading, and made `apple-touch-icon.png`
   come from a local generated asset instead of the official RaiPlaySound icon.
+- Added Apple Podcasts app links beside root index RSS links when `RSS_BASE_URL`
+  is configured, using the `pcast://` URL scheme.
+
+### Added
+
+- Added `raiplaysound-cli index` to regenerate only the root `index.html` from
+  already-downloaded local program folders.
+- Added `--target-base` and `--rss-base-url` overrides to `raiplaysound-cli
+  index`, so one-off index rebuilds can test alternate roots or public URLs
+  without changing the user config file.
 
 ### Fixed
 

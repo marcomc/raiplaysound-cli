@@ -32,7 +32,7 @@ from .catalog import (
     program_cache_format_is_current,
     write_program_cache,
 )
-from .config import Settings, choose_command, parse_env_file
+from .config import Settings, choose_command, expand_config_path, parse_env_file
 from .downloads import (
     Downloader,
     DownloadTask,
@@ -355,6 +355,7 @@ def format_main_help() -> str:
             "  search    Search stations, programs, groupings, and local episode metadata",
             "  download  Download one program or configured favourites",
             "  repair    Repair local files using cached RaiPlaySound metadata",
+            "  index     Regenerate the local HTML program index",
             "",
             "Run `raiplaysound-cli <command> --help` for command-specific help.",
         ]
@@ -1534,6 +1535,42 @@ def build_repair_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def build_index_parser() -> argparse.ArgumentParser:
+    parser = make_argument_parser(
+        prog="raiplaysound-cli index",
+        usage="raiplaysound-cli index [options]",
+        description=(
+            "Regenerate the root HTML program index from already-downloaded local folders."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  raiplaysound-cli index\n"
+            "  raiplaysound-cli index --rss-base-url http://192.168.1.253:8092\n"
+            "  raiplaysound-cli index --target-base /tmp/RaiPlaySound"
+        ),
+        add_help=False,
+    )
+    general_group = parser.add_argument_group("General")
+    general_group.add_argument(
+        "-h",
+        "--help",
+        action="help",
+        help="Show this help message and exit.",
+    )
+    output_group = parser.add_argument_group("Outputs")
+    output_group.add_argument(
+        "--target-base",
+        default=None,
+        help="Root folder containing downloaded program folders.",
+    )
+    output_group.add_argument(
+        "--rss-base-url",
+        default=None,
+        help="Public base URL used for RSS and Apple Podcasts links.",
+    )
+    return parser
+
+
 def apply_download_overrides(settings: Settings, args: argparse.Namespace) -> Settings:
     updated = dataclasses.replace(settings)
     if args.format:
@@ -1574,6 +1611,15 @@ def apply_repair_overrides(settings: Settings, args: argparse.Namespace) -> Sett
         updated.rss_base_url = args.rss_base_url.rstrip("/")
     if args.playlist is not None:
         updated.playlist = args.playlist
+    return updated
+
+
+def apply_index_overrides(settings: Settings, args: argparse.Namespace) -> Settings:
+    updated = dataclasses.replace(settings)
+    if args.target_base is not None:
+        updated.target_base = Path(expand_config_path(args.target_base))
+    if args.rss_base_url is not None:
+        updated.rss_base_url = args.rss_base_url.rstrip("/")
     return updated
 
 
@@ -1949,6 +1995,12 @@ def repair_command(settings: Settings, args: argparse.Namespace) -> int:
     return _repair_one_program(settings, args, args.input or settings.input_value)
 
 
+def index_command(settings: Settings, _args: argparse.Namespace) -> int:
+    index_path = generate_program_index(settings.target_base, settings.rss_base_url)
+    console.print(f"Regenerated index: {index_path}")
+    return 0
+
+
 def _repair_one_program(settings: Settings, args: argparse.Namespace, input_value: str) -> int:
     slug, program_url = detect_slug(input_value)
     target_dir = settings.target_base / slug
@@ -2044,6 +2096,10 @@ def main(argv: list[str] | None = None) -> int:
                 raise CLIError("repair filenames requires <program_slug|program_url>.")
             settings = apply_repair_overrides(settings, args)
             return repair_command(settings, args)
+        if command == "index":
+            args = build_index_parser().parse_args(rest)
+            settings = apply_index_overrides(settings, args)
+            return index_command(settings, args)
         args = build_download_parser().parse_args(rest)
         if not args.favourites and not (args.input or settings.input_value):
             raise CLIError("download requires <program_slug|program_url>.")

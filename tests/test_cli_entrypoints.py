@@ -183,6 +183,39 @@ def test_repair_filenames_apply_renames_and_regenerates_outputs(
     assert "Renamed 1 file(s) for musicalbox" in captured.out
 
 
+def test_index_command_regenerates_index_only(monkeypatch, tmp_path: Path, capsys) -> None:
+    settings = Settings()
+    settings.target_base = tmp_path / "Music" / "RaiPlaySound"
+    settings.rss_base_url = "http://config.example/audio"
+    calls: list[tuple[Path, str]] = []
+
+    def fake_generate_program_index(target_base: Path, rss_base_url: str) -> Path:
+        calls.append((target_base, rss_base_url))
+        return target_base / "index.html"
+
+    monkeypatch.setattr(cli, "parse_env_file", lambda _path: {})
+    monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
+    monkeypatch.setattr(cli, "generate_program_index", fake_generate_program_index)
+
+    override_base = tmp_path / "override" / "RaiPlaySound"
+
+    result = cli.main(
+        [
+            "index",
+            "--target-base",
+            str(override_base),
+            "--rss-base-url",
+            "http://override.example/audio/",
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert result == 0
+    assert calls == [(override_base, "http://override.example/audio")]
+    assert "Regenerated index:" in captured.out
+    assert str(override_base / "index.html") in captured.out.replace("\n", "")
+
+
 def test_main_list_requires_exactly_one_target(capsys) -> None:
     result = cli.main(["list"])
     captured = capsys.readouterr()

@@ -7,6 +7,7 @@ from raiplaysound_cli.catalog import (
 )
 from raiplaysound_cli.config import (
     Settings,
+    choose_command,
     expand_config_path,
     normalize_bool,
     parse_env_file,
@@ -51,6 +52,11 @@ def test_parse_env_file(tmp_path: Path) -> None:
     assert settings.audio_format == "mp3"
     assert settings.jobs == 5
     assert settings.groups_arg == "speciali,battiti"
+
+
+def test_choose_command_accepts_index() -> None:
+    assert choose_command(["index"], {}) == ("index", [])
+    assert choose_command([], {"COMMAND": "index"}) == ("index", [])
 
 
 def test_settings_from_config_parses_favorites_list() -> None:

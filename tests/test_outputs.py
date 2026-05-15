@@ -286,6 +286,7 @@ def test_generate_program_index_hides_missing_feed_link(monkeypatch, tmp_path: P
     assert "1 episodi" in content
     assert "Ultimo: 2024-01-01" in content
     assert "america7/cover.jpg" in content
+    assert "Apple Podcasts" not in content
     assert "https://example.test/audio" not in content
     assert "feed.xml" not in content
 
@@ -296,6 +297,8 @@ def test_generate_program_index_hides_missing_feed_link(monkeypatch, tmp_path: P
     )
 
     assert '<a class="feed" href="https://example.test/audio/america7/feed.xml">RSS</a>' in content
+    assert 'href="pcast://example.test/audio/america7/feed.xml"' in content
+    assert "Apple Podcasts" in content
     assert "america7/cover.jpg" in content
 
 

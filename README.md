@@ -120,7 +120,7 @@ Uninstalling:
 ## Capabilities
 
 - Accepts either a RaiPlaySound `program_slug` or full `program_url`
-- Supports `list`, `search`, `download`, and `repair` commands
+- Supports `list`, `search`, `download`, `repair`, and `index` commands
 - Lists stations, programs, seasons, and episodes
 - Searches stations, programs, locally cached seasons/groupings, and locally
   cached episode metadata
@@ -142,8 +142,8 @@ Uninstalling:
   from generated RSS feeds
 - Keeps a `RaiPlayPodcast` `index.html` landing page in the target root with
   program artwork, descriptions, local episode counts, latest downloaded
-  episode dates, and RSS links only for programs that currently have a
-  `feed.xml`
+  episode dates, RSS links, and Apple Podcasts app links only for programs that
+  currently have a `feed.xml`
 - Preserves the existing `KEY=VALUE` dot-config format at
   `~/.raiplaysound-cli.conf`
 
@@ -198,8 +198,9 @@ Supported config keys:
 | `ENABLE_LOG` | `--log` | download |
 | `DEBUG_PIDS` | `--debug-pids` | download |
 | `LOG_PATH_ARG` | `--log[=PATH]` | download |
+| `TARGET_BASE` | `--target-base` | index |
 | `RSS_FEED` | `--rss` / `--no-rss` | download |
-| `RSS_BASE_URL` | `--rss-base-url` | download |
+| `RSS_BASE_URL` | `--rss-base-url` | download, index |
 | `PLAYLIST` | `--playlist` / `--no-playlist` | download |
 | `FORCE_REFRESH_METADATA` | `--refresh-metadata` | download |
 | `CLEAR_METADATA_CACHE` | `--clear-metadata-cache` | download |
@@ -246,6 +247,7 @@ raiplaysound-cli list episodes america7
 raiplaysound-cli download america7
 raiplaysound-cli download --favourites
 raiplaysound-cli repair filenames musicalbox
+raiplaysound-cli index
 ```
 
 ## Common Workflows
@@ -556,18 +558,32 @@ the program details cache, the local cover image, and the root
 `~/Music/RaiPlaySound/index.html` page. The index page is titled
 `RaiPlayPodcast` and lists each program folder with artwork, title, author,
 description, local episode count, latest local episode date, and an RSS link
-only when that program folder currently contains `feed.xml`. When cached
-episode metadata can be matched to a local file, the latest date follows Rai's
-editorial episode date rather than the file's technical publication date. The
-generated index uses paths relative to itself, such as `program-slug/cover.jpg`,
-for local folder and artwork links. RSS links are shown only for program folders
-that currently contain `feed.xml`; when `RSS_BASE_URL` is configured, those RSS
-links point to `<RSS_BASE_URL>/<program_slug>/feed.xml`. The index generator
-also stores `apple-touch-icon.png` beside `index.html`, displays it in the page
-heading, and references it with Apple touch icon metadata, so iPhone Home
-Screen bookmarks can use the bundled RaiPlayPodcast-style icon. When the target
-root already contains older program folders without program metadata or cover
-art, index generation refreshes those missing assets for each folder.
+only when that program folder currently contains `feed.xml`. When
+`RSS_BASE_URL` is configured, each RSS link is paired with an Apple Podcasts
+link using the `pcast://` URL scheme. iOS support for third-party podcast URL
+schemes is best-effort, so the normal RSS link remains available as a fallback.
+When cached episode metadata can be matched to a local file, the latest date
+follows Rai's editorial episode date rather than the file's technical
+publication date. The generated index uses paths relative to itself, such as
+`program-slug/cover.jpg`, for local folder and artwork links. RSS links are
+shown only for program folders that currently contain `feed.xml`; when
+`RSS_BASE_URL` is configured, those RSS links point to
+`<RSS_BASE_URL>/<program_slug>/feed.xml`. The index generator also stores
+`apple-touch-icon.png` beside `index.html`, displays it in the page heading,
+and references it with Apple touch icon metadata, so iPhone Home Screen
+bookmarks can use the bundled RaiPlayPodcast-style icon. When the target root
+already contains older program folders without program metadata or cover art,
+index generation refreshes those missing assets for each folder.
+
+Regenerate only the root index from the files already present on disk. Use
+`--target-base` and `--rss-base-url` to try alternate folders or link hosts
+without changing `~/.raiplaysound-cli.conf`.
+
+```bash
+raiplaysound-cli index
+raiplaysound-cli index --rss-base-url http://192.168.1.253:8092
+raiplaysound-cli index --target-base /tmp/RaiPlaySound --rss-base-url http://127.0.0.1:8092
+```
 
 Command forms:
 
@@ -575,6 +591,7 @@ Command forms:
 raiplaysound-cli download [OPTIONS] <program_slug|program_url>
 raiplaysound-cli list <stations|programs> [OPTIONS]
 raiplaysound-cli list <seasons|episodes> [OPTIONS] <program_slug|program_url>
+raiplaysound-cli index [OPTIONS]
 ```
 
 Output folder contents:
