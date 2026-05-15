@@ -54,9 +54,14 @@ def test_parse_env_file(tmp_path: Path) -> None:
     assert settings.groups_arg == "speciali,battiti"
 
 
-def test_choose_command_accepts_index() -> None:
-    assert choose_command(["index"], {}) == ("index", [])
-    assert choose_command([], {"COMMAND": "index"}) == ("index", [])
+def test_settings_from_config_parses_apple_podcasts_opt_out() -> None:
+    assert Settings.from_config({}).apple_podcasts is True
+    assert Settings.from_config({"APPLE_PODCASTS": "false"}).apple_podcasts is False
+
+
+def test_choose_command_accepts_outputs() -> None:
+    assert choose_command(["outputs"], {}) == ("outputs", [])
+    assert choose_command([], {"COMMAND": "outputs"}) == ("outputs", [])
 
 
 def test_settings_from_config_parses_favorites_list() -> None:

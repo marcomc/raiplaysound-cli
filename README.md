@@ -120,7 +120,7 @@ Uninstalling:
 ## Capabilities
 
 - Accepts either a RaiPlaySound `program_slug` or full `program_url`
-- Supports `list`, `search`, `download`, `repair`, and `index` commands
+- Supports `list`, `search`, `download`, `repair`, and `outputs` commands
 - Lists stations, programs, seasons, and episodes
 - Searches stations, programs, locally cached seasons/groupings, and locally
   cached episode metadata
@@ -198,9 +198,10 @@ Supported config keys:
 | `ENABLE_LOG` | `--log` | download |
 | `DEBUG_PIDS` | `--debug-pids` | download |
 | `LOG_PATH_ARG` | `--log[=PATH]` | download |
-| `TARGET_BASE` | `--target-base` | index |
+| `TARGET_BASE` | `--target-base` | outputs |
 | `RSS_FEED` | `--rss` / `--no-rss` | download |
-| `RSS_BASE_URL` | `--rss-base-url` | download, index |
+| `RSS_BASE_URL` | `--rss-base-url` | download, repair, outputs |
+| `APPLE_PODCASTS` | `--no-apple-podcasts` | outputs |
 | `PLAYLIST` | `--playlist` / `--no-playlist` | download |
 | `FORCE_REFRESH_METADATA` | `--refresh-metadata` | download |
 | `CLEAR_METADATA_CACHE` | `--clear-metadata-cache` | download |
@@ -247,7 +248,7 @@ raiplaysound-cli list episodes america7
 raiplaysound-cli download america7
 raiplaysound-cli download --favourites
 raiplaysound-cli repair filenames musicalbox
-raiplaysound-cli index
+raiplaysound-cli outputs --index
 ```
 
 ## Common Workflows
@@ -575,14 +576,18 @@ bookmarks can use the bundled RaiPlayPodcast-style icon. When the target root
 already contains older program folders without program metadata or cover art,
 index generation refreshes those missing assets for each folder.
 
-Regenerate only the root index from the files already present on disk. Use
-`--target-base` and `--rss-base-url` to try alternate folders or link hosts
-without changing `~/.raiplaysound-cli.conf`.
+Regenerate local output files from the files already present on disk, without
+downloading episodes again. Use `--target-base`, `--rss-base-url`, and
+`--no-apple-podcasts` to try alternate folders, link hosts, or index link
+behavior without changing `~/.raiplaysound-cli.conf`. Apple Podcasts links are
+included by default when the index can use absolute RSS URLs; set
+`APPLE_PODCASTS=false` in config or pass `--no-apple-podcasts` to omit them.
 
 ```bash
-raiplaysound-cli index
-raiplaysound-cli index --rss-base-url http://192.168.1.253:8092
-raiplaysound-cli index --target-base /tmp/RaiPlaySound --rss-base-url http://127.0.0.1:8092
+raiplaysound-cli outputs --index
+raiplaysound-cli outputs --rss --index --rss-base-url http://192.168.1.253:8092
+raiplaysound-cli outputs --all --no-apple-podcasts
+raiplaysound-cli outputs --target-base /tmp/RaiPlaySound --all --rss-base-url http://127.0.0.1:8092
 ```
 
 Command forms:
@@ -591,7 +596,7 @@ Command forms:
 raiplaysound-cli download [OPTIONS] <program_slug|program_url>
 raiplaysound-cli list <stations|programs> [OPTIONS]
 raiplaysound-cli list <seasons|episodes> [OPTIONS] <program_slug|program_url>
-raiplaysound-cli index [OPTIONS]
+raiplaysound-cli outputs [OPTIONS]
 ```
 
 Output folder contents:

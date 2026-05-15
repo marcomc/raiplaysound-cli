@@ -16,7 +16,7 @@ AUDIO_FORMAT="m4a"
 JOBS=3
 
 # Optional default command.
-# Values: download, list
+# Values: download, list, search, repair, outputs
 # COMMAND="download"
 
 # Optional default list target when COMMAND="list".
@@ -154,3 +154,8 @@ CHECK_JOBS=8
 # Does not work:
 # RSS_BASE_URL=https://files.example.net/share?code=abcd1234
 # RSS_BASE_URL=
+
+# Optional: include Apple Podcasts app links in the generated index when RSS
+# links can use RSS_BASE_URL. On by default.
+# Values: 1/0, true/false, yes/no, on/off
+# APPLE_PODCASTS=true
