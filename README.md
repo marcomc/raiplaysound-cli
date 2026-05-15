@@ -140,9 +140,10 @@ Uninstalling:
 - Generates optional `feed.xml` RSS output and `playlist.m3u` playlist output
 - Downloads each program cover image into the program folder and references it
   from generated RSS feeds
-- Keeps an `index.html` landing page in the target root with program artwork,
-  descriptions, local episode counts, latest downloaded episode dates, and RSS
-  links only for programs that currently have a `feed.xml`
+- Keeps a `RaiPlayPodcast` `index.html` landing page in the target root with
+  program artwork, descriptions, local episode counts, latest downloaded
+  episode dates, and RSS links only for programs that currently have a
+  `feed.xml`
 - Preserves the existing `KEY=VALUE` dot-config format at
   `~/.raiplaysound-cli.conf`
 
@@ -552,19 +553,21 @@ most compatible extension for podcast clients and static file hosting.
 
 Every download run also refreshes program-level assets in the show's folder:
 the program details cache, the local cover image, and the root
-`~/Music/RaiPlaySound/index.html` page. The index page lists each program folder
-with artwork, title, author, description, local episode count, latest local
-episode date, and an RSS link only when that program folder currently contains
-`feed.xml`. The generated index uses paths relative to itself, such as
-`program-slug/cover.jpg`, for local folder and artwork links. RSS links are
-shown only for program folders that currently contain `feed.xml`; when
-`RSS_BASE_URL` is configured, those RSS links point to
-`<RSS_BASE_URL>/<program_slug>/feed.xml`. The index generator also stores
-`apple-touch-icon.png` beside `index.html` and references it with Apple touch
-icon metadata, so iPhone Home Screen bookmarks can use a RaiPlaySound-style
-icon. When the target root already contains older program folders without
-program metadata or cover art, index generation refreshes those missing assets
-for each folder.
+`~/Music/RaiPlaySound/index.html` page. The index page is titled
+`RaiPlayPodcast` and lists each program folder with artwork, title, author,
+description, local episode count, latest local episode date, and an RSS link
+only when that program folder currently contains `feed.xml`. When cached
+episode metadata can be matched to a local file, the latest date follows Rai's
+editorial episode date rather than the file's technical publication date. The
+generated index uses paths relative to itself, such as `program-slug/cover.jpg`,
+for local folder and artwork links. RSS links are shown only for program folders
+that currently contain `feed.xml`; when `RSS_BASE_URL` is configured, those RSS
+links point to `<RSS_BASE_URL>/<program_slug>/feed.xml`. The index generator
+also stores `apple-touch-icon.png` beside `index.html`, displays it in the page
+heading, and references it with Apple touch icon metadata, so iPhone Home
+Screen bookmarks can use the bundled RaiPlayPodcast-style icon. When the target
+root already contains older program folders without program metadata or cover
+art, index generation refreshes those missing assets for each folder.
 
 Command forms:
 

@@ -4,6 +4,18 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Renamed the generated root index page branding to `RaiPlayPodcast`, showed
+  the bundled app icon in the page heading, and made `apple-touch-icon.png`
+  come from a local generated asset instead of the official RaiPlaySound icon.
+
+### Fixed
+
+- Made the root index page's latest episode date prefer cached Rai editorial
+  episode dates when a local file can be matched to `.metadata-cache.tsv`,
+  instead of relying only on the date embedded in the downloaded filename.
+
 ## [2.2.2] - 2026-05-05 - Date-tracking filename repairs
 
 ### Fixed

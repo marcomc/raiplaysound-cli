@@ -279,6 +279,9 @@ def test_generate_program_index_hides_missing_feed_link(monkeypatch, tmp_path: P
     assert "America7" in content
     assert '<link rel="apple-touch-icon" href="apple-touch-icon.png">' in content
     assert '<link rel="icon" href="apple-touch-icon.png">' in content
+    assert "<title>RaiPlayPodcast</title>" in content
+    assert "RaiPlayPodcast</h1>" in content
+    assert '<img class="app-icon" src="apple-touch-icon.png" alt="" aria-hidden="true">' in content
     assert "Oliviero Bergamini" in content
     assert "1 episodi" in content
     assert "Ultimo: 2024-01-01" in content
@@ -294,6 +297,49 @@ def test_generate_program_index_hides_missing_feed_link(monkeypatch, tmp_path: P
 
     assert '<a class="feed" href="https://example.test/audio/america7/feed.xml">RSS</a>' in content
     assert "america7/cover.jpg" in content
+
+
+def test_generate_program_index_uses_editorial_latest_date_from_metadata(
+    monkeypatch, tmp_path: Path
+) -> None:
+    target_base = tmp_path / "RaiPlaySound"
+    show_dir = target_base / "musicalbox"
+    show_dir.mkdir(parents=True)
+    monkeypatch.setattr(
+        outputs,
+        "download_index_icon",
+        lambda root: (root / outputs.INDEX_ICON_FILE),
+    )
+    outputs.write_program_details(
+        show_dir,
+        ProgramDetails(
+            slug="musicalbox",
+            title="Musical Box",
+            author="Raffaele Costantino",
+            description="Musica.",
+            page_url="https://www.raiplaysound.it/programmi/musicalbox",
+            image_url="",
+            artwork_file="cover.jpg",
+        ),
+    )
+    (show_dir / "cover.jpg").write_bytes(b"cover")
+    (show_dir / ".metadata-cache.tsv").write_text(
+        "ep-sat\t20260509\tNA\tMusical Box del 09/05/2026\n"
+        "ep-sun\t20260510\tNA\tMusical Box del 10/05/2026\n",
+        encoding="utf-8",
+    )
+    (show_dir / "Musical Box - 2026-05-10 - Musical Box del 09\u29f805\u29f82026.m4a").write_bytes(
+        b"sat"
+    )
+    (show_dir / "Musical Box - 2026-05-11 - Musical Box del 10\u29f805\u29f82026.m4a").write_bytes(
+        b"sun"
+    )
+
+    content = outputs.generate_program_index(target_base, "").read_text(encoding="utf-8")
+
+    assert "2 episodi" in content
+    assert "Ultimo: 2026-05-10" in content
+    assert "Ultimo: 2026-05-11" not in content
 
 
 def test_generate_program_index_backfills_missing_program_artwork(
@@ -662,10 +708,8 @@ def test_outputs_do_not_reuse_one_title_match_for_multiple_local_files(
     assert playlist_content.count("#EXTINF:-1,Repeated Title") == 2
 
 
-def test_download_index_icon_saves_apple_touch_icon(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(outputs, "http_get_bytes", lambda *_args, **_kwargs: (b"png", "image/png"))
-
+def test_download_index_icon_saves_bundled_apple_touch_icon(monkeypatch, tmp_path: Path) -> None:
     icon_path = outputs.download_index_icon(tmp_path)
 
     assert icon_path == tmp_path / "apple-touch-icon.png"
-    assert icon_path.read_bytes() == b"png"
+    assert icon_path.read_bytes().startswith(b"\x89PNG")

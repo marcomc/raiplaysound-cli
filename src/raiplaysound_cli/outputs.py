@@ -7,6 +7,7 @@ import json
 import re
 import time
 import urllib.parse
+from importlib import resources
 from pathlib import Path
 
 from .catalog import fetch_program_details, fetch_program_metadata
@@ -20,6 +21,7 @@ PROGRAM_INFO_FILE = ".program-info.json"
 ARTWORK_STEM = "cover"
 INDEX_ICON_FILE = "apple-touch-icon.png"
 INDEX_ICON_URL = "https://www.raiplaysound.it/assets/img/icons/apple/apple-touch-icon.png"
+INDEX_ICON_RESOURCE_PACKAGE = "raiplaysound_cli.assets"
 TITLE_SEPARATOR_RE = re.compile(r"^.*\d{4}-\d{2}-\d{2}\s+-\s+")
 TitleEntry = tuple[str, str, str]
 
@@ -187,6 +189,12 @@ def ensure_program_assets(target_dir: Path, slug: str) -> ProgramDetails:
 def download_index_icon(target_base: Path) -> Path | None:
     icon_path = target_base / INDEX_ICON_FILE
     try:
+        icon_resource = resources.files(INDEX_ICON_RESOURCE_PACKAGE).joinpath(INDEX_ICON_FILE)
+        icon_path.write_bytes(icon_resource.read_bytes())
+        return icon_path
+    except (FileNotFoundError, ModuleNotFoundError, OSError):
+        pass
+    try:
         raw, _content_type = http_get_bytes(INDEX_ICON_URL, timeout=30.0)
     except Exception:
         return icon_path if icon_path.exists() else None
@@ -235,14 +243,9 @@ def _store_unique_title_entry(
         cache_by_title[key] = entry
 
 
-def generate_rss_feed(
-    target_dir: Path,
-    slug: str,
-    program_url: str,
+def _metadata_cache_indexes(
     metadata_cache_file: Path,
-    base_url: str,
-    details: ProgramDetails | None = None,
-) -> Path:
+) -> tuple[dict[str, list[TitleEntry]], dict[str, TitleEntry | None]]:
     cache_by_date: dict[str, list[TitleEntry]] = {}
     cache_by_title: dict[str, TitleEntry | None] = {}
     for episode_id, metadata in load_metadata_cache(metadata_cache_file).items():
@@ -252,6 +255,47 @@ def generate_rss_feed(
         entry = (metadata.title, episode_id, metadata_date)
         cache_by_date.setdefault(metadata_date, []).append(entry)
         _store_unique_title_entry(cache_by_title, metadata.title, entry)
+    return cache_by_date, cache_by_title
+
+
+def _audio_entry_dates(
+    audio_entries: list[tuple[str, Path]],
+    metadata_cache_file: Path,
+) -> list[str]:
+    cache_by_date, cache_by_title = _metadata_cache_indexes(metadata_cache_file)
+    audio_count_by_date: dict[str, int] = {}
+    audio_count_by_title: dict[str, int] = {}
+    for file_date, _file_path in audio_entries:
+        audio_count_by_date[file_date] = audio_count_by_date.get(file_date, 0) + 1
+    for _file_date, file_path in audio_entries:
+        title_key = _title_key(_filename_title(file_path))
+        audio_count_by_title[title_key] = audio_count_by_title.get(title_key, 0) + 1
+
+    dates: list[str] = []
+    for file_date, file_path in audio_entries:
+        dated_entries = cache_by_date.get(file_date, [])
+        filename_title_key = _title_key(_filename_title(file_path))
+        title_entry = cache_by_title.get(filename_title_key)
+        if title_entry is not None and audio_count_by_title.get(filename_title_key) == 1:
+            _title, _guid, metadata_date = title_entry
+            dates.append(metadata_date)
+        elif len(dated_entries) == 1 and audio_count_by_date.get(file_date, 0) == 1:
+            _title, _guid, metadata_date = dated_entries[0]
+            dates.append(metadata_date)
+        else:
+            dates.append(file_date)
+    return dates
+
+
+def generate_rss_feed(
+    target_dir: Path,
+    slug: str,
+    program_url: str,
+    metadata_cache_file: Path,
+    base_url: str,
+    details: ProgramDetails | None = None,
+) -> Path:
+    cache_by_date, cache_by_title = _metadata_cache_indexes(metadata_cache_file)
     details = details or load_program_details(target_dir / PROGRAM_INFO_FILE)
     if details is None:
         details = fetch_program_details(slug) or fallback_program_details(slug, program_url)
@@ -397,7 +441,9 @@ def _program_index_item(show_dir: Path, base_url: str) -> dict[str, str | int] |
         details = ensure_program_assets(show_dir, slug)
     except OSError:
         return None
-    latest_date = max((date for date, _path in audio_entries), default="")
+    latest_date = max(
+        _audio_entry_dates(audio_entries, show_dir / ".metadata-cache.tsv"), default=""
+    )
     artwork_path = show_dir / details.artwork_file if details.artwork_file else None
     feed_path = show_dir / "feed.xml"
     folder_href = f"{urllib.parse.quote(show_dir.name)}/"
@@ -490,17 +536,20 @@ def generate_program_index(target_base: Path, base_url: str = "") -> Path:
             "</div>"
             "</article>"
         )
+    title_icon = (
+        f'<img class="app-icon" src="{icon_href}" alt="" aria-hidden="true">' if icon_href else ""
+    )
     content = f"""<!doctype html>
 <html lang="it">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="RaiPlaySound">
+  <meta name="apple-mobile-web-app-title" content="RaiPlayPodcast">
   <meta name="theme-color" content="#f5f7fb">
   {f'<link rel="apple-touch-icon" href="{icon_href}">' if icon_href else ''}
   {f'<link rel="icon" href="{icon_href}">' if icon_href else ''}
-  <title>RaiPlaySound Podcast</title>
+  <title>RaiPlayPodcast</title>
   <style>
     :root {{
       color-scheme: light;
@@ -541,6 +590,15 @@ def generate_program_index(target_base: Path, base_url: str = "") -> Path:
       font-size: clamp(2rem, 4vw, 4rem);
       line-height: 0.95;
       letter-spacing: 0;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }}
+    .app-icon {{
+      width: clamp(48px, 8vw, 72px);
+      height: clamp(48px, 8vw, 72px);
+      border-radius: 18px;
+      box-shadow: 0 14px 30px rgba(220, 38, 38, 0.22);
     }}
     .summary {{
       margin: 0;
@@ -636,7 +694,7 @@ def generate_program_index(target_base: Path, base_url: str = "") -> Path:
 <body>
   <main>
     <header>
-      <h1>Podcast</h1>
+      <h1>{title_icon}RaiPlayPodcast</h1>
       <p class="summary">{len(items)} programmi sincronizzati</p>
     </header>
     <section class="program-list" aria-label="Programmi">
