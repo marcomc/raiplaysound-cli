@@ -24,7 +24,7 @@ def test_main_version_prints_cli_version() -> None:
         cwd=Path(__file__).resolve().parents[1],
     )
     assert result.returncode == 0
-    assert "raiplaysound-cli 2.2.2" in result.stdout
+    assert "raiplaysound-cli 2.3.0" in result.stdout
 
 
 def test_main_version_prints_when_present_anywhere(capsys) -> None:
@@ -32,7 +32,7 @@ def test_main_version_prints_when_present_anywhere(capsys) -> None:
     captured = capsys.readouterr()
 
     assert result == 0
-    assert "raiplaysound-cli 2.2.2" in captured.out
+    assert "raiplaysound-cli 2.3.0" in captured.out
 
 
 def test_main_without_args_prints_focused_help(capsys) -> None:
@@ -47,6 +47,7 @@ def test_main_without_args_prints_focused_help(capsys) -> None:
         "search    Search stations, programs, groupings, and local episode metadata" in captured.out
     )
     assert "download  Download one program or configured favourites" in captured.out
+    assert "index     Regenerate the local HTML program index" in captured.out
     assert "Run `raiplaysound-cli <command> --help` for command-specific help." in captured.out
     assert "usage: raiplaysound-cli list" not in captured.out
     assert "usage: raiplaysound-cli download" not in captured.out
@@ -64,6 +65,7 @@ def test_main_help_prints_focused_help(capsys) -> None:
     assert (
         "search    Search stations, programs, groupings, and local episode metadata" in captured.out
     )
+    assert "index     Regenerate the local HTML program index" in captured.out
     assert "raiplaysound-cli list stations" not in captured.out
     assert "usage: raiplaysound-cli list" not in captured.out
     assert "usage: raiplaysound-cli download" not in captured.out
@@ -117,6 +119,21 @@ def test_download_help_prints_command_specific_help(capsys) -> None:
     assert "--seasons" not in captured.out
     assert "--episodes" not in captured.out
     assert "--favorites" not in captured.out
+
+
+def test_index_help_prints_command_specific_help(capsys) -> None:
+    result = cli.main(["index", "--help"])
+    captured = capsys.readouterr()
+
+    assert result == 0
+    assert "usage: raiplaysound-cli index [options]" in captured.out
+    assert "Regenerate the root HTML program index" in captured.out
+    assert "Outputs:" in captured.out
+    assert "--target-base" in captured.out
+    assert "--rss-base-url" in captured.out
+    assert "raiplaysound-cli index --target-base /tmp/RaiPlaySound" in captured.out
+    assert "usage: raiplaysound-cli download" not in captured.out
+    assert "raiplaysound-cli download PROGRAM_SLUG" not in captured.out
 
 
 def test_repair_filenames_dry_run_does_not_rename(monkeypatch, tmp_path: Path, capsys) -> None:

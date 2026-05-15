@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## [2.3.0] - Unreleased - index page, artwork, and feed improvements
+## [2.3.0] - Unreleased - 2026-05-15 - index page, artwork, and feed improvements
 
 ### Changed
 
