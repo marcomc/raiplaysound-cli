@@ -286,6 +286,7 @@ def test_generate_program_index_hides_missing_feed_link(monkeypatch, tmp_path: P
     assert "1 episodi" in content
     assert "Ultimo: 2024-01-01" in content
     assert "america7/cover.jpg" in content
+    assert "Apple Podcasts" not in content
     assert "https://example.test/audio" not in content
     assert "feed.xml" not in content
 
@@ -296,7 +297,19 @@ def test_generate_program_index_hides_missing_feed_link(monkeypatch, tmp_path: P
     )
 
     assert '<a class="feed" href="https://example.test/audio/america7/feed.xml">RSS</a>' in content
+    assert 'href="pcast://example.test/audio/america7/feed.xml"' in content
+    assert "Apple Podcasts" in content
     assert "america7/cover.jpg" in content
+
+    content = outputs.generate_program_index(
+        target_base,
+        "https://example.test/audio",
+        apple_podcasts=False,
+    ).read_text(encoding="utf-8")
+
+    assert '<a class="feed" href="https://example.test/audio/america7/feed.xml">RSS</a>' in content
+    assert "Apple Podcasts" not in content
+    assert "pcast://example.test/audio/america7/feed.xml" not in content
 
 
 def test_generate_program_index_uses_editorial_latest_date_from_metadata(
@@ -340,6 +353,75 @@ def test_generate_program_index_uses_editorial_latest_date_from_metadata(
     assert "2 episodi" in content
     assert "Ultimo: 2026-05-10" in content
     assert "Ultimo: 2026-05-11" not in content
+
+
+def test_generate_local_outputs_regenerates_selected_artifacts(monkeypatch, tmp_path: Path) -> None:
+    target_base = tmp_path / "RaiPlaySound"
+    show_dir = target_base / "america7"
+    show_dir.mkdir(parents=True)
+    monkeypatch.setattr(
+        outputs,
+        "download_index_icon",
+        lambda root: (root / outputs.INDEX_ICON_FILE),
+    )
+    details = ProgramDetails(
+        slug="america7",
+        title="America7",
+        author="Oliviero Bergamini",
+        description="America oltre gli stereotipi.",
+        page_url="https://www.raiplaysound.it/programmi/america7",
+        image_url="",
+        artwork_file="cover.jpg",
+    )
+    outputs.write_program_details(show_dir, details)
+    (show_dir / "cover.jpg").write_bytes(b"cover")
+    (show_dir / ".metadata-cache.tsv").write_text(
+        "ep-1\t20240101\tNA\tEpisode One\n",
+        encoding="utf-8",
+    )
+    (show_dir / "America7 - 2024-01-01 - Episode One.m4a").write_bytes(b"audio")
+
+    result = outputs.generate_local_outputs(
+        target_base,
+        "https://example.test/audio",
+        rss=True,
+        playlist=True,
+        index=True,
+        apple_podcasts=False,
+    )
+
+    assert result["rss"] == 1
+    assert result["playlist"] == 1
+    assert result["index"] == target_base / "index.html"
+    assert (show_dir / "feed.xml").exists()
+    assert (show_dir / "playlist.m3u").exists()
+    index_content = (target_base / "index.html").read_text(encoding="utf-8")
+    assert "https://example.test/audio/america7/feed.xml" in index_content
+    assert "Apple Podcasts" not in index_content
+
+
+def test_generate_local_outputs_playlist_only_does_not_refresh_assets(
+    monkeypatch, tmp_path: Path
+) -> None:
+    target_base = tmp_path / "RaiPlaySound"
+    show_dir = target_base / "america7"
+    show_dir.mkdir(parents=True)
+    (show_dir / ".metadata-cache.tsv").write_text(
+        "ep-1\t20240101\tNA\tEpisode One\n",
+        encoding="utf-8",
+    )
+    (show_dir / "America7 - 2024-01-01 - Episode One.m4a").write_bytes(b"audio")
+
+    def fail_asset_refresh(_show_dir: Path, _slug: str) -> ProgramDetails:
+        raise AssertionError("playlist-only regeneration must not refresh program assets")
+
+    monkeypatch.setattr(outputs, "ensure_program_assets", fail_asset_refresh)
+
+    result = outputs.generate_local_outputs(target_base, playlist=True)
+
+    assert result["playlist"] == 1
+    assert (show_dir / "playlist.m3u").exists()
+    assert not (show_dir / outputs.PROGRAM_INFO_FILE).exists()
 
 
 def test_generate_program_index_backfills_missing_program_artwork(

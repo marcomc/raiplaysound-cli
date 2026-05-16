@@ -24,7 +24,7 @@ def test_main_version_prints_cli_version() -> None:
         cwd=Path(__file__).resolve().parents[1],
     )
     assert result.returncode == 0
-    assert "raiplaysound-cli 2.2.2" in result.stdout
+    assert "raiplaysound-cli 2.3.0" in result.stdout
 
 
 def test_main_version_prints_when_present_anywhere(capsys) -> None:
@@ -32,7 +32,7 @@ def test_main_version_prints_when_present_anywhere(capsys) -> None:
     captured = capsys.readouterr()
 
     assert result == 0
-    assert "raiplaysound-cli 2.2.2" in captured.out
+    assert "raiplaysound-cli 2.3.0" in captured.out
 
 
 def test_main_without_args_prints_focused_help(capsys) -> None:
@@ -47,6 +47,7 @@ def test_main_without_args_prints_focused_help(capsys) -> None:
         "search    Search stations, programs, groupings, and local episode metadata" in captured.out
     )
     assert "download  Download one program or configured favourites" in captured.out
+    assert "outputs   Regenerate local RSS, playlist, and HTML index outputs" in captured.out
     assert "Run `raiplaysound-cli <command> --help` for command-specific help." in captured.out
     assert "usage: raiplaysound-cli list" not in captured.out
     assert "usage: raiplaysound-cli download" not in captured.out
@@ -64,6 +65,7 @@ def test_main_help_prints_focused_help(capsys) -> None:
     assert (
         "search    Search stations, programs, groupings, and local episode metadata" in captured.out
     )
+    assert "outputs   Regenerate local RSS, playlist, and HTML index outputs" in captured.out
     assert "raiplaysound-cli list stations" not in captured.out
     assert "usage: raiplaysound-cli list" not in captured.out
     assert "usage: raiplaysound-cli download" not in captured.out
@@ -117,6 +119,26 @@ def test_download_help_prints_command_specific_help(capsys) -> None:
     assert "--seasons" not in captured.out
     assert "--episodes" not in captured.out
     assert "--favorites" not in captured.out
+
+
+def test_outputs_help_prints_command_specific_help(capsys) -> None:
+    result = cli.main(["outputs", "--help"])
+    captured = capsys.readouterr()
+
+    assert result == 0
+    assert "usage: raiplaysound-cli outputs [options]" in captured.out
+    assert "Regenerate RSS, playlist, and HTML index outputs" in captured.out
+    assert "Outputs:" in captured.out
+    assert "--all" in captured.out
+    assert "--rss" in captured.out
+    assert "--playlist" in captured.out
+    assert "--index" in captured.out
+    assert "--target-base" in captured.out
+    assert "--rss-base-url" in captured.out
+    assert "--no-apple-podcasts" in captured.out
+    assert "raiplaysound-cli outputs --target-base /tmp/RaiPlaySound --index" in captured.out
+    assert "usage: raiplaysound-cli download" not in captured.out
+    assert "raiplaysound-cli download PROGRAM_SLUG" not in captured.out
 
 
 def test_repair_filenames_dry_run_does_not_rename(monkeypatch, tmp_path: Path, capsys) -> None:
@@ -181,6 +203,62 @@ def test_repair_filenames_apply_renames_and_regenerates_outputs(
     assert (target_dir / "Musical Box - 2026-05-02 - Musical Box del 02⧸05⧸2026.m4a").exists()
     assert calls == ["rss", "playlist", "index"]
     assert "Renamed 1 file(s) for musicalbox" in captured.out
+
+
+def test_outputs_command_regenerates_selected_outputs(monkeypatch, tmp_path: Path, capsys) -> None:
+    settings = Settings()
+    settings.target_base = tmp_path / "Music" / "RaiPlaySound"
+    settings.rss_base_url = "http://config.example/audio"
+    settings.apple_podcasts = True
+    calls: list[tuple[Path, str, bool, bool, bool, bool]] = []
+
+    def fake_generate_local_outputs(
+        target_base: Path,
+        rss_base_url: str,
+        *,
+        rss: bool,
+        playlist: bool,
+        index: bool,
+        apple_podcasts: bool,
+    ) -> dict[str, int | Path | None]:
+        calls.append((target_base, rss_base_url, rss, playlist, index, apple_podcasts))
+        return {"rss": 3, "playlist": 3, "index": target_base / "index.html"}
+
+    monkeypatch.setattr(cli, "parse_env_file", lambda _path: {})
+    monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
+    monkeypatch.setattr(cli, "generate_local_outputs", fake_generate_local_outputs)
+
+    override_base = tmp_path / "override" / "RaiPlaySound"
+
+    result = cli.main(
+        [
+            "outputs",
+            "--rss",
+            "--index",
+            "--target-base",
+            str(override_base),
+            "--rss-base-url",
+            "http://override.example/audio/",
+            "--no-apple-podcasts",
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert result == 0
+    assert calls == [(override_base, "http://override.example/audio", True, False, True, False)]
+    assert "Regenerated RSS feeds: 3" in captured.out
+    assert "Regenerated index:" in captured.out
+    assert str(override_base / "index.html") in captured.out.replace("\n", "")
+
+
+def test_outputs_command_requires_an_output_selector(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(cli, "parse_env_file", lambda _path: {})
+
+    result = cli.main(["outputs"])
+    captured = capsys.readouterr()
+
+    assert result == 1
+    assert "outputs requires at least one" in captured.err
 
 
 def test_main_list_requires_exactly_one_target(capsys) -> None:

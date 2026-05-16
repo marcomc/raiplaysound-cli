@@ -40,11 +40,11 @@ def parse_env_file(path: Path) -> dict[str, str]:
 
 
 def choose_command(argv: list[str], config: dict[str, str]) -> tuple[str, list[str]]:
-    if argv and argv[0] in {"list", "search", "download", "repair"}:
+    if argv and argv[0] in {"list", "search", "download", "repair", "outputs"}:
         return argv[0], argv[1:]
 
     configured = config.get("COMMAND", "").strip().lower()
-    if configured in {"list", "search", "download", "repair"}:
+    if configured in {"list", "search", "download", "repair", "outputs"}:
         return configured, argv
 
     list_switches = {
@@ -89,6 +89,7 @@ class Settings:
     force_refresh_catalog: bool = False
     rss_feed: bool = False
     rss_base_url: str = ""
+    apple_podcasts: bool = True
     playlist: bool = False
     input_value: str = ""
     favorites: list[str] = dataclasses.field(default_factory=list)
@@ -154,6 +155,10 @@ class Settings:
                     settings.rss_feed = parsed
             elif key == "RSS_BASE_URL":
                 settings.rss_base_url = value.rstrip("/")
+            elif key == "APPLE_PODCASTS":
+                parsed = normalize_bool(value)
+                if parsed is not None:
+                    settings.apple_podcasts = parsed
             elif key == "PLAYLIST":
                 parsed = normalize_bool(value)
                 if parsed is not None:

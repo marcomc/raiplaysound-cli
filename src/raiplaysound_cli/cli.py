@@ -32,7 +32,7 @@ from .catalog import (
     program_cache_format_is_current,
     write_program_cache,
 )
-from .config import Settings, choose_command, parse_env_file
+from .config import Settings, choose_command, expand_config_path, parse_env_file
 from .downloads import (
     Downloader,
     DownloadTask,
@@ -64,6 +64,7 @@ from .episodes import (
 from .errors import CLIError
 from .models import Episode, EpisodeMetadata, GroupSource, SeasonSummary
 from .outputs import (
+    generate_local_outputs,
     generate_playlist,
     generate_program_index,
     generate_rss_feed,
@@ -355,6 +356,7 @@ def format_main_help() -> str:
             "  search    Search stations, programs, groupings, and local episode metadata",
             "  download  Download one program or configured favourites",
             "  repair    Repair local files using cached RaiPlaySound metadata",
+            "  outputs   Regenerate local RSS, playlist, and HTML index outputs",
             "",
             "Run `raiplaysound-cli <command> --help` for command-specific help.",
         ]
@@ -1534,6 +1536,70 @@ def build_repair_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def build_outputs_parser() -> argparse.ArgumentParser:
+    parser = make_argument_parser(
+        prog="raiplaysound-cli outputs",
+        usage="raiplaysound-cli outputs [options]",
+        description=(
+            "Regenerate RSS, playlist, and HTML index outputs from local downloaded folders."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  raiplaysound-cli outputs --all\n"
+            "  raiplaysound-cli outputs --rss --index --rss-base-url http://podcasts.example.test/audio\n"
+            "  raiplaysound-cli outputs --all --no-apple-podcasts\n"
+            "  raiplaysound-cli outputs --target-base /tmp/RaiPlaySound --index"
+        ),
+        add_help=False,
+    )
+    general_group = parser.add_argument_group("General")
+    general_group.add_argument(
+        "-h",
+        "--help",
+        action="help",
+        help="Show this help message and exit.",
+    )
+    output_group = parser.add_argument_group("Outputs")
+    output_group.add_argument(
+        "--all",
+        action="store_true",
+        help="Regenerate RSS feeds, playlists, and the root index.",
+    )
+    output_group.add_argument(
+        "--rss",
+        action="store_true",
+        help="Regenerate `feed.xml` for local program folders.",
+    )
+    output_group.add_argument(
+        "--playlist",
+        action="store_true",
+        help="Regenerate `playlist.m3u` for local program folders.",
+    )
+    output_group.add_argument(
+        "--index",
+        action="store_true",
+        help="Regenerate the root `index.html`.",
+    )
+    output_group.add_argument(
+        "--target-base",
+        default=None,
+        help="Root folder containing downloaded program folders.",
+    )
+    output_group.add_argument(
+        "--rss-base-url",
+        default=None,
+        help="Public base URL used for RSS enclosures and index feed links.",
+    )
+    output_group.add_argument(
+        "--no-apple-podcasts",
+        dest="apple_podcasts",
+        action="store_false",
+        default=None,
+        help="Do not include Apple Podcasts app links in the generated index.",
+    )
+    return parser
+
+
 def apply_download_overrides(settings: Settings, args: argparse.Namespace) -> Settings:
     updated = dataclasses.replace(settings)
     if args.format:
@@ -1574,6 +1640,17 @@ def apply_repair_overrides(settings: Settings, args: argparse.Namespace) -> Sett
         updated.rss_base_url = args.rss_base_url.rstrip("/")
     if args.playlist is not None:
         updated.playlist = args.playlist
+    return updated
+
+
+def apply_outputs_overrides(settings: Settings, args: argparse.Namespace) -> Settings:
+    updated = dataclasses.replace(settings)
+    if args.target_base is not None:
+        updated.target_base = Path(expand_config_path(args.target_base))
+    if args.rss_base_url is not None:
+        updated.rss_base_url = args.rss_base_url.rstrip("/")
+    if args.apple_podcasts is not None:
+        updated.apple_podcasts = args.apple_podcasts
     return updated
 
 
@@ -1898,7 +1975,11 @@ def _download_one_program(settings: Settings, args: argparse.Namespace, input_va
         )
     if settings.playlist:
         generate_playlist(target_dir, metadata_cache_file)
-    generate_program_index(settings.target_base, settings.rss_base_url)
+    generate_program_index(
+        settings.target_base,
+        settings.rss_base_url,
+        apple_podcasts=settings.apple_podcasts,
+    )
     return 0
 
 
@@ -1949,6 +2030,29 @@ def repair_command(settings: Settings, args: argparse.Namespace) -> int:
     return _repair_one_program(settings, args, args.input or settings.input_value)
 
 
+def outputs_command(settings: Settings, args: argparse.Namespace) -> int:
+    rss = bool(args.rss or args.all)
+    playlist = bool(args.playlist or args.all)
+    index = bool(args.index or args.all)
+    if not (rss or playlist or index):
+        raise CLIError("outputs requires at least one of --rss, --playlist, --index, or --all.")
+    result = generate_local_outputs(
+        settings.target_base,
+        settings.rss_base_url,
+        rss=rss,
+        playlist=playlist,
+        index=index,
+        apple_podcasts=settings.apple_podcasts,
+    )
+    if rss:
+        console.print(f"Regenerated RSS feeds: {result['rss']}")
+    if playlist:
+        console.print(f"Regenerated playlists: {result['playlist']}")
+    if index:
+        console.print(f"Regenerated index: {result['index']}")
+    return 0
+
+
 def _repair_one_program(settings: Settings, args: argparse.Namespace, input_value: str) -> int:
     slug, program_url = detect_slug(input_value)
     target_dir = settings.target_base / slug
@@ -1980,7 +2084,11 @@ def _repair_one_program(settings: Settings, args: argparse.Namespace, input_valu
         )
     if settings.playlist:
         generate_playlist(target_dir, metadata_cache_file)
-    generate_program_index(settings.target_base, settings.rss_base_url)
+    generate_program_index(
+        settings.target_base,
+        settings.rss_base_url,
+        apple_podcasts=settings.apple_podcasts,
+    )
     return 0
 
 
@@ -2044,6 +2152,10 @@ def main(argv: list[str] | None = None) -> int:
                 raise CLIError("repair filenames requires <program_slug|program_url>.")
             settings = apply_repair_overrides(settings, args)
             return repair_command(settings, args)
+        if command == "outputs":
+            args = build_outputs_parser().parse_args(rest)
+            settings = apply_outputs_overrides(settings, args)
+            return outputs_command(settings, args)
         args = build_download_parser().parse_args(rest)
         if not args.favourites and not (args.input or settings.input_value):
             raise CLIError("download requires <program_slug|program_url>.")

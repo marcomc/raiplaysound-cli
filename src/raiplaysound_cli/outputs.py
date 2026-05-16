@@ -491,7 +491,19 @@ def _path_exists(path: Path) -> bool:
         return False
 
 
-def generate_program_index(target_base: Path, base_url: str = "") -> Path:
+def _apple_podcasts_href(feed_href: str) -> str:
+    parsed = urllib.parse.urlparse(feed_href)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return ""
+    path = parsed.path or "/"
+    query = f"?{parsed.query}" if parsed.query else ""
+    fragment = f"#{parsed.fragment}" if parsed.fragment else ""
+    return f"pcast://{parsed.netloc}{path}{query}{fragment}"
+
+
+def generate_program_index(
+    target_base: Path, base_url: str = "", *, apple_podcasts: bool = True
+) -> Path:
     target_base.mkdir(parents=True, exist_ok=True)
     icon_path = download_index_icon(target_base)
     icon_href = urllib.parse.quote(icon_path.name) if icon_path is not None else ""
@@ -518,6 +530,25 @@ def generate_program_index(target_base: Path, base_url: str = "") -> Path:
             if item["feed_href"]
             else ""
         )
+        apple_podcasts_href = _apple_podcasts_href(str(item["feed_href"])) if apple_podcasts else ""
+        apple_podcasts_link = (
+            '<a class="apple-podcasts" '
+            f'href="{html.escape(apple_podcasts_href, quote=True)}" '
+            f'aria-label="Apri {title} in Apple Podcasts" '
+            'title="Apri in Apple Podcasts">'
+            '<span class="apple-podcasts-icon" aria-hidden="true">'
+            '<svg viewBox="0 0 24 24" focusable="false">'
+            '<circle cx="12" cy="8" r="2.3"></circle>'
+            '<path d="M8.2 12.1a5.3 5.3 0 1 1 7.6 0"></path>'
+            '<path d="M6 14.1a8 8 0 1 1 12 0"></path>'
+            '<rect x="9.5" y="13" width="5" height="8" rx="2.5"></rect>'
+            "</svg>"
+            "</span>"
+            "<span>Apple Podcasts</span>"
+            "</a>"
+            if apple_podcasts_href
+            else ""
+        )
         latest = str(item["latest_date"] or "Nessun episodio locale")
         rows.append(
             '      <article class="program-row">'
@@ -532,6 +563,7 @@ def generate_program_index(target_base: Path, base_url: str = "") -> Path:
             f"<span>{item['episode_count']} episodi</span>"
             f"<span>Ultimo: {html.escape(latest)}</span>"
             f"{feed}"
+            f"{apple_podcasts_link}"
             "</div>"
             "</div>"
             "</article>"
@@ -680,6 +712,42 @@ def generate_program_index(target_base: Path, base_url: str = "") -> Path:
       color: var(--accent);
       font-weight: 700;
     }}
+    .apple-podcasts {{
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px 5px 6px;
+      border-radius: 999px;
+      background: rgba(125, 64, 255, 0.12);
+      color: #5f2eea;
+      font-weight: 700;
+      text-decoration: none;
+    }}
+    .apple-podcasts-icon {{
+      display: inline-grid;
+      place-items: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 7px;
+      background: linear-gradient(145deg, #b84dff, #5f2eea);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
+    }}
+    .apple-podcasts-icon svg {{
+      width: 16px;
+      height: 16px;
+      fill: none;
+      stroke: #fff;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }}
+    .apple-podcasts-icon rect, .apple-podcasts-icon circle {{
+      fill: #fff;
+      stroke: none;
+    }}
+    .apple-podcasts:hover {{
+      color: #3f1bbf;
+    }}
     @media (max-width: 680px) {{
       main {{ width: min(100% - 20px, 1120px); padding: 24px 0; }}
       header {{ display: block; }}
@@ -707,3 +775,46 @@ def generate_program_index(target_base: Path, base_url: str = "") -> Path:
     index_path = target_base / "index.html"
     index_path.write_text(content, encoding="utf-8")
     return index_path
+
+
+def generate_local_outputs(
+    target_base: Path,
+    base_url: str = "",
+    *,
+    rss: bool = False,
+    playlist: bool = False,
+    index: bool = False,
+    apple_podcasts: bool = True,
+) -> dict[str, int | Path | None]:
+    target_base.mkdir(parents=True, exist_ok=True)
+    rss_count = 0
+    playlist_count = 0
+    index_path: Path | None = None
+    for show_dir in _iter_program_dirs(target_base):
+        audio_entries = _local_audio_entries(show_dir)
+        if not audio_entries:
+            continue
+        slug = show_dir.name
+        metadata_cache_file = show_dir / ".metadata-cache.tsv"
+        if rss:
+            details = ensure_program_assets(show_dir, slug)
+            program_url = details.page_url or f"https://www.raiplaysound.it/programmi/{slug}"
+            generate_rss_feed(
+                show_dir,
+                slug,
+                program_url,
+                metadata_cache_file,
+                base_url,
+                details,
+            )
+            rss_count += 1
+        if playlist:
+            generate_playlist(show_dir, metadata_cache_file)
+            playlist_count += 1
+    if index:
+        index_path = generate_program_index(
+            target_base,
+            base_url,
+            apple_podcasts=apple_podcasts,
+        )
+    return {"rss": rss_count, "playlist": playlist_count, "index": index_path}

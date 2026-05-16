@@ -49,6 +49,9 @@ or URL into `~/Music/RaiPlaySound/<slug>/`, with idempotent repeat runs using
 
 - All documentation files must pass Markdown linting.
 - The line-length rule may be ignored.
+- Use reserved documentation hosts or clearly synthetic placeholders in public
+  RSS/base URL examples; do not commit real LAN IPs, hostnames, or private
+  service URLs.
 - For every new release, update the version consistently in:
   - `pyproject.toml`
   - `src/raiplaysound_cli/__init__.py`
