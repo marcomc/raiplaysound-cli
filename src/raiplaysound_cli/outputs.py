@@ -796,9 +796,9 @@ def generate_local_outputs(
             continue
         slug = show_dir.name
         metadata_cache_file = show_dir / ".metadata-cache.tsv"
-        details = ensure_program_assets(show_dir, slug)
-        program_url = details.page_url or f"https://www.raiplaysound.it/programmi/{slug}"
         if rss:
+            details = ensure_program_assets(show_dir, slug)
+            program_url = details.page_url or f"https://www.raiplaysound.it/programmi/{slug}"
             generate_rss_feed(
                 show_dir,
                 slug,

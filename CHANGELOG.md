@@ -24,6 +24,8 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Kept `raiplaysound-cli outputs --playlist` local-only by avoiding program
+  metadata and artwork refreshes unless RSS or index generation needs them.
 - Made the root index page's latest episode date prefer cached Rai editorial
   episode dates when a local file can be matched to `.metadata-cache.tsv`,
   instead of relying only on the date embedded in the downloaded filename.

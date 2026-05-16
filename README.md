@@ -585,9 +585,9 @@ included by default when the index can use absolute RSS URLs; set
 
 ```bash
 raiplaysound-cli outputs --index
-raiplaysound-cli outputs --rss --index --rss-base-url http://192.168.1.253:8092
+raiplaysound-cli outputs --rss --index --rss-base-url http://podcasts.example.test/audio
 raiplaysound-cli outputs --all --no-apple-podcasts
-raiplaysound-cli outputs --target-base /tmp/RaiPlaySound --all --rss-base-url http://127.0.0.1:8092
+raiplaysound-cli outputs --target-base /tmp/RaiPlaySound --all --rss-base-url http://podcasts.example.test/audio
 ```
 
 Command forms:

@@ -400,6 +400,30 @@ def test_generate_local_outputs_regenerates_selected_artifacts(monkeypatch, tmp_
     assert "Apple Podcasts" not in index_content
 
 
+def test_generate_local_outputs_playlist_only_does_not_refresh_assets(
+    monkeypatch, tmp_path: Path
+) -> None:
+    target_base = tmp_path / "RaiPlaySound"
+    show_dir = target_base / "america7"
+    show_dir.mkdir(parents=True)
+    (show_dir / ".metadata-cache.tsv").write_text(
+        "ep-1\t20240101\tNA\tEpisode One\n",
+        encoding="utf-8",
+    )
+    (show_dir / "America7 - 2024-01-01 - Episode One.m4a").write_bytes(b"audio")
+
+    def fail_asset_refresh(_show_dir: Path, _slug: str) -> ProgramDetails:
+        raise AssertionError("playlist-only regeneration must not refresh program assets")
+
+    monkeypatch.setattr(outputs, "ensure_program_assets", fail_asset_refresh)
+
+    result = outputs.generate_local_outputs(target_base, playlist=True)
+
+    assert result["playlist"] == 1
+    assert (show_dir / "playlist.m3u").exists()
+    assert not (show_dir / outputs.PROGRAM_INFO_FILE).exists()
+
+
 def test_generate_program_index_backfills_missing_program_artwork(
     monkeypatch, tmp_path: Path
 ) -> None:

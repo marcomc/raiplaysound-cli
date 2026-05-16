@@ -1546,7 +1546,7 @@ def build_outputs_parser() -> argparse.ArgumentParser:
         epilog=(
             "Examples:\n"
             "  raiplaysound-cli outputs --all\n"
-            "  raiplaysound-cli outputs --rss --index --rss-base-url http://192.168.1.253:8092\n"
+            "  raiplaysound-cli outputs --rss --index --rss-base-url http://podcasts.example.test/audio\n"
             "  raiplaysound-cli outputs --all --no-apple-podcasts\n"
             "  raiplaysound-cli outputs --target-base /tmp/RaiPlaySound --index"
         ),
