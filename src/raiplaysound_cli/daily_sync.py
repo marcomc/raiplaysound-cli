@@ -13,6 +13,7 @@ from typing import Sequence
 
 from .config import Settings, expand_config_path, parse_env_file
 from .episodes import detect_slug
+from .errors import CLIError
 
 AUDIO_EXTENSIONS = {".aac", ".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav"}
 DEFAULT_CONFIG_FILE = Path.home() / ".raiplaysound-cli.conf"
@@ -36,7 +37,10 @@ def _expand_optional_path(value: str, default: Path) -> Path:
 def _favorite_slugs(favorites: Sequence[str]) -> list[str]:
     slugs: list[str] = []
     for favorite in favorites:
-        slug, _program_url = detect_slug(favorite)
+        try:
+            slug, _program_url = detect_slug(favorite)
+        except CLIError:
+            continue
         if slug and slug not in slugs:
             slugs.append(slug)
     return slugs

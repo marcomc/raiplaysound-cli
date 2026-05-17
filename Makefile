@@ -32,6 +32,7 @@ PREFIX ?= $(HOME)/.local
 BINDIR ?= $(PREFIX)/bin
 INSTALL_PATH ?= $(BINDIR)/$(INSTALL_NAME)
 DAILY_SYNC_INSTALL_PATH ?= $(BINDIR)/$(DAILY_SYNC_NAME)
+DAILY_SYNC_INSTALL_PATH_ABS := $(abspath $(DAILY_SYNC_INSTALL_PATH))
 
 LAUNCHAGENT_TEMPLATE ?= launchagent/com.raiplaysound-cli.daily-sync.plist
 LAUNCHAGENT_LABEL ?= com.raiplaysound-cli.daily-sync
@@ -168,7 +169,7 @@ reinstall: uninstall install
 
 launchagent-install: install-daily-sync
 	@mkdir -p "$(HOME)/Library/LaunchAgents"
-	@sed 's|__HOME__|$(HOME)|g' "$(LAUNCHAGENT_TEMPLATE)" > "$(LAUNCHAGENT_DEST)"
+	@sed 's|__DAILY_SYNC_INSTALL_PATH__|$(DAILY_SYNC_INSTALL_PATH_ABS)|g' "$(LAUNCHAGENT_TEMPLATE)" > "$(LAUNCHAGENT_DEST)"
 	@echo "Installed LaunchAgent to $(LAUNCHAGENT_DEST)"
 	@launchctl bootout gui/$$(id -u) "$(LAUNCHAGENT_DEST)" 2>/dev/null || true
 	@launchctl bootstrap gui/$$(id -u) "$(LAUNCHAGENT_DEST)"

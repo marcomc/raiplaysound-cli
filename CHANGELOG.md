@@ -21,6 +21,9 @@ All notable changes to this project are documented in this file.
   `EMAIL_FROM` support for sender aliases.
 - Made `make launchagent-install` refresh only the daily sync companion and
   LaunchAgent instead of reinstalling the main `raiplaysound-cli` command.
+- Made the generated daily sync LaunchAgent use the configured
+  `DAILY_SYNC_INSTALL_PATH`, so overridden install locations are scheduled
+  correctly.
 - Made daily sync custom config runs pass the same config file to the child
   favourites download, and let email dry-runs print the payload without a local
   `msmtp` install.

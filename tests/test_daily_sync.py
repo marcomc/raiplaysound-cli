@@ -145,6 +145,34 @@ def test_main_defaults_to_current_python_module_runtime(monkeypatch, tmp_path: P
     assert calls == [([sys.executable, "-m", "raiplaysound_cli"], config_file)]
 
 
+def test_main_runs_download_when_one_favorite_is_malformed(monkeypatch, tmp_path: Path) -> None:
+    config_file = tmp_path / "custom.conf"
+    target_base = tmp_path / "RaiPlaySound"
+    config_file.write_text(
+        f'FAVORITES="https://example.test/not-a-program,musicalbox"\nTARGET_BASE="{target_base}"\n',
+        encoding="utf-8",
+    )
+    calls: list[tuple[list[str], Path]] = []
+    statuses: list[str] = []
+
+    def fake_run_download(cli_args, selected_config_file: Path, _log_file: Path) -> int:
+        calls.append((list(cli_args), selected_config_file))
+        return 2
+
+    def fake_send_email_summary(**kwargs) -> int:
+        statuses.append(kwargs["status_text"])
+        return 0
+
+    monkeypatch.setattr(daily_sync, "_run_download", fake_run_download)
+    monkeypatch.setattr(daily_sync, "send_email_summary", fake_send_email_summary)
+
+    result = daily_sync.main(["--config", str(config_file), "--dry-run-email"])
+
+    assert result == 2
+    assert calls == [([sys.executable, "-m", "raiplaysound_cli"], config_file)]
+    assert statuses == ["failed"]
+
+
 def test_build_email_body_reports_no_new_downloads() -> None:
     body = daily_sync.build_email_body(status_text="ok", rows=[])
 
