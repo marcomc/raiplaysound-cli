@@ -90,6 +90,8 @@ it as a user LaunchAgent at 08:00 every day. The companion runs
 `raiplaysound-cli download --favourites`, compares the downloaded audio files
 before and after the run, and sends a plain-text summary email through `msmtp`
 when email settings are configured.
+It refreshes only the daily sync companion and LaunchAgent; it does not rewrite
+the user-facing `~/.local/bin/raiplaysound-cli` command.
 
 Remove the scheduled job:
 

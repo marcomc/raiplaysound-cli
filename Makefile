@@ -40,11 +40,12 @@ LAUNCHAGENT_DEST ?= $(HOME)/Library/LaunchAgents/$(LAUNCHAGENT_LABEL).plist
 MARKDOWNLINT ?= markdownlint
 DOCS := README.md AGENTS.md TODO.md CHANGELOG.md docs/*.md
 
-.PHONY: help check-deps venv dev-deps _install-venv install install-dev uninstall uninstall-dev reinstall launchagent-install launchagent-uninstall test lint lint-docs format run clean
+.PHONY: help check-deps venv dev-deps _install-venv install install-daily-sync install-dev uninstall uninstall-dev reinstall launchagent-install launchagent-uninstall test lint lint-docs format run clean
 
 help:
 	@echo "Targets:"
 	@echo "  make install     # Standalone install under $(INSTALL_DIR) with symlink at $(INSTALL_PATH)"
+	@echo "  make install-daily-sync # Install only the daily sync companion"
 	@echo "  make install-dev # Editable dev install with symlink at $(INSTALL_PATH)"
 	@echo "  make uninstall   # Remove standalone install and symlink"
 	@echo "  make uninstall-dev # Remove dev symlink and restore standalone install if present"
@@ -106,6 +107,16 @@ install: check-deps _install-venv
 	@echo "Installed standalone CLI at $(INSTALL_PATH)"
 	@echo "Installed daily sync companion at $(DAILY_SYNC_INSTALL_PATH)"
 
+install-daily-sync: check-deps _install-venv
+	@"$(INSTALL_PIP)" install --no-build-isolation . --quiet
+	@mkdir -p "$(BINDIR)"
+	@mkdir -p "$(INSTALL_LAUNCHER_DIR)"
+	@{ printf '#!%s\n' "$(INSTALL_VENV_PYTHON_ABS)"; tail -n +2 "$(DAILY_SYNC_SCRIPT)"; } > "$(INSTALL_DAILY_SYNC_PATH)"
+	@install -m 644 "$(LAUNCHER_SUPPORT)" "$(INSTALL_LAUNCHER_DIR)/launcher_support.py"
+	@chmod 755 "$(INSTALL_DAILY_SYNC_PATH)"
+	@ln -sf "$(INSTALL_DAILY_SYNC_PATH_ABS)" "$(DAILY_SYNC_INSTALL_PATH)"
+	@echo "Installed daily sync companion at $(DAILY_SYNC_INSTALL_PATH)"
+
 install-dev: check-deps dev-deps
 	@mkdir -p "$(BINDIR)"
 	@{ printf '#!%s\n' "$(DEV_VENV_PYTHON_ABS)"; tail -n +2 "$(LAUNCHER_SCRIPT)"; } > "$(DEV_LAUNCHER_PATH)"
@@ -155,7 +166,7 @@ uninstall-dev:
 
 reinstall: uninstall install
 
-launchagent-install: install
+launchagent-install: install-daily-sync
 	@mkdir -p "$(HOME)/Library/LaunchAgents"
 	@sed 's|__HOME__|$(HOME)|g' "$(LAUNCHAGENT_TEMPLATE)" > "$(LAUNCHAGENT_DEST)"
 	@echo "Installed LaunchAgent to $(LAUNCHAGENT_DEST)"

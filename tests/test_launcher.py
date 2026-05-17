@@ -196,3 +196,43 @@ def test_install_stamps_launcher_with_install_venv_python(tmp_path: Path) -> Non
         f"#!{install_venv / 'bin' / 'python'}"
     )
     assert install_launcher_support.exists()
+
+
+def test_launchagent_install_does_not_reinstall_main_cli(tmp_path: Path) -> None:
+    install_dir = tmp_path / "install"
+    bindir = tmp_path / "bin"
+    launchagent_dest = tmp_path / "LaunchAgents" / "com.raiplaysound-cli.daily-sync.plist"
+    repo_root = Path(__file__).resolve().parents[1]
+    install_launcher_path = install_dir / "bin" / "raiplaysound-cli"
+    install_daily_sync_path = install_dir / "bin" / "raiplaysound-cli-daily-sync"
+    install_path = bindir / "raiplaysound-cli"
+    daily_sync_install_path = bindir / "raiplaysound-cli-daily-sync"
+
+    result = subprocess.run(
+        [
+            "make",
+            "-n",
+            f"CURDIR={repo_root}",
+            f"INSTALL_DIR={install_dir}",
+            f"INSTALL_VENV={install_dir / 'venv'}",
+            f"INSTALL_LAUNCHER_PATH={install_launcher_path}",
+            f"INSTALL_DAILY_SYNC_PATH={install_daily_sync_path}",
+            f"INSTALL_LAUNCHER_DIR={install_launcher_path.parent}",
+            f"BINDIR={bindir}",
+            f"INSTALL_PATH={install_path}",
+            f"DAILY_SYNC_INSTALL_PATH={daily_sync_install_path}",
+            f"LAUNCHAGENT_DEST={launchagent_dest}",
+            f"PYTHON={sys.executable}",
+            "launchagent-install",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=repo_root,
+    )
+
+    assert result.returncode == 0
+    assert f'> "{install_launcher_path}"' not in result.stdout
+    assert f'ln -sf "{install_launcher_path}" "{install_path}"' not in result.stdout
+    assert f'> "{install_daily_sync_path}"' in result.stdout
+    assert f'ln -sf "{install_daily_sync_path}" "{daily_sync_install_path}"' in result.stdout

@@ -19,6 +19,8 @@ All notable changes to this project are documented in this file.
   the same `EMAIL_TO`, `EMAIL_FROM_NAME`, `EMAIL_SUBJECT_PREFIX`, and
   `EMAIL_CONFIG` style as the existing Homebrew upgrade helper, plus explicit
   `EMAIL_FROM` support for Gmail plus aliases.
+- Made `make launchagent-install` refresh only the daily sync companion and
+  LaunchAgent instead of reinstalling the main `raiplaysound-cli` command.
 
 ## [2.3.0] - 2026-05-15 - index page, artwork, and feed improvements
 
