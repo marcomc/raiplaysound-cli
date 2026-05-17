@@ -93,10 +93,55 @@ when email settings are configured.
 It refreshes only the daily sync companion and LaunchAgent; it does not rewrite
 the user-facing `~/.local/bin/raiplaysound-cli` command.
 
+The daily sync install and run path follows the Makefile, LaunchAgent plist,
+and companion command:
+
+```mermaid
+flowchart LR
+  accTitle: Daily favourites sync
+  accDescr: Shows how the optional LaunchAgent is installed, scheduled, tested, and run.
+  install["make launchagent-install"] --> companion["Install daily sync companion"]
+  companion --> plist["Write user LaunchAgent plist"]
+  plist --> load["Load com.raiplaysound-cli.daily-sync"]
+  load --> schedule["Run daily at 08:00"]
+  schedule --> sync["Download configured favourites"]
+  sync --> report["Send or dry-run email summary"]
+```
+
 Remove the scheduled job:
 
 ```bash
 make launchagent-uninstall
+```
+
+Test the daily sync manually without sending email:
+
+```bash
+~/.local/bin/raiplaysound-cli-daily-sync --dry-run-email
+```
+
+Run the same sync for real, including email delivery when configured:
+
+```bash
+~/.local/bin/raiplaysound-cli-daily-sync
+```
+
+Trigger the loaded LaunchAgent immediately:
+
+```bash
+launchctl kickstart -k gui/$(id -u)/com.raiplaysound-cli.daily-sync
+```
+
+Follow the daily sync log while it runs:
+
+```bash
+tail -f ~/Library/Logs/raiplaysound-cli-daily-sync.log
+```
+
+Check the scheduler state:
+
+```bash
+launchctl print gui/$(id -u)/com.raiplaysound-cli.daily-sync
 ```
 
 Print the focused top-level command overview:
