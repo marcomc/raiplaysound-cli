@@ -114,6 +114,10 @@ Remove the scheduled job:
 make launchagent-uninstall
 ```
 
+This unloads and removes the LaunchAgent plist. It leaves installed command
+files in place; use `make uninstall` when you also want to remove the CLI and
+daily sync companion.
+
 Test the daily sync manually without sending email:
 
 ```bash
@@ -222,6 +226,9 @@ The CLI reads optional user defaults from:
 
 - `~/.raiplaysound-cli.conf`
 
+Use `raiplaysound-cli --config /path/to/config <command>` for a one-off run
+with a different defaults file.
+
 Install the example config:
 
 ```bash
@@ -239,10 +246,11 @@ GROUP_BY="auto"
 STATION_FILTER="radio2"
 CATALOG_MAX_AGE_HOURS=2160
 EMAIL_TO="you@example.test"
-EMAIL_FROM="massaric+raiplaysound-cli@gmail.com"
+EMAIL_FROM="you+raiplaysound-cli@example.test"
 EMAIL_FROM_NAME="raiplaysound-cli"
 EMAIL_SUBJECT_PREFIX="[raiplaysound-cli]"
 EMAIL_CONFIG="$HOME/.config/msmtp/config"
+MSMTP_BIN="msmtp"
 ```
 
 Cache-age defaults are intentionally different:
@@ -286,6 +294,7 @@ Supported config keys:
 | `EMAIL_FROM_NAME` | n/a | daily sync email |
 | `EMAIL_SUBJECT_PREFIX` | n/a | daily sync email |
 | `EMAIL_CONFIG` | n/a | daily sync email |
+| `MSMTP_BIN` | n/a | daily sync email |
 | `DAILY_SYNC_LOG` | n/a | daily sync |
 | `GROUP_BY` | `--group-by` | list `programs` |
 | `PODCASTS_SORTED` | `--sorted` | list `programs` |
@@ -307,6 +316,9 @@ does not configure `msmtp`; it only uses the existing `EMAIL_CONFIG` file. If
 `EMAIL_TO`, `msmtp`, or the `msmtp` config is missing, the download still runs
 and the email step is skipped with a note in
 `~/Library/Logs/raiplaysound-cli-daily-sync.log`.
+Use `raiplaysound-cli-daily-sync --config /path/to/config` to run the sync from
+an alternate config file; the companion passes that same config to the child
+download command.
 
 `FORCE_REFRESH_CATALOG` and `CATALOG_MAX_AGE_HOURS` affect only `list programs`.
 They do not change the per-show metadata cache used by `download` and

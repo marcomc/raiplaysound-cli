@@ -130,10 +130,11 @@ CHECK_JOBS=8
 # `raiplaysound-cli-daily-sync` and the LaunchAgent installed by
 # `make launchagent-install`.
 # EMAIL_TO=""
-# EMAIL_FROM="massaric+raiplaysound-cli@gmail.com"
+# EMAIL_FROM="you+raiplaysound-cli@example.test"
 # EMAIL_FROM_NAME="raiplaysound-cli"
 # EMAIL_SUBJECT_PREFIX="[raiplaysound-cli]"
 # EMAIL_CONFIG="$HOME/.config/msmtp/config"
+# MSMTP_BIN="msmtp"
 # Optional override for the daily sync log file.
 # DAILY_SYNC_LOG="$HOME/Library/Logs/raiplaysound-cli-daily-sync.log"
 

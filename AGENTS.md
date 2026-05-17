@@ -63,6 +63,8 @@ or URL into `~/Music/RaiPlaySound/<slug>/`, with idempotent repeat runs using
   project root.
 - For every new CLI/config option, update `README.md` option/config
   documentation.
+- When adding companion commands or scheduled jobs, keep installer, launcher,
+  config forwarding, docs, and uninstall semantics consistent in one change.
 - After implementing any task, update the `Unreleased` section of
   `CHANGELOG.md` with user-visible changes.
 - After implementing any feature, behavior change, config change, or workflow

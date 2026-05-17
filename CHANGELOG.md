@@ -18,9 +18,12 @@ All notable changes to this project are documented in this file.
 - Extended the user config example and README with daily sync email keys using
   the same `EMAIL_TO`, `EMAIL_FROM_NAME`, `EMAIL_SUBJECT_PREFIX`, and
   `EMAIL_CONFIG` style as the existing Homebrew upgrade helper, plus explicit
-  `EMAIL_FROM` support for Gmail plus aliases.
+  `EMAIL_FROM` support for sender aliases.
 - Made `make launchagent-install` refresh only the daily sync companion and
   LaunchAgent instead of reinstalling the main `raiplaysound-cli` command.
+- Made daily sync custom config runs pass the same config file to the child
+  favourites download, and let email dry-runs print the payload without a local
+  `msmtp` install.
 
 ## [2.3.0] - 2026-05-15 - index page, artwork, and feed improvements
 

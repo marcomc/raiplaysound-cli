@@ -35,12 +35,31 @@ def test_main_version_prints_when_present_anywhere(capsys) -> None:
     assert "raiplaysound-cli 2.4.0" in captured.out
 
 
+def test_main_uses_custom_config_file(monkeypatch, tmp_path: Path, capsys) -> None:
+    config_file = tmp_path / "custom.conf"
+    config_file.write_text('FAVORITES="musicalbox"\n', encoding="utf-8")
+    calls: list[str] = []
+
+    def fake_download_command(_settings: Settings, args) -> int:
+        calls.append("download")
+        assert args.favourites is True
+        return 0
+
+    monkeypatch.setattr(cli, "download_command", fake_download_command)
+
+    result = cli.main(["--config", str(config_file), "download", "--favourites"])
+
+    assert result == 0
+    assert calls == ["download"]
+    assert "requires FAVORITES" not in capsys.readouterr().err
+
+
 def test_main_without_args_prints_focused_help(capsys) -> None:
     result = cli.main([])
     captured = capsys.readouterr()
 
     assert result == 0
-    assert "usage: raiplaysound-cli [--version] <command>" in captured.out
+    assert "usage: raiplaysound-cli [--version] [--config PATH] <command>" in captured.out
     assert "Commands:" in captured.out
     assert "list      Inspect stations, programs, seasons, or episodes" in captured.out
     assert (
@@ -60,7 +79,7 @@ def test_main_help_prints_focused_help(capsys) -> None:
     captured = capsys.readouterr()
 
     assert result == 0
-    assert "usage: raiplaysound-cli [--version] <command>" in captured.out
+    assert "usage: raiplaysound-cli [--version] [--config PATH] <command>" in captured.out
     assert "Commands:" in captured.out
     assert (
         "search    Search stations, programs, groupings, and local episode metadata" in captured.out
@@ -1049,7 +1068,7 @@ def test_main_without_args_ignores_configured_list_seasons(monkeypatch, capsys) 
 
     assert result == 0
     assert "Commands:" in captured.out
-    assert "usage: raiplaysound-cli [--version] <command>" in captured.out
+    assert "usage: raiplaysound-cli [--version] [--config PATH] <command>" in captured.out
     assert "usage: raiplaysound-cli list" not in captured.out
 
 
@@ -1478,7 +1497,7 @@ def test_main_without_args_ignores_configured_list_episodes(monkeypatch, capsys)
 
     assert result == 0
     assert "Commands:" in captured.out
-    assert "usage: raiplaysound-cli [--version] <command>" in captured.out
+    assert "usage: raiplaysound-cli [--version] [--config PATH] <command>" in captured.out
     assert "usage: raiplaysound-cli download" not in captured.out
 
 

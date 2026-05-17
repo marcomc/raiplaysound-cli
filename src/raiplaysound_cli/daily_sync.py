@@ -165,17 +165,10 @@ def send_email_summary(
     if not email_to:
         _append_log(log_file, "EMAIL_TO is not configured; skipping email summary.")
         return 0
-    msmtp_bin = config.get("MSMTP_BIN", "msmtp").strip() or "msmtp"
-    if shutil.which(msmtp_bin) is None:
-        _append_log(log_file, f"{msmtp_bin} is not installed or not in PATH; skipping email.")
-        return 0
     email_config = _expand_optional_path(
         config.get("EMAIL_CONFIG", ""),
         Path.home() / ".config" / "msmtp" / "config",
     )
-    if not email_config.exists():
-        _append_log(log_file, f"msmtp config not found at {email_config}; skipping email.")
-        return 0
     email_from = config.get("EMAIL_FROM", "").strip() or _extract_from_address(email_config)
     if not email_from:
         _append_log(
@@ -199,6 +192,13 @@ def send_email_summary(
             sys.stdout.write("\n")
         _append_log(log_file, "Email dry run enabled; payload printed to stdout and not sent.")
         return 0
+    msmtp_bin = config.get("MSMTP_BIN", "msmtp").strip() or "msmtp"
+    if shutil.which(msmtp_bin) is None:
+        _append_log(log_file, f"{msmtp_bin} is not installed or not in PATH; skipping email.")
+        return 0
+    if not email_config.exists():
+        _append_log(log_file, f"msmtp config not found at {email_config}; skipping email.")
+        return 0
     result = subprocess.run(
         [msmtp_bin, "--file", str(email_config), "--", email_to],
         input=payload,
@@ -213,10 +213,10 @@ def send_email_summary(
     return result.returncode
 
 
-def _run_download(cli_path: Path, log_file: Path) -> int:
+def _run_download(cli_args: Sequence[str], config_file: Path, log_file: Path) -> int:
     _append_log(log_file, "Starting daily favourites download.")
     process = subprocess.Popen(
-        [str(cli_path), "download", "--favourites"],
+        [*cli_args, "--config", str(config_file), "download", "--favourites"],
         text=True,
         encoding="utf-8",
         stdout=subprocess.PIPE,
@@ -242,8 +242,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--cli",
-        default=str(Path.home() / ".local" / "bin" / "raiplaysound-cli"),
-        help="raiplaysound-cli executable path.",
+        default="",
+        help="Optional raiplaysound-cli executable path. Defaults to this Python runtime.",
     )
     parser.add_argument(
         "--dry-run-email",
@@ -267,7 +267,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
     slugs = _favorite_slugs(settings.favorites)
     before = _audio_files_for_slugs(settings.target_base, slugs)
-    download_status = _run_download(Path(expand_config_path(args.cli)), log_file)
+    if args.cli:
+        cli_args = [expand_config_path(args.cli)]
+    else:
+        cli_args = [sys.executable, "-m", "raiplaysound_cli"]
+    download_status = _run_download(cli_args, config_file, log_file)
     after = _audio_files_for_slugs(settings.target_base, slugs)
     rows = build_download_rows(
         target_base=settings.target_base,
