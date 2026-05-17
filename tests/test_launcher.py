@@ -268,6 +268,7 @@ def test_launchagent_install_uses_overridden_daily_sync_install_path(tmp_path: P
     )
 
     assert result.returncode == 0
+    assert f'mkdir -p "{launchagent_dest.parent}/"' in result.stdout
     assert "sed 's|__DAILY_SYNC_INSTALL_PATH__|" in result.stdout
     assert f"{daily_sync_install_path}|g'" in result.stdout
     assert f'> "{launchagent_dest}"' in result.stdout

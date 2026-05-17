@@ -24,6 +24,8 @@ All notable changes to this project are documented in this file.
 - Made the generated daily sync LaunchAgent use the configured
   `DAILY_SYNC_INSTALL_PATH`, so overridden install locations are scheduled
   correctly.
+- Made `make launchagent-install` create the configured `LAUNCHAGENT_DEST`
+  parent directory instead of assuming the default user LaunchAgents folder.
 - Made daily sync custom config runs pass the same config file to the child
   favourites download, and let email dry-runs print the payload without a local
   `msmtp` install.
