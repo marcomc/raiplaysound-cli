@@ -63,6 +63,27 @@ def test_main_bootstraps_paths_and_invokes_cli(monkeypatch, tmp_path: Path) -> N
         sys.path[:] = original_sys_path
 
 
+def test_main_module_bootstraps_paths_and_invokes_named_module(monkeypatch, tmp_path: Path) -> None:
+    support = load_launcher_support()
+    entries = [tmp_path / "src"]
+    calls: list[tuple[str, list[str] | None]] = []
+
+    def fake_import_module(name: str) -> types.SimpleNamespace:
+        def fake_main(argv: list[str] | None = None) -> int:
+            calls.append((name, argv))
+            return 9
+
+        return types.SimpleNamespace(main=fake_main)
+
+    monkeypatch.setattr(support, "runtime_sys_path_entries", lambda _root: entries)
+    monkeypatch.setattr(support.importlib, "import_module", fake_import_module)
+
+    result = support.main_module("raiplaysound_cli.daily_sync", ["--dry-run-email"])
+
+    assert result == 9
+    assert calls == [("raiplaysound_cli.daily_sync", ["--dry-run-email"])]
+
+
 def test_main_reports_missing_runtime_tree(monkeypatch, capsys) -> None:
     support = load_launcher_support()
     monkeypatch.setattr(support, "runtime_sys_path_entries", lambda _root: [])
@@ -161,6 +182,7 @@ def test_install_stamps_launcher_with_install_venv_python(tmp_path: Path) -> Non
             f"INSTALL_LAUNCHER_DIR={install_launcher_path.parent}",
             f"BINDIR={bindir}",
             f"INSTALL_PATH={install_path}",
+            f"PYTHON={sys.executable}",
             "install",
         ],
         check=False,

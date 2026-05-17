@@ -126,6 +126,17 @@ CHECK_JOBS=8
 # each favourite downloads only its latest season by default.
 # FAVORITES="musicalbox,profili,https://www.raiplaysound.it/programmi/america7"
 
+# Optional daily favourites sync email settings used by
+# `raiplaysound-cli-daily-sync` and the LaunchAgent installed by
+# `make launchagent-install`.
+# EMAIL_TO=""
+# EMAIL_FROM="massaric+raiplaysound-cli@gmail.com"
+# EMAIL_FROM_NAME="raiplaysound-cli"
+# EMAIL_SUBJECT_PREFIX="[raiplaysound-cli]"
+# EMAIL_CONFIG="$HOME/.config/msmtp/config"
+# Optional override for the daily sync log file.
+# DAILY_SYNC_LOG="$HOME/Library/Logs/raiplaysound-cli-daily-sync.log"
+
 # Optional: generate an M3U playlist (playlist.m3u) in the show's download folder
 # after every run. The playlist is built from the metadata cache and all locally
 # present audio files, sorted oldest-to-newest. File paths are relative to the

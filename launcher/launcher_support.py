@@ -41,11 +41,11 @@ def _prepend_sys_path(entries: Sequence[Path]) -> None:
             sys.path.insert(0, entry_str)
 
 
-def _load_cli_module() -> ModuleType:
-    return importlib.import_module("raiplaysound_cli.cli")
+def _load_module(module_name: str) -> ModuleType:
+    return importlib.import_module(module_name)
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main_module(module_name: str, argv: Sequence[str] | None = None) -> int:
     if sys.version_info < MINIMUM_PYTHON:
         sys.stderr.write("raiplaysound-cli requires Python 3.10 or newer.\n")
         return 1
@@ -62,7 +62,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     _prepend_sys_path(entries)
     try:
-        cli_module = _load_cli_module()
+        module = _load_module(module_name)
     except ModuleNotFoundError as exc:
         if exc.name in {"raiplaysound_cli", "rich"}:
             sys.stderr.write(
@@ -72,4 +72,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 1
         raise
 
-    return int(cli_module.main(argv))
+    return int(module.main(argv))
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    return main_module("raiplaysound_cli.cli", argv)
