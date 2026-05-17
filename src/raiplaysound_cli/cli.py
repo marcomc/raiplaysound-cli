@@ -78,11 +78,34 @@ console = Console()
 err_console = Console(stderr=True)
 LIST_CACHE_MAX_AGE_HOURS = 24
 LIST_CACHE_VERSION = 6
+DEFAULT_CONFIG_FILE = Path.home() / ".raiplaysound-cli.conf"
+LEGACY_CONFIG_FILE = Path.home() / ".raiplaysound-downloader.conf"
 
 
 def json_dump(data: Any) -> None:
     sys.stdout.write(json.dumps(data, indent=2, ensure_ascii=False))
     sys.stdout.write("\n")
+
+
+def _extract_config_arg(argv: list[str]) -> tuple[Path, list[str]]:
+    config_file = DEFAULT_CONFIG_FILE
+    remaining: list[str] = []
+    index = 0
+    while index < len(argv):
+        arg = argv[index]
+        if arg == "--config":
+            if index + 1 >= len(argv):
+                raise CLIError("--config requires a file path.")
+            config_file = Path(expand_config_path(argv[index + 1]))
+            index += 2
+            continue
+        if arg.startswith("--config="):
+            config_file = Path(expand_config_path(arg.split("=", 1)[1]))
+            index += 1
+            continue
+        remaining.append(arg)
+        index += 1
+    return config_file, remaining
 
 
 def _state_cache_dir(settings: Settings) -> Path:
@@ -347,7 +370,7 @@ def make_argument_parser(**kwargs: Any) -> argparse.ArgumentParser:
 def format_main_help() -> str:
     return "\n".join(
         [
-            "usage: raiplaysound-cli [--version] <command>",
+            "usage: raiplaysound-cli [--version] [--config PATH] <command>",
             "",
             "Python CLI for RaiPlaySound discovery and downloads.",
             "",
@@ -357,6 +380,9 @@ def format_main_help() -> str:
             "  download  Download one program or configured favourites",
             "  repair    Repair local files using cached RaiPlaySound metadata",
             "  outputs   Regenerate local RSS, playlist, and HTML index outputs",
+            "",
+            "Global options:",
+            "  --config PATH  Read defaults from PATH instead of ~/.raiplaysound-cli.conf",
             "",
             "Run `raiplaysound-cli <command> --help` for command-specific help.",
         ]
@@ -2094,21 +2120,20 @@ def _repair_one_program(settings: Settings, args: argparse.Namespace, input_valu
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    if not argv:
-        console.print(format_main_help())
-        return 0
-    if "--version" in argv:
-        console.print(f"raiplaysound-cli {__version__}")
-        return 0
-    if len(argv) == 1 and argv[0] in {"-h", "--help"}:
-        console.print(format_main_help())
-        return 0
-    config = parse_env_file(Path.home() / ".raiplaysound-cli.conf")
-    if not config:
-        legacy = Path.home() / ".raiplaysound-downloader.conf"
-        if legacy.exists():
-            config = parse_env_file(legacy)
     try:
+        config_file, argv = _extract_config_arg(argv)
+        if not argv:
+            console.print(format_main_help())
+            return 0
+        if "--version" in argv:
+            console.print(f"raiplaysound-cli {__version__}")
+            return 0
+        if len(argv) == 1 and argv[0] in {"-h", "--help"}:
+            console.print(format_main_help())
+            return 0
+        config = parse_env_file(config_file)
+        if not config and config_file == DEFAULT_CONFIG_FILE and LEGACY_CONFIG_FILE.exists():
+            config = parse_env_file(LEGACY_CONFIG_FILE)
         settings = Settings.from_config(config)
         command, rest = choose_command(argv, config)
         if command == "list":

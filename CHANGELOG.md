@@ -2,6 +2,34 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.4.0] - Unreleased - daily favourites automation
+
+### Added
+
+- Added `raiplaysound-cli-daily-sync`, a companion command that runs
+  `raiplaysound-cli download --favourites`, detects newly downloaded audio
+  files, and sends a plain-text `msmtp` summary with a compact per-episode
+  table.
+- Added `make launchagent-install` and `make launchagent-uninstall` for an
+  optional macOS user LaunchAgent that runs the daily favourites sync at 08:00.
+
+### Changed
+
+- Extended the user config example and README with daily sync email keys using
+  the same `EMAIL_TO`, `EMAIL_FROM_NAME`, `EMAIL_SUBJECT_PREFIX`, and
+  `EMAIL_CONFIG` style as the existing Homebrew upgrade helper, plus explicit
+  `EMAIL_FROM` support for sender aliases.
+- Made `make launchagent-install` refresh only the daily sync companion and
+  LaunchAgent instead of reinstalling the main `raiplaysound-cli` command.
+- Made the generated daily sync LaunchAgent use the configured
+  `DAILY_SYNC_INSTALL_PATH`, so overridden install locations are scheduled
+  correctly.
+- Made `make launchagent-install` create the configured `LAUNCHAGENT_DEST`
+  parent directory instead of assuming the default user LaunchAgents folder.
+- Made daily sync custom config runs pass the same config file to the child
+  favourites download, and let email dry-runs print the payload without a local
+  `msmtp` install.
+
 ## [2.3.0] - 2026-05-15 - index page, artwork, and feed improvements
 
 ### Changed

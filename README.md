@@ -50,10 +50,12 @@ This installs the package into:
 
 - `~/.local/share/raiplaysound-cli/venv`
 - `~/.local/share/raiplaysound-cli/bin/raiplaysound-cli`
+- `~/.local/share/raiplaysound-cli/bin/raiplaysound-cli-daily-sync`
 
 and creates the user-facing command at:
 
 - `~/.local/bin/raiplaysound-cli`
+- `~/.local/bin/raiplaysound-cli-daily-sync`
 
 The installed command is a small Python launcher that loads the package from
 the local install tree. It does not rely on the exact interpreter path baked
@@ -75,6 +77,75 @@ Run the CLI from the user install:
 
 ```bash
 ~/.local/bin/raiplaysound-cli --version
+```
+
+Install and load the optional daily favourites LaunchAgent:
+
+```bash
+make launchagent-install
+```
+
+This also installs `~/.local/bin/raiplaysound-cli-daily-sync`, then schedules
+it as a user LaunchAgent at 08:00 every day. The companion runs
+`raiplaysound-cli download --favourites`, compares the downloaded audio files
+before and after the run, and sends a plain-text summary email through `msmtp`
+when email settings are configured.
+It refreshes only the daily sync companion and LaunchAgent; it does not rewrite
+the user-facing `~/.local/bin/raiplaysound-cli` command.
+
+The daily sync install and run path follows the Makefile, LaunchAgent plist,
+and companion command:
+
+```mermaid
+flowchart LR
+  accTitle: Daily favourites sync
+  accDescr: Shows how the optional LaunchAgent is installed, scheduled, tested, and run.
+  install["make launchagent-install"] --> companion["Install daily sync companion"]
+  companion --> plist["Write user LaunchAgent plist"]
+  plist --> load["Load com.raiplaysound-cli.daily-sync"]
+  load --> schedule["Run daily at 08:00"]
+  schedule --> sync["Download configured favourites"]
+  sync --> report["Send or dry-run email summary"]
+```
+
+Remove the scheduled job:
+
+```bash
+make launchagent-uninstall
+```
+
+This unloads and removes the LaunchAgent plist. It leaves installed command
+files in place; use `make uninstall` when you also want to remove the CLI and
+daily sync companion.
+
+Test the daily sync manually without sending email:
+
+```bash
+~/.local/bin/raiplaysound-cli-daily-sync --dry-run-email
+```
+
+Run the same sync for real, including email delivery when configured:
+
+```bash
+~/.local/bin/raiplaysound-cli-daily-sync
+```
+
+Trigger the loaded LaunchAgent immediately:
+
+```bash
+launchctl kickstart -k gui/$(id -u)/com.raiplaysound-cli.daily-sync
+```
+
+Follow the daily sync log while it runs:
+
+```bash
+tail -f ~/Library/Logs/raiplaysound-cli-daily-sync.log
+```
+
+Check the scheduler state:
+
+```bash
+launchctl print gui/$(id -u)/com.raiplaysound-cli.daily-sync
 ```
 
 Print the focused top-level command overview:
@@ -140,6 +211,8 @@ Uninstalling:
 - Generates optional `feed.xml` RSS output and `playlist.m3u` playlist output
 - Downloads each program cover image into the program folder and references it
   from generated RSS feeds
+- Provides an optional macOS LaunchAgent companion that runs the configured
+  favourites download once a day and emails a compact `msmtp` summary
 - Keeps a `RaiPlayPodcast` `index.html` landing page in the target root with
   program artwork, descriptions, local episode counts, latest downloaded
   episode dates, RSS links, and Apple Podcasts app links only for programs that
@@ -152,6 +225,9 @@ Uninstalling:
 The CLI reads optional user defaults from:
 
 - `~/.raiplaysound-cli.conf`
+
+Use `raiplaysound-cli --config /path/to/config <command>` for a one-off run
+with a different defaults file.
 
 Install the example config:
 
@@ -169,6 +245,12 @@ FAVORITES="musicalbox,profili"
 GROUP_BY="auto"
 STATION_FILTER="radio2"
 CATALOG_MAX_AGE_HOURS=2160
+EMAIL_TO="you@example.test"
+EMAIL_FROM="you+raiplaysound-cli@example.test"
+EMAIL_FROM_NAME="raiplaysound-cli"
+EMAIL_SUBJECT_PREFIX="[raiplaysound-cli]"
+EMAIL_CONFIG="$HOME/.config/msmtp/config"
+MSMTP_BIN="msmtp"
 ```
 
 Cache-age defaults are intentionally different:
@@ -207,6 +289,13 @@ Supported config keys:
 | `CLEAR_METADATA_CACHE` | `--clear-metadata-cache` | download |
 | `METADATA_MAX_AGE_HOURS` | `--metadata-max-age-hours` | download |
 | `FAVORITES` | `--favourites` | download |
+| `EMAIL_TO` | n/a | daily sync email |
+| `EMAIL_FROM` | n/a | daily sync email |
+| `EMAIL_FROM_NAME` | n/a | daily sync email |
+| `EMAIL_SUBJECT_PREFIX` | n/a | daily sync email |
+| `EMAIL_CONFIG` | n/a | daily sync email |
+| `MSMTP_BIN` | n/a | daily sync email |
+| `DAILY_SYNC_LOG` | n/a | daily sync |
 | `GROUP_BY` | `--group-by` | list `programs` |
 | `PODCASTS_SORTED` | `--sorted` | list `programs` |
 | `STATION_FILTER` | `--filter` | list `programs` |
@@ -221,6 +310,15 @@ Supported config keys:
 full program URLs. Running `raiplaysound-cli download --favourites` iterates
 that list. If you do not pass `--season`, `--group`, `--episode-ids`, or
 `--episode-urls`, each favourite downloads only the latest season by default.
+
+The daily sync companion uses the same `FAVORITES` and download defaults. It
+does not configure `msmtp`; it only uses the existing `EMAIL_CONFIG` file. If
+`EMAIL_TO`, `msmtp`, or the `msmtp` config is missing, the download still runs
+and the email step is skipped with a note in
+`~/Library/Logs/raiplaysound-cli-daily-sync.log`.
+Use `raiplaysound-cli-daily-sync --config /path/to/config` to run the sync from
+an alternate config file; the companion passes that same config to the child
+download command.
 
 `FORCE_REFRESH_CATALOG` and `CATALOG_MAX_AGE_HOURS` affect only `list programs`.
 They do not change the per-show metadata cache used by `download` and
@@ -626,6 +724,8 @@ Common commands:
 ```bash
 make install
 make install-dev
+make launchagent-install
+make launchagent-uninstall
 make uninstall
 make run
 make test

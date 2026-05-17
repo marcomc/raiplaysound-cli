@@ -63,6 +63,27 @@ def test_main_bootstraps_paths_and_invokes_cli(monkeypatch, tmp_path: Path) -> N
         sys.path[:] = original_sys_path
 
 
+def test_main_module_bootstraps_paths_and_invokes_named_module(monkeypatch, tmp_path: Path) -> None:
+    support = load_launcher_support()
+    entries = [tmp_path / "src"]
+    calls: list[tuple[str, list[str] | None]] = []
+
+    def fake_import_module(name: str) -> types.SimpleNamespace:
+        def fake_main(argv: list[str] | None = None) -> int:
+            calls.append((name, argv))
+            return 9
+
+        return types.SimpleNamespace(main=fake_main)
+
+    monkeypatch.setattr(support, "runtime_sys_path_entries", lambda _root: entries)
+    monkeypatch.setattr(support.importlib, "import_module", fake_import_module)
+
+    result = support.main_module("raiplaysound_cli.daily_sync", ["--dry-run-email"])
+
+    assert result == 9
+    assert calls == [("raiplaysound_cli.daily_sync", ["--dry-run-email"])]
+
+
 def test_main_reports_missing_runtime_tree(monkeypatch, capsys) -> None:
     support = load_launcher_support()
     monkeypatch.setattr(support, "runtime_sys_path_entries", lambda _root: [])
@@ -161,6 +182,7 @@ def test_install_stamps_launcher_with_install_venv_python(tmp_path: Path) -> Non
             f"INSTALL_LAUNCHER_DIR={install_launcher_path.parent}",
             f"BINDIR={bindir}",
             f"INSTALL_PATH={install_path}",
+            f"PYTHON={sys.executable}",
             "install",
         ],
         check=False,
@@ -174,3 +196,80 @@ def test_install_stamps_launcher_with_install_venv_python(tmp_path: Path) -> Non
         f"#!{install_venv / 'bin' / 'python'}"
     )
     assert install_launcher_support.exists()
+
+
+def test_launchagent_install_does_not_reinstall_main_cli(tmp_path: Path) -> None:
+    install_dir = tmp_path / "install"
+    bindir = tmp_path / "bin"
+    launchagent_dest = tmp_path / "LaunchAgents" / "com.raiplaysound-cli.daily-sync.plist"
+    repo_root = Path(__file__).resolve().parents[1]
+    install_launcher_path = install_dir / "bin" / "raiplaysound-cli"
+    install_daily_sync_path = install_dir / "bin" / "raiplaysound-cli-daily-sync"
+    install_path = bindir / "raiplaysound-cli"
+    daily_sync_install_path = bindir / "raiplaysound-cli-daily-sync"
+
+    result = subprocess.run(
+        [
+            "make",
+            "-n",
+            f"CURDIR={repo_root}",
+            f"INSTALL_DIR={install_dir}",
+            f"INSTALL_VENV={install_dir / 'venv'}",
+            f"INSTALL_LAUNCHER_PATH={install_launcher_path}",
+            f"INSTALL_DAILY_SYNC_PATH={install_daily_sync_path}",
+            f"INSTALL_LAUNCHER_DIR={install_launcher_path.parent}",
+            f"BINDIR={bindir}",
+            f"INSTALL_PATH={install_path}",
+            f"DAILY_SYNC_INSTALL_PATH={daily_sync_install_path}",
+            f"LAUNCHAGENT_DEST={launchagent_dest}",
+            f"PYTHON={sys.executable}",
+            "launchagent-install",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=repo_root,
+    )
+
+    assert result.returncode == 0
+    assert f'> "{install_launcher_path}"' not in result.stdout
+    assert f'ln -sf "{install_launcher_path}" "{install_path}"' not in result.stdout
+    assert f'> "{install_daily_sync_path}"' in result.stdout
+    assert f'ln -sf "{install_daily_sync_path}" "{daily_sync_install_path}"' in result.stdout
+
+
+def test_launchagent_install_uses_overridden_daily_sync_install_path(tmp_path: Path) -> None:
+    install_dir = tmp_path / "install"
+    bindir = tmp_path / "custom-bin"
+    launchagent_dest = tmp_path / "LaunchAgents" / "com.raiplaysound-cli.daily-sync.plist"
+    repo_root = Path(__file__).resolve().parents[1]
+    install_daily_sync_path = install_dir / "bin" / "raiplaysound-cli-daily-sync"
+    daily_sync_install_path = bindir / "custom-daily-sync"
+
+    result = subprocess.run(
+        [
+            "make",
+            "-n",
+            f"CURDIR={repo_root}",
+            f"INSTALL_DIR={install_dir}",
+            f"INSTALL_VENV={install_dir / 'venv'}",
+            f"INSTALL_DAILY_SYNC_PATH={install_daily_sync_path}",
+            f"INSTALL_LAUNCHER_DIR={install_daily_sync_path.parent}",
+            f"BINDIR={bindir}",
+            f"DAILY_SYNC_INSTALL_PATH={daily_sync_install_path}",
+            f"LAUNCHAGENT_DEST={launchagent_dest}",
+            f"PYTHON={sys.executable}",
+            "launchagent-install",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=repo_root,
+    )
+
+    assert result.returncode == 0
+    assert f'mkdir -p "{launchagent_dest.parent}/"' in result.stdout
+    assert "sed 's|__DAILY_SYNC_INSTALL_PATH__|" in result.stdout
+    assert f"{daily_sync_install_path}|g'" in result.stdout
+    assert f'> "{launchagent_dest}"' in result.stdout
+    assert "__HOME__/.local/bin/raiplaysound-cli-daily-sync" not in result.stdout
