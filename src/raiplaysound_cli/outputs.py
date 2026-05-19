@@ -6,6 +6,7 @@ import html
 import json
 import re
 import time
+import unicodedata
 import urllib.parse
 from importlib import resources
 from pathlib import Path
@@ -28,7 +29,8 @@ TitleEntry = tuple[str, str, str]
 
 def _url_for_artifact(path: Path, slug: str, base_url: str) -> str:
     if base_url:
-        return f"{base_url.rstrip('/')}/{slug}/{urllib.parse.quote(path.name)}"
+        filename = unicodedata.normalize("NFD", path.name)
+        return f"{base_url.rstrip('/')}/{slug}/{urllib.parse.quote(filename, safe='')}"
     return path.resolve().as_uri()
 
 

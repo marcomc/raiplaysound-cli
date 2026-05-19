@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.4.1] - Unreleased - RSS enclosure compatibility
+
+### Fixed
+
+- Made public RSS enclosure URLs normalize accented filename characters in the
+  form accepted by the static podcast file server, so episodes such as
+  `Reciprocità` and `Felicità` can be fetched by podcast clients.
+
 ## [2.4.0] - 2026-05-17 - daily favourites automation
 
 ### Added
