@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import unicodedata
 from pathlib import Path
 from typing import Iterator
 
@@ -51,7 +52,7 @@ def test_generate_rss_feed_uses_cache_and_filename_fallback(monkeypatch, tmp_pat
     assert "%20fallback-title.mp3" in content
 
 
-def test_generate_rss_feed_uses_decomposed_unicode_in_public_enclosure_urls(
+def test_generate_rss_feed_preserves_decomposed_public_enclosure_filenames(
     monkeypatch, tmp_path: Path
 ) -> None:
     target_dir = tmp_path / "sophialiberaenciclopediadiradio3"
@@ -61,9 +62,10 @@ def test_generate_rss_feed_uses_decomposed_unicode_in_public_enclosure_urls(
         "ep-1\t20260519\t1\tReciprocità\n",
         encoding="utf-8",
     )
-    (
-        target_dir / "Sophia. Libera enciclopedia di Radio3 - 2026-05-19 - Reciprocità.m4a"
-    ).write_bytes(b"audio")
+    filename = unicodedata.normalize(
+        "NFD", "Sophia. Libera enciclopedia di Radio3 - 2026-05-19 - Reciprocità.m4a"
+    )
+    (target_dir / filename).write_bytes(b"audio")
     monkeypatch.setattr(
         outputs,
         "fetch_show_title",
@@ -81,6 +83,39 @@ def test_generate_rss_feed_uses_decomposed_unicode_in_public_enclosure_urls(
 
     assert "Reciprocita%CC%80.m4a" in content
     assert "Reciprocit%C3%A0.m4a" not in content
+
+
+def test_generate_rss_feed_preserves_composed_public_enclosure_filenames(
+    monkeypatch, tmp_path: Path
+) -> None:
+    target_dir = tmp_path / "sophialiberaenciclopediadiradio3"
+    target_dir.mkdir()
+    metadata_cache_file = target_dir / ".metadata-cache.tsv"
+    metadata_cache_file.write_text(
+        "ep-1\t20260519\t1\tReciprocità\n",
+        encoding="utf-8",
+    )
+    filename = unicodedata.normalize(
+        "NFC", "Sophia. Libera enciclopedia di Radio3 - 2026-05-19 - Reciprocità.m4a"
+    )
+    (target_dir / filename).write_bytes(b"audio")
+    monkeypatch.setattr(
+        outputs,
+        "fetch_show_title",
+        lambda _slug: "Sophia. Libera enciclopedia di Radio3",
+    )
+
+    feed_path = outputs.generate_rss_feed(
+        target_dir,
+        "sophialiberaenciclopediadiradio3",
+        "https://www.raiplaysound.it/programmi/sophialiberaenciclopediadiradio3",
+        metadata_cache_file,
+        "http://podcast.example.test",
+    )
+    content = feed_path.read_text(encoding="utf-8")
+
+    assert "Reciprocit%C3%A0.m4a" in content
+    assert "Reciprocita%CC%80.m4a" not in content
 
 
 def test_generate_playlist_sorts_by_date_and_uses_cache_title(tmp_path: Path) -> None:

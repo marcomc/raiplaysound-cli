@@ -6,8 +6,8 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
-- Made public RSS enclosure URLs normalize accented filename characters in the
-  form accepted by the static podcast file server, so episodes such as
+- Made public RSS enclosure URLs percent-encode accented filename characters
+  while preserving the filename form stored on disk, so episodes such as
   `Reciprocità` and `Felicità` can be fetched by podcast clients.
 
 ## [2.4.0] - 2026-05-17 - daily favourites automation
