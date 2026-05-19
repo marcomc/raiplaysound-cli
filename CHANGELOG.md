@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## [2.4.0] - Unreleased - daily favourites automation
+## [2.4.0] - 2026-05-17 - daily favourites automation
 
 ### Added
 
