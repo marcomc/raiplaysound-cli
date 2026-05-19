@@ -331,6 +331,10 @@ URLs as:
 <RSS_BASE_URL>/<program_slug>/<filename>
 ```
 
+Public enclosure filenames are URL-encoded while preserving the filename form
+stored on disk, so episode titles with accents remain fetchable by podcast
+clients on servers that expose those files directly.
+
 That means ordinary browser share-page URLs with query strings are not valid
 RSS enclosure bases.
 

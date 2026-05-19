@@ -84,6 +84,9 @@ or URL into `~/Music/RaiPlaySound/<slug>/`, with idempotent repeat runs using
 - Preserve the Rich-based progress UI for downloads.
 - Keep stale `.run-lock` directories recoverable; interrupted runs must not
   permanently block future downloads.
+- When generating RSS enclosure URLs, percent-encode the actual filename stored
+  on disk and do not change its Unicode normalization form unless the serving
+  layer explicitly requires that canonical form.
 
 ## Live Smoke Test Notes
 

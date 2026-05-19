@@ -24,7 +24,7 @@ def test_main_version_prints_cli_version() -> None:
         cwd=Path(__file__).resolve().parents[1],
     )
     assert result.returncode == 0
-    assert "raiplaysound-cli 2.4.0" in result.stdout
+    assert "raiplaysound-cli 2.4.1" in result.stdout
 
 
 def test_main_version_prints_when_present_anywhere(capsys) -> None:
@@ -32,7 +32,7 @@ def test_main_version_prints_when_present_anywhere(capsys) -> None:
     captured = capsys.readouterr()
 
     assert result == 0
-    assert "raiplaysound-cli 2.4.0" in captured.out
+    assert "raiplaysound-cli 2.4.1" in captured.out
 
 
 def test_main_uses_custom_config_file(monkeypatch, tmp_path: Path, capsys) -> None:

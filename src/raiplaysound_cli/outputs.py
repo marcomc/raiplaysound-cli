@@ -28,7 +28,7 @@ TitleEntry = tuple[str, str, str]
 
 def _url_for_artifact(path: Path, slug: str, base_url: str) -> str:
     if base_url:
-        return f"{base_url.rstrip('/')}/{slug}/{urllib.parse.quote(path.name)}"
+        return f"{base_url.rstrip('/')}/{slug}/{urllib.parse.quote(path.name, safe='')}"
     return path.resolve().as_uri()
 
 
