@@ -75,6 +75,23 @@ def test_http_get_does_not_retry_404(monkeypatch) -> None:
         runtime.configure_http(timeout_seconds=30.0, retries=2, backoff_seconds=2.0)
 
 
+def test_http_get_uses_configured_timeout_over_explicit_call_timeout(monkeypatch) -> None:
+    seen_timeouts: list[float] = []
+
+    def fake_request(_url: str, *, timeout: float) -> FakeResponse:
+        seen_timeouts.append(timeout)
+        return FakeResponse(b"ready")
+
+    monkeypatch.setattr(runtime, "_request", fake_request)
+    runtime.configure_http(timeout_seconds=60.0, retries=0, backoff_seconds=0.0)
+
+    try:
+        assert runtime.http_get("https://example.test", timeout=20.0) == "ready"
+        assert seen_timeouts == [60.0]
+    finally:
+        runtime.configure_http(timeout_seconds=30.0, retries=2, backoff_seconds=2.0)
+
+
 def test_run_streamed_process_times_out_and_marks_result() -> None:
     lines: list[str] = []
 

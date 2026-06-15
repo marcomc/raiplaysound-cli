@@ -82,8 +82,12 @@ def _transient_http_error(exc: urllib.error.HTTPError) -> bool:
     return exc.code == 429 or 500 <= exc.code <= 599
 
 
+def _effective_http_timeout(_timeout: float | None = None) -> float:
+    return _HTTP_TIMEOUT_SECONDS
+
+
 def http_get(url: str, *, timeout: float | None = None) -> str:
-    request_timeout = _HTTP_TIMEOUT_SECONDS if timeout is None else timeout
+    request_timeout = _effective_http_timeout(timeout)
     last_error: BaseException | None = None
     attempts = _HTTP_RETRIES + 1
     for attempt in range(1, attempts + 1):
@@ -115,7 +119,7 @@ def http_get(url: str, *, timeout: float | None = None) -> str:
 
 
 def http_get_bytes(url: str, *, timeout: float | None = None) -> tuple[bytes, str]:
-    request_timeout = _HTTP_TIMEOUT_SECONDS if timeout is None else timeout
+    request_timeout = _effective_http_timeout(timeout)
     last_error: BaseException | None = None
     attempts = _HTTP_RETRIES + 1
     for attempt in range(1, attempts + 1):
