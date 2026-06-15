@@ -2,7 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
-## [2.4.1] - Unreleased - RSS enclosure compatibility
+## [2.5.0] - 2026-06-15 - favourites resilience
+
+### Added
+
+- Added bounded HTTP retry/backoff settings and favourites watchdogs so
+  transient RaiPlaySound failures or one stuck favourite no longer block the
+  rest of a `download --favourites` run.
+- Added daily-sync timeouts around both the download subprocess and before/after
+  file snapshots, so scheduled runs can finish with a failed summary email
+  instead of blocking later LaunchAgent starts indefinitely.
+
+## [2.4.1] - 2026-05-19 - RSS enclosure compatibility
 
 ### Fixed
 

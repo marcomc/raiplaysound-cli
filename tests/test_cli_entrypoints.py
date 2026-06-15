@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import cast
 
 from raiplaysound_cli import cli
 from raiplaysound_cli import episodes as episode_module
@@ -24,7 +25,7 @@ def test_main_version_prints_cli_version() -> None:
         cwd=Path(__file__).resolve().parents[1],
     )
     assert result.returncode == 0
-    assert "raiplaysound-cli 2.4.1" in result.stdout
+    assert "raiplaysound-cli 2.5.0" in result.stdout
 
 
 def test_main_version_prints_when_present_anywhere(capsys) -> None:
@@ -32,7 +33,7 @@ def test_main_version_prints_when_present_anywhere(capsys) -> None:
     captured = capsys.readouterr()
 
     assert result == 0
-    assert "raiplaysound-cli 2.4.1" in captured.out
+    assert "raiplaysound-cli 2.5.0" in captured.out
 
 
 def test_main_uses_custom_config_file(monkeypatch, tmp_path: Path, capsys) -> None:
@@ -440,11 +441,15 @@ def test_main_download_favourites_uses_configured_programs(monkeypatch, capsys) 
     settings = Settings.from_config(
         {"FAVORITES": "musicalbox, profili, https://www.raiplaysound.it/programmi/america7"}
     )
-    captured_inputs: list[str] = []
+    captured_commands: list[list[str]] = []
+    captured_timeouts: list[int] = []
+    captured_on_line: list[object] = []
 
-    def fake_download_one_program(_settings: Settings, _args: object, input_value: str) -> int:
-        captured_inputs.append(input_value)
-        return 0
+    def fake_run_streamed_process(command: list[str], **kwargs: object) -> cli.ProcessRunResult:
+        captured_commands.append(command)
+        captured_timeouts.append(cast(int, kwargs["timeout_seconds"]))
+        captured_on_line.append(kwargs.get("on_line"))
+        return cli.ProcessRunResult(returncode=0)
 
     monkeypatch.setattr(
         cli,
@@ -454,19 +459,81 @@ def test_main_download_favourites_uses_configured_programs(monkeypatch, capsys) 
         },
     )
     monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
-    monkeypatch.setattr(cli, "_download_one_program", fake_download_one_program)
+    monkeypatch.setattr(cli, "run_streamed_process", fake_run_streamed_process)
 
     result = cli.main(["download", "--favourites"])
     captured = capsys.readouterr()
 
     assert result == 0
-    assert captured_inputs == [
+    assert [command[6] for command in captured_commands] == [
         "musicalbox",
         "profili",
         "https://www.raiplaysound.it/programmi/america7",
     ]
+    assert all(
+        command[:6]
+        == [
+            sys.executable,
+            "-m",
+            "raiplaysound_cli",
+            "--config",
+            str(cli.DEFAULT_CONFIG_FILE),
+            "download",
+        ]
+        for command in captured_commands
+    )
+    assert captured_timeouts == [1800, 1800, 1800]
+    assert captured_on_line == [None, None, None]
     assert "Starting favourites run for 3 configured program(s)" in captured.out
     assert "Favourites run completed: done=3, errors=0" in captured.out
+
+
+def test_main_download_favourites_continues_after_child_failure(monkeypatch, capsys) -> None:
+    settings = Settings.from_config({"FAVORITES": "musicalbox,profili"})
+    returns = [1, 0]
+
+    def fake_run_streamed_process(
+        _command: list[str],
+        **_kwargs: object,
+    ) -> cli.ProcessRunResult:
+        return cli.ProcessRunResult(returncode=returns.pop(0))
+
+    monkeypatch.setattr(cli, "parse_env_file", lambda _path: {"FAVORITES": "musicalbox,profili"})
+    monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
+    monkeypatch.setattr(cli, "run_streamed_process", fake_run_streamed_process)
+
+    result = cli.main(["download", "--favourites"])
+    captured = capsys.readouterr()
+
+    assert result == 1
+    assert "Favourites run completed: done=1, errors=1" in captured.out
+
+
+def test_main_download_favourites_reports_child_timeout(monkeypatch, capsys) -> None:
+    settings = Settings.from_config(
+        {"FAVORITES": "musicalbox", "FAVORITES_PROGRAM_TIMEOUT_SECONDS": "7"}
+    )
+
+    def fake_run_streamed_process(
+        _command: list[str],
+        **_kwargs: object,
+    ) -> cli.ProcessRunResult:
+        return cli.ProcessRunResult(returncode=124, timed_out=True)
+
+    monkeypatch.setattr(
+        cli,
+        "parse_env_file",
+        lambda _path: {"FAVORITES": "musicalbox", "FAVORITES_PROGRAM_TIMEOUT_SECONDS": "7"},
+    )
+    monkeypatch.setattr(cli.Settings, "from_config", classmethod(lambda cls, _config: settings))
+    monkeypatch.setattr(cli, "run_streamed_process", fake_run_streamed_process)
+
+    result = cli.main(["download", "--favourites"])
+    captured = capsys.readouterr()
+
+    assert result == 1
+    assert "timed out after 7 second(s)" in captured.err
+    assert "Favourites run completed: done=0, errors=1" in captured.out
 
 
 def test_main_handles_keyboard_interrupt_without_traceback(monkeypatch, capsys) -> None:

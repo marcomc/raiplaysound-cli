@@ -69,6 +69,13 @@ def _parse_int_setting(name: str, value: str) -> int:
         raise CLIError(f"invalid integer value for {name}: {value}") from exc
 
 
+def _parse_float_setting(name: str, value: str) -> float:
+    try:
+        return float(value)
+    except ValueError as exc:
+        raise CLIError(f"invalid numeric value for {name}: {value}") from exc
+
+
 @dataclasses.dataclass(slots=True)
 class Settings:
     target_base: Path = Path.home() / "Music" / "RaiPlaySound"
@@ -104,6 +111,13 @@ class Settings:
     groups_arg: str = ""
     episodes_arg: str = ""
     episode_urls_arg: str = ""
+    http_timeout_seconds: float = 30.0
+    http_retries: int = 2
+    http_backoff_seconds: float = 2.0
+    favorites_program_timeout_seconds: int = 1800
+    favorites_max_seconds: int = 7200
+    daily_sync_max_seconds: int = 9000
+    daily_sync_scan_timeout_seconds: int = 120
 
     @classmethod
     def from_config(cls, config: dict[str, str]) -> "Settings":
@@ -197,4 +211,18 @@ class Settings:
                 settings.episodes_arg = value
             elif key == "EPISODE_URLS_ARG":
                 settings.episode_urls_arg = value
+            elif key == "HTTP_TIMEOUT_SECONDS":
+                settings.http_timeout_seconds = _parse_float_setting(key, value)
+            elif key == "HTTP_RETRIES":
+                settings.http_retries = _parse_int_setting(key, value)
+            elif key == "HTTP_BACKOFF_SECONDS":
+                settings.http_backoff_seconds = _parse_float_setting(key, value)
+            elif key == "FAVORITES_PROGRAM_TIMEOUT_SECONDS":
+                settings.favorites_program_timeout_seconds = _parse_int_setting(key, value)
+            elif key == "FAVORITES_MAX_SECONDS":
+                settings.favorites_max_seconds = _parse_int_setting(key, value)
+            elif key == "DAILY_SYNC_MAX_SECONDS":
+                settings.daily_sync_max_seconds = _parse_int_setting(key, value)
+            elif key == "DAILY_SYNC_SCAN_TIMEOUT_SECONDS":
+                settings.daily_sync_scan_timeout_seconds = _parse_int_setting(key, value)
         return settings

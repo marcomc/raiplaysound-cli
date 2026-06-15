@@ -2,18 +2,24 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import json
+import multiprocessing
 import re
 import shutil
 import socket
 import subprocess
 import sys
+import tempfile
+import time
 from email.utils import formatdate
+from math import ceil
 from pathlib import Path
 from typing import Sequence
 
 from .config import Settings, expand_config_path, parse_env_file
 from .episodes import detect_slug
 from .errors import CLIError
+from .runtime import run_streamed_process
 
 AUDIO_EXTENSIONS = {".aac", ".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav"}
 DEFAULT_CONFIG_FILE = Path.home() / ".raiplaysound-cli.conf"
@@ -56,6 +62,72 @@ def _audio_files_for_slugs(target_base: Path, slugs: Sequence[str]) -> set[Path]
             if path.is_file() and path.suffix.lower() in AUDIO_EXTENSIONS:
                 files.add(path)
     return files
+
+
+def _collect_audio_files_worker(target_base: str, slugs: list[str], output_file: str) -> None:
+    try:
+        paths = _audio_files_for_slugs(Path(target_base), slugs)
+    except Exception as exc:
+        payload: dict[str, object] = {"status": "error", "message": str(exc)}
+        Path(output_file).write_text(json.dumps(payload), encoding="utf-8")
+        return
+    payload = {"status": "ok", "paths": [str(path) for path in paths]}
+    Path(output_file).write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _read_snapshot_payload(output_file: Path) -> tuple[set[Path], str]:
+    try:
+        payload = json.loads(output_file.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return set(), "audio file snapshot produced no result"
+    except json.JSONDecodeError as exc:
+        return set(), f"audio file snapshot produced invalid result: {exc}"
+    if not isinstance(payload, dict):
+        return set(), "audio file snapshot produced invalid result"
+    status = payload.get("status")
+    if status != "ok":
+        message = payload.get("message", "unknown error")
+        return set(), f"audio file snapshot failed: {message}"
+    paths = payload.get("paths", [])
+    if not isinstance(paths, list) or not all(isinstance(path, str) for path in paths):
+        return set(), "audio file snapshot produced invalid paths"
+    return {Path(path) for path in paths}, ""
+
+
+def _snapshot_audio_files(
+    target_base: Path,
+    slugs: Sequence[str],
+    *,
+    timeout_seconds: int,
+) -> tuple[set[Path], str]:
+    if timeout_seconds <= 0:
+        return _audio_files_for_slugs(target_base, slugs), ""
+    context = multiprocessing.get_context("spawn")
+    with tempfile.NamedTemporaryFile(
+        prefix="raiplaysound-audio-snapshot-",
+        suffix=".json",
+        delete=False,
+    ) as handle:
+        output_file = Path(handle.name)
+    process = context.Process(
+        target=_collect_audio_files_worker,
+        args=(str(target_base), list(slugs), str(output_file)),
+    )
+    try:
+        process.start()
+        process.join(timeout_seconds)
+        if process.is_alive():
+            process.terminate()
+            process.join(5)
+            if process.is_alive():
+                process.kill()
+                process.join()
+            return set(), f"audio file snapshot timed out after {timeout_seconds}s"
+        if process.exitcode != 0:
+            return set(), f"audio file snapshot failed with exit code {process.exitcode}"
+        return _read_snapshot_payload(output_file)
+    finally:
+        output_file.unlink(missing_ok=True)
 
 
 def _parse_downloaded_file(path: Path) -> tuple[str, str]:
@@ -157,6 +229,24 @@ def _append_log(log_file: Path, message: str) -> None:
         handle.write(message.rstrip() + "\n")
 
 
+def _make_deadline(timeout_seconds: int) -> float | None:
+    if timeout_seconds <= 0:
+        return None
+    return time.monotonic() + timeout_seconds
+
+
+def _bounded_timeout(timeout_seconds: int, deadline: float | None) -> int:
+    if deadline is None:
+        return timeout_seconds
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return 0
+    remaining_seconds = max(1, ceil(remaining))
+    if timeout_seconds <= 0:
+        return remaining_seconds
+    return min(timeout_seconds, remaining_seconds)
+
+
 def send_email_summary(
     *,
     config: dict[str, str],
@@ -164,6 +254,7 @@ def send_email_summary(
     rows: Sequence[DownloadRow],
     dry_run: bool,
     log_file: Path,
+    timeout_seconds: int = 0,
 ) -> int:
     email_to = config.get("EMAIL_TO", "").strip()
     if not email_to:
@@ -203,13 +294,18 @@ def send_email_summary(
     if not email_config.exists():
         _append_log(log_file, f"msmtp config not found at {email_config}; skipping email.")
         return 0
-    result = subprocess.run(
-        [msmtp_bin, "--file", str(email_config), "--", email_to],
-        input=payload,
-        text=True,
-        encoding="utf-8",
-        check=False,
-    )
+    try:
+        result = subprocess.run(
+            [msmtp_bin, "--file", str(email_config), "--", email_to],
+            input=payload,
+            text=True,
+            encoding="utf-8",
+            check=False,
+            timeout=timeout_seconds or None,
+        )
+    except subprocess.TimeoutExpired:
+        _append_log(log_file, f"Email summary timed out after {timeout_seconds}s.")
+        return 124
     if result.returncode == 0:
         _append_log(log_file, f"Email summary sent to {email_to}.")
         return 0
@@ -217,19 +313,21 @@ def send_email_summary(
     return result.returncode
 
 
-def _run_download(cli_args: Sequence[str], config_file: Path, log_file: Path) -> int:
+def _run_download(
+    cli_args: Sequence[str],
+    config_file: Path,
+    log_file: Path,
+    timeout_seconds: int = 0,
+) -> int:
     _append_log(log_file, "Starting daily favourites download.")
-    process = subprocess.Popen(
+    result = run_streamed_process(
         [*cli_args, "--config", str(config_file), "download", "--favourites"],
-        text=True,
-        encoding="utf-8",
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
+        on_line=lambda line: _append_log(log_file, line),
+        timeout_seconds=timeout_seconds,
     )
-    assert process.stdout is not None
-    for raw_line in process.stdout:
-        _append_log(log_file, raw_line.rstrip())
-    return process.wait()
+    if result.timed_out:
+        _append_log(log_file, f"Daily favourites download timed out after {timeout_seconds}s.")
+    return result.returncode
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -269,30 +367,81 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not settings.favorites:
         _append_log(log_file, "FAVORITES is not configured; nothing to sync.")
         return 1
+    deadline = _make_deadline(settings.daily_sync_max_seconds)
     slugs = _favorite_slugs(settings.favorites)
-    before = _audio_files_for_slugs(settings.target_base, slugs)
+    before_timeout = _bounded_timeout(settings.daily_sync_scan_timeout_seconds, deadline)
+    if deadline is not None and before_timeout <= 0:
+        before: set[Path] = set()
+        before_error = "daily sync max timeout reached before before-run snapshot"
+    else:
+        before, before_error = _snapshot_audio_files(
+            settings.target_base,
+            slugs,
+            timeout_seconds=before_timeout,
+        )
+    if before_error:
+        _append_log(log_file, f"Before-run {before_error}; new-file summary skipped.")
     if args.cli:
         cli_args = [expand_config_path(args.cli)]
     else:
         cli_args = [sys.executable, "-m", "raiplaysound_cli"]
-    download_status = _run_download(cli_args, config_file, log_file)
-    after = _audio_files_for_slugs(settings.target_base, slugs)
-    rows = build_download_rows(
-        target_base=settings.target_base,
-        favorites=settings.favorites,
-        before=before,
-        after=after,
+    download_timeout = _bounded_timeout(0, deadline)
+    if deadline is not None and download_timeout <= 0:
+        _append_log(log_file, "Daily sync max timeout reached before download.")
+        download_status = 124
+    else:
+        download_status = _run_download(
+            cli_args,
+            config_file,
+            log_file,
+            timeout_seconds=download_timeout,
+        )
+    after_timeout = _bounded_timeout(settings.daily_sync_scan_timeout_seconds, deadline)
+    if deadline is not None and after_timeout <= 0:
+        after: set[Path] = set()
+        after_error = "daily sync max timeout reached before after-run snapshot"
+    else:
+        after, after_error = _snapshot_audio_files(
+            settings.target_base,
+            slugs,
+            timeout_seconds=after_timeout,
+        )
+    if after_error:
+        _append_log(log_file, f"After-run {after_error}; new-file summary skipped.")
+    if before_error or after_error:
+        rows: list[DownloadRow] = []
+    else:
+        rows = build_download_rows(
+            target_base=settings.target_base,
+            favorites=settings.favorites,
+            before=before,
+            after=after,
+        )
+    email_timeout = _bounded_timeout(0, deadline)
+    email_error = ""
+    if deadline is not None and email_timeout <= 0:
+        email_error = "Daily sync max timeout reached before email summary."
+    status_text = (
+        "ok"
+        if download_status == 0 and not before_error and not after_error and not email_error
+        else "failed"
     )
-    status_text = "ok" if download_status == 0 else "failed"
-    email_status = send_email_summary(
-        config=config,
-        status_text=status_text,
-        rows=rows,
-        dry_run=args.dry_run_email,
-        log_file=log_file,
-    )
+    if email_error:
+        _append_log(log_file, email_error)
+        email_status = 124
+    else:
+        email_status = send_email_summary(
+            config=config,
+            status_text=status_text,
+            rows=rows,
+            dry_run=args.dry_run_email,
+            log_file=log_file,
+            timeout_seconds=email_timeout,
+        )
     if download_status:
         return download_status
+    if before_error or after_error:
+        return email_status or 1
     return email_status
 
 
