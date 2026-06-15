@@ -275,6 +275,25 @@ def test_snapshot_audio_files_collects_paths_with_timeout(tmp_path: Path) -> Non
     assert error == ""
 
 
+def test_snapshot_audio_files_handles_many_paths_without_queue_deadlock(tmp_path: Path) -> None:
+    show_dir = tmp_path / "musicalbox"
+    show_dir.mkdir()
+    expected_files = set()
+    for index in range(1200):
+        audio_file = show_dir / f"episode-{index:04d}-{'x' * 80}.mp3"
+        audio_file.write_bytes(b"audio")
+        expected_files.add(audio_file)
+
+    files, error = daily_sync._snapshot_audio_files(
+        tmp_path,
+        ["musicalbox"],
+        timeout_seconds=10,
+    )
+
+    assert error == ""
+    assert files == expected_files
+
+
 def test_build_email_body_reports_no_new_downloads() -> None:
     body = daily_sync.build_email_body(status_text="ok", rows=[])
 

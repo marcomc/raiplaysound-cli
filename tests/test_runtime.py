@@ -91,3 +91,45 @@ def test_run_streamed_process_times_out_and_marks_result() -> None:
     assert result.returncode == 124
     assert result.timed_out is True
     assert lines == ["start"]
+
+
+def test_run_streamed_process_cleans_up_child_on_keyboard_interrupt(monkeypatch) -> None:
+    kill_calls: list[tuple[int, int]] = []
+    popen_kwargs: list[object] = []
+
+    class FakeProcess:
+        pid = 4242
+        stdout = iter(())
+
+        def __init__(self) -> None:
+            self.wait_calls = 0
+
+        def wait(self, timeout: int | None = None) -> int:
+            self.wait_calls += 1
+            if self.wait_calls == 1:
+                raise KeyboardInterrupt
+            assert timeout == 10
+            return -runtime.signal.SIGTERM
+
+    fake_process = FakeProcess()
+
+    def fake_popen(_command: list[str], **kwargs: object) -> FakeProcess:
+        popen_kwargs.append(kwargs["start_new_session"])
+        return fake_process
+
+    monkeypatch.setattr(runtime.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(
+        runtime.os,
+        "killpg",
+        lambda pid, sig: kill_calls.append((pid, sig)),
+    )
+
+    with pytest.raises(KeyboardInterrupt):
+        runtime.run_streamed_process(
+            [sys.executable, "-c", "print('unused')"],
+            on_line=lambda _line: None,
+        )
+
+    assert popen_kwargs == [True]
+    assert kill_calls == [(4242, runtime.signal.SIGTERM)]
+    assert fake_process.wait_calls == 2

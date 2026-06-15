@@ -2,16 +2,17 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import json
 import multiprocessing
-import queue as queue_module
 import re
 import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 from email.utils import formatdate
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Sequence
 
 from .config import Settings, expand_config_path, parse_env_file
 from .episodes import detect_slug
@@ -61,13 +62,34 @@ def _audio_files_for_slugs(target_base: Path, slugs: Sequence[str]) -> set[Path]
     return files
 
 
-def _collect_audio_files_worker(target_base: str, slugs: list[str], queue: Any) -> None:
+def _collect_audio_files_worker(target_base: str, slugs: list[str], output_file: str) -> None:
     try:
         paths = _audio_files_for_slugs(Path(target_base), slugs)
     except Exception as exc:
-        queue.put(("error", str(exc)))
+        payload: dict[str, object] = {"status": "error", "message": str(exc)}
+        Path(output_file).write_text(json.dumps(payload), encoding="utf-8")
         return
-    queue.put(("ok", [str(path) for path in paths]))
+    payload = {"status": "ok", "paths": [str(path) for path in paths]}
+    Path(output_file).write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _read_snapshot_payload(output_file: Path) -> tuple[set[Path], str]:
+    try:
+        payload = json.loads(output_file.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return set(), "audio file snapshot produced no result"
+    except json.JSONDecodeError as exc:
+        return set(), f"audio file snapshot produced invalid result: {exc}"
+    if not isinstance(payload, dict):
+        return set(), "audio file snapshot produced invalid result"
+    status = payload.get("status")
+    if status != "ok":
+        message = payload.get("message", "unknown error")
+        return set(), f"audio file snapshot failed: {message}"
+    paths = payload.get("paths", [])
+    if not isinstance(paths, list) or not all(isinstance(path, str) for path in paths):
+        return set(), "audio file snapshot produced invalid paths"
+    return {Path(path) for path in paths}, ""
 
 
 def _snapshot_audio_files(
@@ -79,29 +101,31 @@ def _snapshot_audio_files(
     if timeout_seconds <= 0:
         return _audio_files_for_slugs(target_base, slugs), ""
     context = multiprocessing.get_context("spawn")
-    queue = context.Queue()
+    with tempfile.NamedTemporaryFile(
+        prefix="raiplaysound-audio-snapshot-",
+        suffix=".json",
+        delete=False,
+    ) as handle:
+        output_file = Path(handle.name)
     process = context.Process(
         target=_collect_audio_files_worker,
-        args=(str(target_base), list(slugs), queue),
+        args=(str(target_base), list(slugs), str(output_file)),
     )
-    process.start()
-    process.join(timeout_seconds)
-    if process.is_alive():
-        process.terminate()
-        process.join(5)
-        if process.is_alive():
-            process.kill()
-            process.join()
-        return set(), f"audio file snapshot timed out after {timeout_seconds}s"
-    if process.exitcode != 0:
-        return set(), f"audio file snapshot failed with exit code {process.exitcode}"
     try:
-        status, payload = queue.get(timeout=1)
-    except queue_module.Empty:
-        return set(), "audio file snapshot produced no result"
-    if status != "ok":
-        return set(), f"audio file snapshot failed: {payload}"
-    return {Path(path) for path in payload}, ""
+        process.start()
+        process.join(timeout_seconds)
+        if process.is_alive():
+            process.terminate()
+            process.join(5)
+            if process.is_alive():
+                process.kill()
+                process.join()
+            return set(), f"audio file snapshot timed out after {timeout_seconds}s"
+        if process.exitcode != 0:
+            return set(), f"audio file snapshot failed with exit code {process.exitcode}"
+        return _read_snapshot_payload(output_file)
+    finally:
+        output_file.unlink(missing_ok=True)
 
 
 def _parse_downloaded_file(path: Path) -> tuple[str, str]:

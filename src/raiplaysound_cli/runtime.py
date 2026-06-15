@@ -145,6 +145,17 @@ def run_streamed_process(
             return
         os.killpg(process.pid, signal.SIGKILL if force else signal.SIGTERM)
 
+    def stop_and_wait() -> None:
+        with contextlib.suppress(OSError):
+            stop_process(force=False)
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            with contextlib.suppress(OSError):
+                stop_process(force=True)
+            process.wait()
+        reader.join(timeout=2)
+
     process = subprocess.Popen(
         command,
         text=True,
@@ -165,16 +176,11 @@ def run_streamed_process(
     try:
         returncode = process.wait(timeout=timeout_seconds or None)
     except subprocess.TimeoutExpired:
-        with contextlib.suppress(OSError):
-            stop_process(force=False)
-        try:
-            process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            with contextlib.suppress(OSError):
-                stop_process(force=True)
-            process.wait()
-        reader.join(timeout=2)
+        stop_and_wait()
         return ProcessRunResult(returncode=124, timed_out=True)
+    except BaseException:
+        stop_and_wait()
+        raise
     reader.join()
     return ProcessRunResult(returncode=returncode)
 
