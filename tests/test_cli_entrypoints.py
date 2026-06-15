@@ -443,10 +443,12 @@ def test_main_download_favourites_uses_configured_programs(monkeypatch, capsys) 
     )
     captured_commands: list[list[str]] = []
     captured_timeouts: list[int] = []
+    captured_on_line: list[object] = []
 
     def fake_run_streamed_process(command: list[str], **kwargs: object) -> cli.ProcessRunResult:
         captured_commands.append(command)
         captured_timeouts.append(cast(int, kwargs["timeout_seconds"]))
+        captured_on_line.append(kwargs.get("on_line"))
         return cli.ProcessRunResult(returncode=0)
 
     monkeypatch.setattr(
@@ -481,6 +483,7 @@ def test_main_download_favourites_uses_configured_programs(monkeypatch, capsys) 
         for command in captured_commands
     )
     assert captured_timeouts == [1800, 1800, 1800]
+    assert captured_on_line == [None, None, None]
     assert "Starting favourites run for 3 configured program(s)" in captured.out
     assert "Favourites run completed: done=3, errors=0" in captured.out
 

@@ -150,7 +150,7 @@ def http_get_bytes(url: str, *, timeout: float | None = None) -> tuple[bytes, st
 def run_streamed_process(
     command: list[str],
     *,
-    on_line: Callable[[str], None],
+    on_line: Callable[[str], None] | None = None,
     timeout_seconds: int = 0,
 ) -> ProcessRunResult:
     def stop_process(force: bool) -> None:
@@ -171,25 +171,29 @@ def run_streamed_process(
             with contextlib.suppress(OSError):
                 stop_process(force=True)
             process.wait()
-        reader.join(timeout=2)
+        if reader is not None:
+            reader.join(timeout=2)
 
     process = subprocess.Popen(
         command,
         text=True,
         encoding="utf-8",
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
+        stdout=subprocess.PIPE if on_line is not None else None,
+        stderr=subprocess.STDOUT if on_line is not None else None,
         start_new_session=os.name != "nt",
     )
-    assert process.stdout is not None
+    reader: Thread | None = None
 
     def _read_output() -> None:
         assert process.stdout is not None
         for raw_line in process.stdout:
+            assert on_line is not None
             on_line(raw_line.rstrip())
 
-    reader = Thread(target=_read_output, daemon=True)
-    reader.start()
+    if on_line is not None:
+        assert process.stdout is not None
+        reader = Thread(target=_read_output, daemon=True)
+        reader.start()
     try:
         with _raise_keyboard_interrupt_on_sigterm():
             returncode = process.wait(timeout=timeout_seconds or None)
@@ -199,7 +203,8 @@ def run_streamed_process(
     except BaseException:
         stop_and_wait()
         raise
-    reader.join()
+    if reader is not None:
+        reader.join()
     return ProcessRunResult(returncode=returncode)
 
 

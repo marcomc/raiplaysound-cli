@@ -2123,7 +2123,6 @@ def _build_favourite_download_command(
 def _run_favourite_download(command: list[str], timeout_seconds: int) -> ProcessRunResult:
     return run_streamed_process(
         command,
-        on_line=lambda line: console.print(line, markup=False),
         timeout_seconds=timeout_seconds,
     )
 

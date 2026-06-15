@@ -93,6 +93,30 @@ def test_run_streamed_process_times_out_and_marks_result() -> None:
     assert lines == ["start"]
 
 
+def test_run_streamed_process_inherits_output_without_line_callback(monkeypatch) -> None:
+    popen_kwargs: list[dict[str, object]] = []
+
+    class FakeProcess:
+        pid = 4141
+        stdout = None
+
+        def wait(self, timeout: int | None = None) -> int:
+            assert timeout is None
+            return 0
+
+    def fake_popen(_command: list[str], **kwargs: object) -> FakeProcess:
+        popen_kwargs.append(kwargs)
+        return FakeProcess()
+
+    monkeypatch.setattr(runtime.subprocess, "Popen", fake_popen)
+
+    result = runtime.run_streamed_process([sys.executable, "-c", "print('direct')"])
+
+    assert result.returncode == 0
+    assert popen_kwargs[0]["stdout"] is None
+    assert popen_kwargs[0]["stderr"] is None
+
+
 def test_run_streamed_process_cleans_up_child_on_keyboard_interrupt(monkeypatch) -> None:
     kill_calls: list[tuple[int, int]] = []
     popen_kwargs: list[object] = []
