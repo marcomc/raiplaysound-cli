@@ -136,13 +136,22 @@ def run_streamed_process(
     on_line: Callable[[str], None],
     timeout_seconds: int = 0,
 ) -> ProcessRunResult:
+    def stop_process(force: bool) -> None:
+        if os.name == "nt":
+            if force:
+                process.kill()
+            else:
+                process.terminate()
+            return
+        os.killpg(process.pid, signal.SIGKILL if force else signal.SIGTERM)
+
     process = subprocess.Popen(
         command,
         text=True,
         encoding="utf-8",
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        start_new_session=True,
+        start_new_session=os.name != "nt",
     )
     assert process.stdout is not None
 
@@ -157,12 +166,12 @@ def run_streamed_process(
         returncode = process.wait(timeout=timeout_seconds or None)
     except subprocess.TimeoutExpired:
         with contextlib.suppress(OSError):
-            os.killpg(process.pid, signal.SIGTERM)
+            stop_process(force=False)
         try:
             process.wait(timeout=10)
         except subprocess.TimeoutExpired:
             with contextlib.suppress(OSError):
-                os.killpg(process.pid, signal.SIGKILL)
+                stop_process(force=True)
             process.wait()
         reader.join(timeout=2)
         return ProcessRunResult(returncode=124, timed_out=True)

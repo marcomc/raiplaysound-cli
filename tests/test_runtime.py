@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import http.client
+import sys
 import urllib.error
 from email.message import Message
 
@@ -72,3 +73,21 @@ def test_http_get_does_not_retry_404(monkeypatch) -> None:
         assert calls == 1
     finally:
         runtime.configure_http(timeout_seconds=30.0, retries=2, backoff_seconds=2.0)
+
+
+def test_run_streamed_process_times_out_and_marks_result() -> None:
+    lines: list[str] = []
+
+    result = runtime.run_streamed_process(
+        [
+            sys.executable,
+            "-c",
+            "import time; print('start', flush=True); time.sleep(30)",
+        ],
+        on_line=lines.append,
+        timeout_seconds=1,
+    )
+
+    assert result.returncode == 124
+    assert result.timed_out is True
+    assert lines == ["start"]

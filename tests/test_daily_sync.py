@@ -225,9 +225,11 @@ def test_main_marks_failed_when_audio_snapshot_times_out(
         encoding="utf-8",
     )
     statuses: list[str] = []
+    rows_seen: list[list[daily_sync.DownloadRow]] = []
+    existing_file = target_base / "musicalbox" / "existing.mp3"
     snapshot_results: list[tuple[set[Path], str]] = [
         (set(), ""),
-        (set(), "audio file snapshot timed out after 120s"),
+        ({existing_file}, "audio file snapshot timed out after 120s"),
     ]
 
     def fake_snapshot_audio_files(
@@ -241,6 +243,7 @@ def test_main_marks_failed_when_audio_snapshot_times_out(
 
     def fake_send_email_summary(**kwargs) -> int:
         statuses.append(kwargs["status_text"])
+        rows_seen.append(list(kwargs["rows"]))
         return 0
 
     monkeypatch.setattr(daily_sync, "_snapshot_audio_files", fake_snapshot_audio_files)
@@ -251,6 +254,25 @@ def test_main_marks_failed_when_audio_snapshot_times_out(
 
     assert result == 1
     assert statuses == ["failed"]
+    assert rows_seen == [[]]
+
+
+def test_snapshot_audio_files_collects_paths_with_timeout(tmp_path: Path) -> None:
+    show_dir = tmp_path / "musicalbox"
+    show_dir.mkdir()
+    audio_file = show_dir / "episode.mp3"
+    audio_file.write_bytes(b"audio")
+    ignored_file = show_dir / "cover.jpg"
+    ignored_file.write_bytes(b"image")
+
+    files, error = daily_sync._snapshot_audio_files(
+        tmp_path,
+        ["musicalbox"],
+        timeout_seconds=10,
+    )
+
+    assert files == {audio_file}
+    assert error == ""
 
 
 def test_build_email_body_reports_no_new_downloads() -> None:

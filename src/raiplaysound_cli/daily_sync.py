@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import multiprocessing
+import queue as queue_module
 import re
 import shutil
 import socket
@@ -94,9 +95,10 @@ def _snapshot_audio_files(
         return set(), f"audio file snapshot timed out after {timeout_seconds}s"
     if process.exitcode != 0:
         return set(), f"audio file snapshot failed with exit code {process.exitcode}"
-    if queue.empty():
+    try:
+        status, payload = queue.get(timeout=1)
+    except queue_module.Empty:
         return set(), "audio file snapshot produced no result"
-    status, payload = queue.get()
     if status != "ok":
         return set(), f"audio file snapshot failed: {payload}"
     return {Path(path) for path in payload}, ""
@@ -322,7 +324,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         timeout_seconds=settings.daily_sync_scan_timeout_seconds,
     )
     if before_error:
-        _append_log(log_file, f"Before-run {before_error}; new-file summary may be incomplete.")
+        _append_log(log_file, f"Before-run {before_error}; new-file summary skipped.")
     if args.cli:
         cli_args = [expand_config_path(args.cli)]
     else:
@@ -339,13 +341,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         timeout_seconds=settings.daily_sync_scan_timeout_seconds,
     )
     if after_error:
-        _append_log(log_file, f"After-run {after_error}; new-file summary may be incomplete.")
-    rows = build_download_rows(
-        target_base=settings.target_base,
-        favorites=settings.favorites,
-        before=before,
-        after=after,
-    )
+        _append_log(log_file, f"After-run {after_error}; new-file summary skipped.")
+    if before_error or after_error:
+        rows: list[DownloadRow] = []
+    else:
+        rows = build_download_rows(
+            target_base=settings.target_base,
+            favorites=settings.favorites,
+            before=before,
+            after=after,
+        )
     status_text = (
         "ok" if download_status == 0 and not before_error and not after_error else "failed"
     )
