@@ -76,6 +76,28 @@ def test_settings_from_config_parses_favorites_list() -> None:
     ]
 
 
+def test_settings_from_config_parses_timeout_and_retry_options() -> None:
+    settings = Settings.from_config(
+        {
+            "HTTP_TIMEOUT_SECONDS": "12.5",
+            "HTTP_RETRIES": "4",
+            "HTTP_BACKOFF_SECONDS": "3",
+            "FAVORITES_PROGRAM_TIMEOUT_SECONDS": "120",
+            "FAVORITES_MAX_SECONDS": "300",
+            "DAILY_SYNC_MAX_SECONDS": "360",
+            "DAILY_SYNC_SCAN_TIMEOUT_SECONDS": "30",
+        }
+    )
+
+    assert settings.http_timeout_seconds == 12.5
+    assert settings.http_retries == 4
+    assert settings.http_backoff_seconds == 3.0
+    assert settings.favorites_program_timeout_seconds == 120
+    assert settings.favorites_max_seconds == 300
+    assert settings.daily_sync_max_seconds == 360
+    assert settings.daily_sync_scan_timeout_seconds == 30
+
+
 def test_requested_seasons() -> None:
     selected, all_flag = build_requested_set("1,2")
     assert selected == {"1", "2"}

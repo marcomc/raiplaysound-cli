@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import multiprocessing
 import re
 import shutil
 import socket
@@ -9,11 +10,12 @@ import subprocess
 import sys
 from email.utils import formatdate
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 
 from .config import Settings, expand_config_path, parse_env_file
 from .episodes import detect_slug
 from .errors import CLIError
+from .runtime import run_streamed_process
 
 AUDIO_EXTENSIONS = {".aac", ".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav"}
 DEFAULT_CONFIG_FILE = Path.home() / ".raiplaysound-cli.conf"
@@ -56,6 +58,48 @@ def _audio_files_for_slugs(target_base: Path, slugs: Sequence[str]) -> set[Path]
             if path.is_file() and path.suffix.lower() in AUDIO_EXTENSIONS:
                 files.add(path)
     return files
+
+
+def _collect_audio_files_worker(target_base: str, slugs: list[str], queue: Any) -> None:
+    try:
+        paths = _audio_files_for_slugs(Path(target_base), slugs)
+    except Exception as exc:
+        queue.put(("error", str(exc)))
+        return
+    queue.put(("ok", [str(path) for path in paths]))
+
+
+def _snapshot_audio_files(
+    target_base: Path,
+    slugs: Sequence[str],
+    *,
+    timeout_seconds: int,
+) -> tuple[set[Path], str]:
+    if timeout_seconds <= 0:
+        return _audio_files_for_slugs(target_base, slugs), ""
+    context = multiprocessing.get_context("spawn")
+    queue = context.Queue()
+    process = context.Process(
+        target=_collect_audio_files_worker,
+        args=(str(target_base), list(slugs), queue),
+    )
+    process.start()
+    process.join(timeout_seconds)
+    if process.is_alive():
+        process.terminate()
+        process.join(5)
+        if process.is_alive():
+            process.kill()
+            process.join()
+        return set(), f"audio file snapshot timed out after {timeout_seconds}s"
+    if process.exitcode != 0:
+        return set(), f"audio file snapshot failed with exit code {process.exitcode}"
+    if queue.empty():
+        return set(), "audio file snapshot produced no result"
+    status, payload = queue.get()
+    if status != "ok":
+        return set(), f"audio file snapshot failed: {payload}"
+    return {Path(path) for path in payload}, ""
 
 
 def _parse_downloaded_file(path: Path) -> tuple[str, str]:
@@ -217,19 +261,21 @@ def send_email_summary(
     return result.returncode
 
 
-def _run_download(cli_args: Sequence[str], config_file: Path, log_file: Path) -> int:
+def _run_download(
+    cli_args: Sequence[str],
+    config_file: Path,
+    log_file: Path,
+    timeout_seconds: int = 0,
+) -> int:
     _append_log(log_file, "Starting daily favourites download.")
-    process = subprocess.Popen(
+    result = run_streamed_process(
         [*cli_args, "--config", str(config_file), "download", "--favourites"],
-        text=True,
-        encoding="utf-8",
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
+        on_line=lambda line: _append_log(log_file, line),
+        timeout_seconds=timeout_seconds,
     )
-    assert process.stdout is not None
-    for raw_line in process.stdout:
-        _append_log(log_file, raw_line.rstrip())
-    return process.wait()
+    if result.timed_out:
+        _append_log(log_file, f"Daily favourites download timed out after {timeout_seconds}s.")
+    return result.returncode
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -270,20 +316,39 @@ def main(argv: Sequence[str] | None = None) -> int:
         _append_log(log_file, "FAVORITES is not configured; nothing to sync.")
         return 1
     slugs = _favorite_slugs(settings.favorites)
-    before = _audio_files_for_slugs(settings.target_base, slugs)
+    before, before_error = _snapshot_audio_files(
+        settings.target_base,
+        slugs,
+        timeout_seconds=settings.daily_sync_scan_timeout_seconds,
+    )
+    if before_error:
+        _append_log(log_file, f"Before-run {before_error}; new-file summary may be incomplete.")
     if args.cli:
         cli_args = [expand_config_path(args.cli)]
     else:
         cli_args = [sys.executable, "-m", "raiplaysound_cli"]
-    download_status = _run_download(cli_args, config_file, log_file)
-    after = _audio_files_for_slugs(settings.target_base, slugs)
+    download_status = _run_download(
+        cli_args,
+        config_file,
+        log_file,
+        timeout_seconds=settings.daily_sync_max_seconds,
+    )
+    after, after_error = _snapshot_audio_files(
+        settings.target_base,
+        slugs,
+        timeout_seconds=settings.daily_sync_scan_timeout_seconds,
+    )
+    if after_error:
+        _append_log(log_file, f"After-run {after_error}; new-file summary may be incomplete.")
     rows = build_download_rows(
         target_base=settings.target_base,
         favorites=settings.favorites,
         before=before,
         after=after,
     )
-    status_text = "ok" if download_status == 0 else "failed"
+    status_text = (
+        "ok" if download_status == 0 and not before_error and not after_error else "failed"
+    )
     email_status = send_email_summary(
         config=config,
         status_text=status_text,
@@ -293,6 +358,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     if download_status:
         return download_status
+    if before_error or after_error:
+        return email_status or 1
     return email_status
 
 

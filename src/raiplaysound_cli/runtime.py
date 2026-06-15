@@ -1,17 +1,49 @@
 from __future__ import annotations
 
 import contextlib
+import dataclasses
+import http.client
 import os
+import random
 import shutil
+import signal
 import subprocess
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+from threading import Thread
+from typing import Any, Callable
 
 from .errors import CLIError, HTTPRequestError
 
+_HTTP_TIMEOUT_SECONDS = 30.0
+_HTTP_RETRIES = 2
+_HTTP_BACKOFF_SECONDS = 2.0
 
-def http_get(url: str, *, timeout: float = 30.0) -> str:
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ProcessRunResult:
+    returncode: int
+    timed_out: bool = False
+
+
+def configure_http(
+    *,
+    timeout_seconds: float | None = None,
+    retries: int | None = None,
+    backoff_seconds: float | None = None,
+) -> None:
+    global _HTTP_TIMEOUT_SECONDS, _HTTP_RETRIES, _HTTP_BACKOFF_SECONDS
+    if timeout_seconds is not None:
+        _HTTP_TIMEOUT_SECONDS = max(timeout_seconds, 1.0)
+    if retries is not None:
+        _HTTP_RETRIES = max(retries, 0)
+    if backoff_seconds is not None:
+        _HTTP_BACKOFF_SECONDS = max(backoff_seconds, 0.0)
+
+
+def _request(url: str, *, timeout: float) -> Any:
     req = urllib.request.Request(
         url,
         headers={
@@ -19,41 +51,123 @@ def http_get(url: str, *, timeout: float = 30.0) -> str:
             "Accept": "*/*",
         },
     )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as response:
-            return response.read().decode("utf-8", errors="replace")
-    except urllib.error.HTTPError as exc:
-        raise HTTPRequestError(
-            url,
-            f"RaiPlaySound returned HTTP {exc.code} for {url}.",
-            code=exc.code,
-        ) from exc
-    except urllib.error.URLError as exc:
-        reason = getattr(exc, "reason", exc)
-        raise HTTPRequestError(url, f"network request failed for {url}: {reason}") from exc
+    return urllib.request.urlopen(req, timeout=timeout)
 
 
-def http_get_bytes(url: str, *, timeout: float = 30.0) -> tuple[bytes, str]:
-    req = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": "raiplaysound-cli/2.0",
-            "Accept": "*/*",
-        },
+def _retry_delay(attempt: int) -> float:
+    base = _HTTP_BACKOFF_SECONDS * (2 ** max(attempt - 1, 0))
+    if base <= 0:
+        return 0.0
+    return base + random.uniform(0, min(base, 1.0))
+
+
+def _transient_http_error(exc: urllib.error.HTTPError) -> bool:
+    return exc.code == 429 or 500 <= exc.code <= 599
+
+
+def http_get(url: str, *, timeout: float | None = None) -> str:
+    request_timeout = _HTTP_TIMEOUT_SECONDS if timeout is None else timeout
+    last_error: BaseException | None = None
+    attempts = _HTTP_RETRIES + 1
+    for attempt in range(1, attempts + 1):
+        try:
+            with _request(url, timeout=request_timeout) as response:
+                return response.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as exc:
+            if not _transient_http_error(exc) or attempt == attempts:
+                raise HTTPRequestError(
+                    url,
+                    f"RaiPlaySound returned HTTP {exc.code} for {url}.",
+                    code=exc.code,
+                ) from exc
+            last_error = exc
+        except (
+            urllib.error.URLError,
+            TimeoutError,
+            ConnectionError,
+            http.client.RemoteDisconnected,
+        ) as exc:
+            if attempt == attempts:
+                reason = getattr(exc, "reason", exc)
+                raise HTTPRequestError(url, f"network request failed for {url}: {reason}") from exc
+            last_error = exc
+        if attempt < attempts:
+            time.sleep(_retry_delay(attempt))
+    reason = getattr(last_error, "reason", last_error)
+    raise HTTPRequestError(url, f"network request failed for {url}: {reason}")
+
+
+def http_get_bytes(url: str, *, timeout: float | None = None) -> tuple[bytes, str]:
+    request_timeout = _HTTP_TIMEOUT_SECONDS if timeout is None else timeout
+    last_error: BaseException | None = None
+    attempts = _HTTP_RETRIES + 1
+    for attempt in range(1, attempts + 1):
+        try:
+            with _request(url, timeout=request_timeout) as response:
+                content_type = response.headers.get_content_type()
+                return response.read(), content_type
+        except urllib.error.HTTPError as exc:
+            if not _transient_http_error(exc) or attempt == attempts:
+                raise HTTPRequestError(
+                    url,
+                    f"RaiPlaySound returned HTTP {exc.code} for {url}.",
+                    code=exc.code,
+                ) from exc
+            last_error = exc
+        except (
+            urllib.error.URLError,
+            TimeoutError,
+            ConnectionError,
+            http.client.RemoteDisconnected,
+        ) as exc:
+            if attempt == attempts:
+                reason = getattr(exc, "reason", exc)
+                raise HTTPRequestError(url, f"network request failed for {url}: {reason}") from exc
+            last_error = exc
+        if attempt < attempts:
+            time.sleep(_retry_delay(attempt))
+    reason = getattr(last_error, "reason", last_error)
+    raise HTTPRequestError(url, f"network request failed for {url}: {reason}")
+
+
+def run_streamed_process(
+    command: list[str],
+    *,
+    on_line: Callable[[str], None],
+    timeout_seconds: int = 0,
+) -> ProcessRunResult:
+    process = subprocess.Popen(
+        command,
+        text=True,
+        encoding="utf-8",
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
     )
+    assert process.stdout is not None
+
+    def _read_output() -> None:
+        assert process.stdout is not None
+        for raw_line in process.stdout:
+            on_line(raw_line.rstrip())
+
+    reader = Thread(target=_read_output, daemon=True)
+    reader.start()
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as response:
-            content_type = response.headers.get_content_type()
-            return response.read(), content_type
-    except urllib.error.HTTPError as exc:
-        raise HTTPRequestError(
-            url,
-            f"RaiPlaySound returned HTTP {exc.code} for {url}.",
-            code=exc.code,
-        ) from exc
-    except urllib.error.URLError as exc:
-        reason = getattr(exc, "reason", exc)
-        raise HTTPRequestError(url, f"network request failed for {url}: {reason}") from exc
+        returncode = process.wait(timeout=timeout_seconds or None)
+    except subprocess.TimeoutExpired:
+        with contextlib.suppress(OSError):
+            os.killpg(process.pid, signal.SIGTERM)
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            with contextlib.suppress(OSError):
+                os.killpg(process.pid, signal.SIGKILL)
+            process.wait()
+        reader.join(timeout=2)
+        return ProcessRunResult(returncode=124, timed_out=True)
+    reader.join()
+    return ProcessRunResult(returncode=returncode)
 
 
 def run_yt_dlp(

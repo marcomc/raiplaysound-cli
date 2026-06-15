@@ -289,6 +289,11 @@ Supported config keys:
 | `CLEAR_METADATA_CACHE` | `--clear-metadata-cache` | download |
 | `METADATA_MAX_AGE_HOURS` | `--metadata-max-age-hours` | download |
 | `FAVORITES` | `--favourites` | download |
+| `HTTP_TIMEOUT_SECONDS` | n/a | network requests |
+| `HTTP_RETRIES` | n/a | network requests |
+| `HTTP_BACKOFF_SECONDS` | n/a | network requests |
+| `FAVORITES_PROGRAM_TIMEOUT_SECONDS` | n/a | download `--favourites` |
+| `FAVORITES_MAX_SECONDS` | n/a | download `--favourites` |
 | `EMAIL_TO` | n/a | daily sync email |
 | `EMAIL_FROM` | n/a | daily sync email |
 | `EMAIL_FROM_NAME` | n/a | daily sync email |
@@ -296,6 +301,8 @@ Supported config keys:
 | `EMAIL_CONFIG` | n/a | daily sync email |
 | `MSMTP_BIN` | n/a | daily sync email |
 | `DAILY_SYNC_LOG` | n/a | daily sync |
+| `DAILY_SYNC_MAX_SECONDS` | n/a | daily sync |
+| `DAILY_SYNC_SCAN_TIMEOUT_SECONDS` | n/a | daily sync |
 | `GROUP_BY` | `--group-by` | list `programs` |
 | `PODCASTS_SORTED` | `--sorted` | list `programs` |
 | `STATION_FILTER` | `--filter` | list `programs` |
@@ -308,8 +315,18 @@ Supported config keys:
 
 `FAVORITES` accepts a comma-separated list of RaiPlaySound program slugs or
 full program URLs. Running `raiplaysound-cli download --favourites` iterates
-that list. If you do not pass `--season`, `--group`, `--episode-ids`, or
-`--episode-urls`, each favourite downloads only the latest season by default.
+that list in separate child runs, so one failed or timed-out program does not
+stop the remaining favourites. If you do not pass `--season`, `--group`,
+`--episode-ids`, or `--episode-urls`, each favourite downloads only the latest
+season by default.
+
+`HTTP_TIMEOUT_SECONDS`, `HTTP_RETRIES`, and `HTTP_BACKOFF_SECONDS` apply to
+RaiPlaySound HTTP requests across CLI commands. `HTTP_RETRIES` retries transient
+network failures, HTTP `429`, and HTTP `5xx` responses with exponential backoff;
+HTTP `404` is not retried. `FAVORITES_PROGRAM_TIMEOUT_SECONDS` limits each
+favourite child run, and `FAVORITES_MAX_SECONDS` limits the whole favourites
+run. Set a favourites or daily-sync watchdog timeout to `0` to disable that
+specific limit.
 
 The daily sync companion uses the same `FAVORITES` and download defaults. It
 does not configure `msmtp`; it only uses the existing `EMAIL_CONFIG` file. If
@@ -318,7 +335,10 @@ and the email step is skipped with a note in
 `~/Library/Logs/raiplaysound-cli-daily-sync.log`.
 Use `raiplaysound-cli-daily-sync --config /path/to/config` to run the sync from
 an alternate config file; the companion passes that same config to the child
-download command.
+download command. `DAILY_SYNC_SCAN_TIMEOUT_SECONDS` bounds the before/after file
+snapshots used to detect new downloads. `DAILY_SYNC_MAX_SECONDS` is an outer
+watchdog for the scheduled wrapper; if either guard fires, the companion still
+sends a failed summary email when email is configured.
 
 `FORCE_REFRESH_CATALOG` and `CATALOG_MAX_AGE_HOURS` affect only `list programs`.
 They do not change the per-show metadata cache used by `download` and

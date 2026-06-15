@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
+from typing import cast
 
 from raiplaysound_cli import daily_sync
+from raiplaysound_cli.runtime import ProcessRunResult
 
 
 def test_build_report_groups_new_downloads_with_metadata(tmp_path: Path) -> None:
@@ -90,18 +92,16 @@ def test_send_email_summary_dry_run_does_not_require_msmtp(
 
 def test_run_download_passes_config_file_to_cli(monkeypatch, tmp_path: Path) -> None:
     calls: list[list[str]] = []
+    timeouts: list[int] = []
 
-    class FakeProcess:
-        stdout = iter(["downloaded\n"])
-
-        def wait(self) -> int:
-            return 0
-
-    def fake_popen(command: list[str], **_kwargs) -> FakeProcess:
+    def fake_run_streamed_process(command: list[str], **kwargs: object) -> ProcessRunResult:
         calls.append(command)
-        return FakeProcess()
+        timeouts.append(cast(int, kwargs["timeout_seconds"]))
+        on_line = cast(Callable[[str], None], kwargs["on_line"])
+        on_line("downloaded")
+        return ProcessRunResult(0)
 
-    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(daily_sync, "run_streamed_process", fake_run_streamed_process)
     config_file = tmp_path / "custom.conf"
     log_file = tmp_path / "daily.log"
 
@@ -109,6 +109,7 @@ def test_run_download_passes_config_file_to_cli(monkeypatch, tmp_path: Path) -> 
         [str(tmp_path / "raiplaysound-cli")],
         config_file,
         log_file,
+        timeout_seconds=42,
     )
 
     assert result == 0
@@ -121,6 +122,8 @@ def test_run_download_passes_config_file_to_cli(monkeypatch, tmp_path: Path) -> 
             "--favourites",
         ]
     ]
+    assert timeouts == [42]
+    assert "downloaded" in log_file.read_text(encoding="utf-8")
 
 
 def test_main_defaults_to_current_python_module_runtime(monkeypatch, tmp_path: Path) -> None:
@@ -131,18 +134,39 @@ def test_main_defaults_to_current_python_module_runtime(monkeypatch, tmp_path: P
         encoding="utf-8",
     )
     calls: list[tuple[list[str], Path]] = []
+    timeouts: list[int] = []
+    snapshot_timeouts: list[int] = []
 
-    def fake_run_download(cli_args, selected_config_file: Path, _log_file: Path) -> int:
+    def fake_run_download(
+        cli_args,
+        selected_config_file: Path,
+        _log_file: Path,
+        *,
+        timeout_seconds: int,
+    ) -> int:
         calls.append((list(cli_args), selected_config_file))
+        timeouts.append(timeout_seconds)
         return 0
 
+    def fake_snapshot_audio_files(
+        _target_base: Path,
+        _slugs: list[str],
+        *,
+        timeout_seconds: int,
+    ) -> tuple[set[Path], str]:
+        snapshot_timeouts.append(timeout_seconds)
+        return set(), ""
+
     monkeypatch.setattr(daily_sync, "_run_download", fake_run_download)
+    monkeypatch.setattr(daily_sync, "_snapshot_audio_files", fake_snapshot_audio_files)
     monkeypatch.setattr(daily_sync, "send_email_summary", lambda **_kwargs: 0)
 
     result = daily_sync.main(["--config", str(config_file), "--dry-run-email"])
 
     assert result == 0
     assert calls == [([sys.executable, "-m", "raiplaysound_cli"], config_file)]
+    assert timeouts == [9000]
+    assert snapshot_timeouts == [120, 120]
 
 
 def test_main_runs_download_when_one_favorite_is_malformed(monkeypatch, tmp_path: Path) -> None:
@@ -155,21 +179,77 @@ def test_main_runs_download_when_one_favorite_is_malformed(monkeypatch, tmp_path
     calls: list[tuple[list[str], Path]] = []
     statuses: list[str] = []
 
-    def fake_run_download(cli_args, selected_config_file: Path, _log_file: Path) -> int:
+    def fake_run_download(
+        cli_args,
+        selected_config_file: Path,
+        _log_file: Path,
+        *,
+        timeout_seconds: int,
+    ) -> int:
+        assert timeout_seconds == 9000
         calls.append((list(cli_args), selected_config_file))
         return 2
+
+    def fake_snapshot_audio_files(
+        _target_base: Path,
+        _slugs: list[str],
+        *,
+        timeout_seconds: int,
+    ) -> tuple[set[Path], str]:
+        assert timeout_seconds == 120
+        return set(), ""
 
     def fake_send_email_summary(**kwargs) -> int:
         statuses.append(kwargs["status_text"])
         return 0
 
     monkeypatch.setattr(daily_sync, "_run_download", fake_run_download)
+    monkeypatch.setattr(daily_sync, "_snapshot_audio_files", fake_snapshot_audio_files)
     monkeypatch.setattr(daily_sync, "send_email_summary", fake_send_email_summary)
 
     result = daily_sync.main(["--config", str(config_file), "--dry-run-email"])
 
     assert result == 2
     assert calls == [([sys.executable, "-m", "raiplaysound_cli"], config_file)]
+    assert statuses == ["failed"]
+
+
+def test_main_marks_failed_when_audio_snapshot_times_out(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    config_file = tmp_path / "custom.conf"
+    target_base = tmp_path / "RaiPlaySound"
+    config_file.write_text(
+        f'FAVORITES="musicalbox"\nTARGET_BASE="{target_base}"\n',
+        encoding="utf-8",
+    )
+    statuses: list[str] = []
+    snapshot_results: list[tuple[set[Path], str]] = [
+        (set(), ""),
+        (set(), "audio file snapshot timed out after 120s"),
+    ]
+
+    def fake_snapshot_audio_files(
+        _target_base: Path,
+        _slugs: list[str],
+        *,
+        timeout_seconds: int,
+    ) -> tuple[set[Path], str]:
+        assert timeout_seconds == 120
+        return snapshot_results.pop(0)
+
+    def fake_send_email_summary(**kwargs) -> int:
+        statuses.append(kwargs["status_text"])
+        return 0
+
+    monkeypatch.setattr(daily_sync, "_snapshot_audio_files", fake_snapshot_audio_files)
+    monkeypatch.setattr(daily_sync, "_run_download", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(daily_sync, "send_email_summary", fake_send_email_summary)
+
+    result = daily_sync.main(["--config", str(config_file), "--dry-run-email"])
+
+    assert result == 1
     assert statuses == ["failed"]
 
 

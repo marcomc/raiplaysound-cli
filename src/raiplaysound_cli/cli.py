@@ -8,6 +8,7 @@ import json
 import shutil
 import signal
 import sys
+import time
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, cast
@@ -71,7 +72,15 @@ from .outputs import (
     prepare_program_assets,
 )
 from .repair import apply_filename_repairs, plan_filename_repairs
-from .runtime import acquire_lock, http_get, release_lock, run_yt_dlp
+from .runtime import (
+    ProcessRunResult,
+    acquire_lock,
+    configure_http,
+    http_get,
+    release_lock,
+    run_streamed_process,
+    run_yt_dlp,
+)
 from .search import search_all
 
 console = Console()
@@ -2020,16 +2029,33 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
         )
         ok_count = 0
         error_count = 0
+        config_file = Path(getattr(args, "config_file", DEFAULT_CONFIG_FILE))
+        deadline = (
+            time.monotonic() + settings.favorites_max_seconds
+            if settings.favorites_max_seconds > 0
+            else None
+        )
         for index, favorite in enumerate(settings.favorites, start=1):
             console.print("")
             console.print(f"[bold]Favourite {index}/{len(settings.favorites)}:[/bold] {favorite}")
-            try:
-                result = _download_one_program(settings, args, favorite)
-            except CLIError as exc:
-                err_console.print(f"Error ({favorite}): {exc}")
+            timeout_seconds = settings.favorites_program_timeout_seconds
+            if deadline is not None:
+                remaining = int(deadline - time.monotonic())
+                if remaining <= 0:
+                    err_console.print("Error: favourites run reached its total timeout.")
+                    error_count += len(settings.favorites) - index + 1
+                    break
+                if timeout_seconds <= 0 or remaining < timeout_seconds:
+                    timeout_seconds = remaining
+            command = _build_favourite_download_command(config_file, args, favorite)
+            result = _run_favourite_download(command, timeout_seconds)
+            if result.timed_out:
+                err_console.print(
+                    f"Error ({favorite}): timed out after {timeout_seconds} second(s)."
+                )
                 error_count += 1
                 continue
-            if result == 0:
+            if result.returncode == 0:
                 ok_count += 1
             else:
                 error_count += 1
@@ -2037,6 +2063,69 @@ def download_command(settings: Settings, args: argparse.Namespace) -> int:
         return 1 if error_count else 0
 
     return _download_one_program(settings, args, args.input or settings.input_value)
+
+
+def _build_favourite_download_command(
+    config_file: Path,
+    args: argparse.Namespace,
+    favorite: str,
+) -> list[str]:
+    command = [
+        sys.executable,
+        "-m",
+        "raiplaysound_cli",
+        "--config",
+        str(config_file),
+        "download",
+        favorite,
+    ]
+    if args.format:
+        command.extend(["--format", args.format])
+    if args.season:
+        command.extend(["--season", args.season])
+    if args.group:
+        command.extend(["--group", args.group])
+    if args.episode_ids:
+        command.extend(["--episode-ids", args.episode_ids])
+    for episode_url in args.episode_url:
+        command.extend(["--episode-url", episode_url])
+    if args.episode_urls:
+        command.extend(["--episode-urls", args.episode_urls])
+    if args.jobs:
+        command.extend(["--jobs", str(args.jobs)])
+    if args.missing:
+        command.append("--missing")
+    if args.log is not None:
+        command.append("--log")
+        if args.log != "__enable__":
+            command.append(args.log)
+    if args.debug_pids:
+        command.append("--debug-pids")
+    if args.refresh_metadata:
+        command.append("--refresh-metadata")
+    if args.clear_metadata_cache:
+        command.append("--clear-metadata-cache")
+    if args.metadata_max_age_hours is not None:
+        command.extend(["--metadata-max-age-hours", str(args.metadata_max_age_hours)])
+    if args.rss is True:
+        command.append("--rss")
+    elif args.rss is False:
+        command.append("--no-rss")
+    if args.rss_base_url is not None:
+        command.extend(["--rss-base-url", args.rss_base_url])
+    if args.playlist is True:
+        command.append("--playlist")
+    elif args.playlist is False:
+        command.append("--no-playlist")
+    return command
+
+
+def _run_favourite_download(command: list[str], timeout_seconds: int) -> ProcessRunResult:
+    return run_streamed_process(
+        command,
+        on_line=lambda line: console.print(line, markup=False),
+        timeout_seconds=timeout_seconds,
+    )
 
 
 def repair_command(settings: Settings, args: argparse.Namespace) -> int:
@@ -2135,6 +2224,11 @@ def main(argv: list[str] | None = None) -> int:
         if not config and config_file == DEFAULT_CONFIG_FILE and LEGACY_CONFIG_FILE.exists():
             config = parse_env_file(LEGACY_CONFIG_FILE)
         settings = Settings.from_config(config)
+        configure_http(
+            timeout_seconds=settings.http_timeout_seconds,
+            retries=settings.http_retries,
+            backoff_seconds=settings.http_backoff_seconds,
+        )
         command, rest = choose_command(argv, config)
         if command == "list":
             args = apply_list_defaults(settings, build_list_parser().parse_args(rest))
@@ -2185,6 +2279,7 @@ def main(argv: list[str] | None = None) -> int:
         if not args.favourites and not (args.input or settings.input_value):
             raise CLIError("download requires <program_slug|program_url>.")
         settings = apply_download_overrides(settings, args)
+        args.config_file = config_file
         if settings.audio_format not in {"mp3", "m4a", "aac", "ogg", "opus", "flac", "wav"}:
             raise CLIError(f"unsupported format '{settings.audio_format}'.")
         return download_command(settings, args)
