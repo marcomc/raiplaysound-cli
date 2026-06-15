@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -90,6 +91,34 @@ def test_send_email_summary_dry_run_does_not_require_msmtp(
     assert "Email dry run enabled" in log_file.read_text(encoding="utf-8")
 
 
+def test_send_email_summary_times_out_msmtp(monkeypatch, tmp_path: Path) -> None:
+    email_config = tmp_path / "msmtp.conf"
+    email_config.write_text("from listener+raiplaysound-cli@example.test\n", encoding="utf-8")
+    log_file = tmp_path / "daily.log"
+
+    def fake_run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise subprocess.TimeoutExpired(cmd="msmtp", timeout=3)
+
+    monkeypatch.setattr(daily_sync.shutil, "which", lambda _name: "/usr/bin/msmtp")
+    monkeypatch.setattr(daily_sync.subprocess, "run", fake_run)
+
+    result = daily_sync.send_email_summary(
+        config={
+            "EMAIL_TO": "listener@example.test",
+            "EMAIL_CONFIG": str(email_config),
+            "MSMTP_BIN": "msmtp",
+        },
+        status_text="failed",
+        rows=[],
+        dry_run=False,
+        log_file=log_file,
+        timeout_seconds=3,
+    )
+
+    assert result == 124
+    assert "Email summary timed out after 3s." in log_file.read_text(encoding="utf-8")
+
+
 def test_run_download_passes_config_file_to_cli(monkeypatch, tmp_path: Path) -> None:
     calls: list[list[str]] = []
     timeouts: list[int] = []
@@ -167,6 +196,66 @@ def test_main_defaults_to_current_python_module_runtime(monkeypatch, tmp_path: P
     assert calls == [([sys.executable, "-m", "raiplaysound_cli"], config_file)]
     assert timeouts == [9000]
     assert snapshot_timeouts == [120, 120]
+
+
+def test_main_applies_daily_sync_max_to_entire_wrapper(monkeypatch, tmp_path: Path) -> None:
+    config_file = tmp_path / "custom.conf"
+    target_base = tmp_path / "RaiPlaySound"
+    config_file.write_text(
+        "\n".join(
+            [
+                'FAVORITES="musicalbox"',
+                f'TARGET_BASE="{target_base}"',
+                "DAILY_SYNC_MAX_SECONDS=100",
+                "DAILY_SYNC_SCAN_TIMEOUT_SECONDS=120",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    clock = {"now": 0.0}
+    snapshot_timeouts: list[int] = []
+    download_timeouts: list[int] = []
+    email_timeouts: list[int] = []
+
+    def fake_monotonic() -> float:
+        return clock["now"]
+
+    def fake_snapshot_audio_files(
+        _target_base: Path,
+        _slugs: list[str],
+        *,
+        timeout_seconds: int,
+    ) -> tuple[set[Path], str]:
+        snapshot_timeouts.append(timeout_seconds)
+        clock["now"] = 10.0 if len(snapshot_timeouts) == 1 else 96.0
+        return set(), ""
+
+    def fake_run_download(
+        _cli_args,
+        _selected_config_file: Path,
+        _log_file: Path,
+        *,
+        timeout_seconds: int,
+    ) -> int:
+        download_timeouts.append(timeout_seconds)
+        clock["now"] = 95.0
+        return 0
+
+    def fake_send_email_summary(**kwargs) -> int:
+        email_timeouts.append(kwargs["timeout_seconds"])
+        return 0
+
+    monkeypatch.setattr(daily_sync.time, "monotonic", fake_monotonic)
+    monkeypatch.setattr(daily_sync, "_snapshot_audio_files", fake_snapshot_audio_files)
+    monkeypatch.setattr(daily_sync, "_run_download", fake_run_download)
+    monkeypatch.setattr(daily_sync, "send_email_summary", fake_send_email_summary)
+
+    result = daily_sync.main(["--config", str(config_file), "--dry-run-email"])
+
+    assert result == 0
+    assert snapshot_timeouts == [100, 5]
+    assert download_timeouts == [90]
+    assert email_timeouts == [4]
 
 
 def test_main_runs_download_when_one_favorite_is_malformed(monkeypatch, tmp_path: Path) -> None:

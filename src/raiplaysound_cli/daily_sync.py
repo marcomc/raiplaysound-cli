@@ -10,7 +10,9 @@ import socket
 import subprocess
 import sys
 import tempfile
+import time
 from email.utils import formatdate
+from math import ceil
 from pathlib import Path
 from typing import Sequence
 
@@ -227,6 +229,24 @@ def _append_log(log_file: Path, message: str) -> None:
         handle.write(message.rstrip() + "\n")
 
 
+def _make_deadline(timeout_seconds: int) -> float | None:
+    if timeout_seconds <= 0:
+        return None
+    return time.monotonic() + timeout_seconds
+
+
+def _bounded_timeout(timeout_seconds: int, deadline: float | None) -> int:
+    if deadline is None:
+        return timeout_seconds
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return 0
+    remaining_seconds = max(1, ceil(remaining))
+    if timeout_seconds <= 0:
+        return remaining_seconds
+    return min(timeout_seconds, remaining_seconds)
+
+
 def send_email_summary(
     *,
     config: dict[str, str],
@@ -234,6 +254,7 @@ def send_email_summary(
     rows: Sequence[DownloadRow],
     dry_run: bool,
     log_file: Path,
+    timeout_seconds: int = 0,
 ) -> int:
     email_to = config.get("EMAIL_TO", "").strip()
     if not email_to:
@@ -273,13 +294,18 @@ def send_email_summary(
     if not email_config.exists():
         _append_log(log_file, f"msmtp config not found at {email_config}; skipping email.")
         return 0
-    result = subprocess.run(
-        [msmtp_bin, "--file", str(email_config), "--", email_to],
-        input=payload,
-        text=True,
-        encoding="utf-8",
-        check=False,
-    )
+    try:
+        result = subprocess.run(
+            [msmtp_bin, "--file", str(email_config), "--", email_to],
+            input=payload,
+            text=True,
+            encoding="utf-8",
+            check=False,
+            timeout=timeout_seconds or None,
+        )
+    except subprocess.TimeoutExpired:
+        _append_log(log_file, f"Email summary timed out after {timeout_seconds}s.")
+        return 124
     if result.returncode == 0:
         _append_log(log_file, f"Email summary sent to {email_to}.")
         return 0
@@ -341,29 +367,45 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not settings.favorites:
         _append_log(log_file, "FAVORITES is not configured; nothing to sync.")
         return 1
+    deadline = _make_deadline(settings.daily_sync_max_seconds)
     slugs = _favorite_slugs(settings.favorites)
-    before, before_error = _snapshot_audio_files(
-        settings.target_base,
-        slugs,
-        timeout_seconds=settings.daily_sync_scan_timeout_seconds,
-    )
+    before_timeout = _bounded_timeout(settings.daily_sync_scan_timeout_seconds, deadline)
+    if deadline is not None and before_timeout <= 0:
+        before: set[Path] = set()
+        before_error = "daily sync max timeout reached before before-run snapshot"
+    else:
+        before, before_error = _snapshot_audio_files(
+            settings.target_base,
+            slugs,
+            timeout_seconds=before_timeout,
+        )
     if before_error:
         _append_log(log_file, f"Before-run {before_error}; new-file summary skipped.")
     if args.cli:
         cli_args = [expand_config_path(args.cli)]
     else:
         cli_args = [sys.executable, "-m", "raiplaysound_cli"]
-    download_status = _run_download(
-        cli_args,
-        config_file,
-        log_file,
-        timeout_seconds=settings.daily_sync_max_seconds,
-    )
-    after, after_error = _snapshot_audio_files(
-        settings.target_base,
-        slugs,
-        timeout_seconds=settings.daily_sync_scan_timeout_seconds,
-    )
+    download_timeout = _bounded_timeout(0, deadline)
+    if deadline is not None and download_timeout <= 0:
+        _append_log(log_file, "Daily sync max timeout reached before download.")
+        download_status = 124
+    else:
+        download_status = _run_download(
+            cli_args,
+            config_file,
+            log_file,
+            timeout_seconds=download_timeout,
+        )
+    after_timeout = _bounded_timeout(settings.daily_sync_scan_timeout_seconds, deadline)
+    if deadline is not None and after_timeout <= 0:
+        after: set[Path] = set()
+        after_error = "daily sync max timeout reached before after-run snapshot"
+    else:
+        after, after_error = _snapshot_audio_files(
+            settings.target_base,
+            slugs,
+            timeout_seconds=after_timeout,
+        )
     if after_error:
         _append_log(log_file, f"After-run {after_error}; new-file summary skipped.")
     if before_error or after_error:
@@ -375,16 +417,27 @@ def main(argv: Sequence[str] | None = None) -> int:
             before=before,
             after=after,
         )
+    email_timeout = _bounded_timeout(0, deadline)
+    email_error = ""
+    if deadline is not None and email_timeout <= 0:
+        email_error = "Daily sync max timeout reached before email summary."
     status_text = (
-        "ok" if download_status == 0 and not before_error and not after_error else "failed"
+        "ok"
+        if download_status == 0 and not before_error and not after_error and not email_error
+        else "failed"
     )
-    email_status = send_email_summary(
-        config=config,
-        status_text=status_text,
-        rows=rows,
-        dry_run=args.dry_run_email,
-        log_file=log_file,
-    )
+    if email_error:
+        _append_log(log_file, email_error)
+        email_status = 124
+    else:
+        email_status = send_email_summary(
+            config=config,
+            status_text=status_text,
+            rows=rows,
+            dry_run=args.dry_run_email,
+            log_file=log_file,
+            timeout_seconds=email_timeout,
+        )
     if download_status:
         return download_status
     if before_error or after_error:
