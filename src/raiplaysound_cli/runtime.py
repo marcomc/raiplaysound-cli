@@ -12,8 +12,8 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from threading import Thread
-from typing import Any, Callable
+from threading import Thread, current_thread, main_thread
+from typing import Any, Callable, Iterator
 
 from .errors import CLIError, HTTPRequestError
 
@@ -26,6 +26,23 @@ _HTTP_BACKOFF_SECONDS = 2.0
 class ProcessRunResult:
     returncode: int
     timed_out: bool = False
+
+
+@contextlib.contextmanager
+def _raise_keyboard_interrupt_on_sigterm() -> Iterator[None]:
+    if current_thread() is not main_thread():
+        yield
+        return
+    previous_sigterm = signal.getsignal(signal.SIGTERM)
+
+    def handle_sigterm(_signum: int, _frame: object) -> None:
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGTERM, handle_sigterm)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGTERM, previous_sigterm)
 
 
 def configure_http(
@@ -174,7 +191,8 @@ def run_streamed_process(
     reader = Thread(target=_read_output, daemon=True)
     reader.start()
     try:
-        returncode = process.wait(timeout=timeout_seconds or None)
+        with _raise_keyboard_interrupt_on_sigterm():
+            returncode = process.wait(timeout=timeout_seconds or None)
     except subprocess.TimeoutExpired:
         stop_and_wait()
         return ProcessRunResult(returncode=124, timed_out=True)

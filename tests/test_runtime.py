@@ -133,3 +133,54 @@ def test_run_streamed_process_cleans_up_child_on_keyboard_interrupt(monkeypatch)
     assert popen_kwargs == [True]
     assert kill_calls == [(4242, runtime.signal.SIGTERM)]
     assert fake_process.wait_calls == 2
+
+
+def test_run_streamed_process_cleans_up_child_on_sigterm(monkeypatch) -> None:
+    kill_calls: list[tuple[int, int]] = []
+    signal_calls: list[tuple[int, object]] = []
+    installed_handler = None
+    previous_handler = object()
+
+    class FakeProcess:
+        pid = 4343
+        stdout = iter(())
+
+        def __init__(self) -> None:
+            self.wait_calls = 0
+
+        def wait(self, timeout: int | None = None) -> int:
+            self.wait_calls += 1
+            if self.wait_calls == 1:
+                assert installed_handler is not None
+                installed_handler(runtime.signal.SIGTERM, None)
+            assert timeout == 10
+            return -runtime.signal.SIGTERM
+
+    fake_process = FakeProcess()
+
+    def fake_signal(signum: int, handler: object) -> object:
+        nonlocal installed_handler
+        signal_calls.append((signum, handler))
+        if handler is not previous_handler:
+            installed_handler = handler
+        return previous_handler
+
+    monkeypatch.setattr(runtime.subprocess, "Popen", lambda *_args, **_kwargs: fake_process)
+    monkeypatch.setattr(runtime.signal, "getsignal", lambda _signum: previous_handler)
+    monkeypatch.setattr(runtime.signal, "signal", fake_signal)
+    monkeypatch.setattr(
+        runtime.os,
+        "killpg",
+        lambda pid, sig: kill_calls.append((pid, sig)),
+    )
+
+    with pytest.raises(KeyboardInterrupt):
+        runtime.run_streamed_process(
+            [sys.executable, "-c", "print('unused')"],
+            on_line=lambda _line: None,
+        )
+
+    assert kill_calls == [(4343, runtime.signal.SIGTERM)]
+    assert signal_calls[0][0] == runtime.signal.SIGTERM
+    assert signal_calls[-1] == (runtime.signal.SIGTERM, previous_handler)
+    assert fake_process.wait_calls == 2
