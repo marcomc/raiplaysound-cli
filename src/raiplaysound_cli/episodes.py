@@ -854,7 +854,11 @@ def _collect_metadata_from_episode_json(source: str) -> dict[str, EpisodeMetadat
     if not isinstance(payload, dict):
         raise CLIError("invalid episode payload")
     episode_id = _episode_id_from_payload(payload)
-    title = str(payload.get("title") or payload.get("episode_title") or "NA")
+    # RaiPlaySound uses ``title`` for the series plus publication date on some
+    # programs, while ``episode_title`` holds the editorial episode title.
+    # Prefer the latter when available and retain ``title`` as a fallback for
+    # payloads that do not expose a separate episode title.
+    title = str(payload.get("episode_title") or payload.get("title") or "NA")
     season = str(payload.get("season") or payload.get("season_number") or "NA")
     return {
         episode_id: EpisodeMetadata(

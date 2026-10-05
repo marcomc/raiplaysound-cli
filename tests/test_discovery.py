@@ -419,7 +419,8 @@ def test_collect_metadata_uses_episode_json_for_single_entries(monkeypatch) -> N
         "http_get",
         lambda url: (
             '{"uniquename":"ContentItem-48e8407b-360f-472f-969e-a1c2f24e713c",'
-            '"date_tracking":"2022-03-09","title":"Speciale Burnt Sugar",'
+            '"date_tracking":"2022-03-09","title":"Battiti del 09/03/2022",'
+            '"episode_title":"Speciale Burnt Sugar",'
             '"season":"2021-22","path_id":"/audio/2022/03/Speciale-Burnt-Sugar-'
             '48e8407b-360f-472f-969e-a1c2f24e713c.json"}'
         ),
@@ -444,7 +445,7 @@ def test_collect_metadata_uses_episode_json_for_single_entries(monkeypatch) -> N
             title="Speciale Burnt Sugar",
             search_text=(
                 "ContentItem-48e8407b-360f-472f-969e-a1c2f24e713c | 2022-03-09 | "
-                "Speciale Burnt Sugar | 2021-22"
+                "Battiti del 09/03/2022 | Speciale Burnt Sugar | 2021-22"
             ),
         )
     }

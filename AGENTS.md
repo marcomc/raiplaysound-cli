@@ -84,6 +84,10 @@ or URL into `~/Music/RaiPlaySound/<slug>/`, with idempotent repeat runs using
 - Preserve the Rich-based progress UI for downloads.
 - Keep stale `.run-lock` directories recoverable; interrupted runs must not
   permanently block future downloads.
+- When failure summaries or sync reports compare before/after snapshots, treat
+  any timeout or snapshot-read error as unreliable input: do not derive
+  new-download rows from partial snapshots, and do not rely on
+  `multiprocessing.Queue.empty()` for timeout-sensitive worker results.
 - When generating RSS enclosure URLs, percent-encode the actual filename stored
   on disk and do not change its Unicode normalization form unless the serving
   layer explicitly requires that canonical form.
