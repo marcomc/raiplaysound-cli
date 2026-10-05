@@ -360,6 +360,7 @@ def test_collect_metadata_keeps_ytdlp_date_when_episode_json_date_is_unusable(
         return (
             '{"uniquename":"ContentItem-48e8407b-360f-472f-969e-a1c2f24e713c",'
             '"title":"Musical Box del 02/05/2026",'
+            '"episode_title":"Speciale Musical Box",'
             '"path_id":"/audio/2026/05/Musical-Box-del-02052026-'
             '48e8407b-360f-472f-969e-a1c2f24e713c.json"}'
         )
@@ -372,7 +373,7 @@ def test_collect_metadata_keeps_ytdlp_date_when_episode_json_date_is_unusable(
     assert result["48e8407b-360f-472f-969e-a1c2f24e713c"] == EpisodeMetadata(
         upload_date="20260503",
         season="NA",
-        title="Musical Box del 02/05/2026",
+        title="Speciale Musical Box",
     )
 
 
@@ -491,6 +492,49 @@ def test_collect_metadata_single_entry_falls_back_when_episode_json_date_is_unus
             title="Fallback Title",
         )
     }
+
+
+def test_collect_metadata_single_entry_keeps_episode_title_when_json_date_is_unusable(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        episodes,
+        "http_get",
+        lambda _url: (
+            '{"uniquename":"ContentItem-48e8407b-360f-472f-969e-a1c2f24e713c",'
+            '"title":"Battiti del 09/03/2022",'
+            '"episode_title":"Speciale Burnt Sugar",'
+            '"path_id":"/audio/2022/03/Speciale-Burnt-Sugar-'
+            '48e8407b-360f-472f-969e-a1c2f24e713c.json"}'
+        ),
+    )
+
+    def fake_run_yt_dlp(
+        args: list[str], *, allow_partial_failure: bool = False
+    ) -> subprocess.CompletedProcess[str]:
+        assert allow_partial_failure is True
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=0,
+            stdout="48e8407b-360f-472f-969e-a1c2f24e713c\t20220310\tFallback Title\tNA\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(episodes, "run_yt_dlp", fake_run_yt_dlp)
+
+    result = episodes.collect_metadata(
+        [
+            "https://www.raiplaysound.it/audio/2022/03/Speciale-Burnt-Sugar-"
+            "48e8407b-360f-472f-969e-a1c2f24e713c.html"
+        ],
+        single_entries=True,
+    )
+
+    assert result["48e8407b-360f-472f-969e-a1c2f24e713c"] == EpisodeMetadata(
+        upload_date="20220310",
+        season="NA",
+        title="Speciale Burnt Sugar",
+    )
 
 
 def test_collect_season_summary_from_sources_uses_url_years_without_metadata(monkeypatch) -> None:

@@ -849,7 +849,9 @@ def _build_episode_search_text(payload: object) -> str:
     return _sanitize_metadata_cache_text(" | ".join(collected))
 
 
-def _collect_metadata_from_episode_json(source: str) -> dict[str, EpisodeMetadata]:
+def _collect_metadata_from_episode_json(
+    source: str,
+) -> tuple[dict[str, EpisodeMetadata], set[str]]:
     payload = json.loads(http_get(_episode_json_url(source)))
     if not isinstance(payload, dict):
         raise CLIError("invalid episode payload")
@@ -858,16 +860,20 @@ def _collect_metadata_from_episode_json(source: str) -> dict[str, EpisodeMetadat
     # programs, while ``episode_title`` holds the editorial episode title.
     # Prefer the latter when available and retain ``title`` as a fallback for
     # payloads that do not expose a separate episode title.
-    title = str(payload.get("episode_title") or payload.get("title") or "NA")
+    episode_title = str(payload.get("episode_title") or "").strip()
+    title = episode_title or str(payload.get("title") or "NA")
     season = str(payload.get("season") or payload.get("season_number") or "NA")
-    return {
-        episode_id: EpisodeMetadata(
-            upload_date=_normalize_episode_upload_date(payload),
-            season=season,
-            title=title,
-            search_text=_build_episode_search_text(payload),
-        )
-    }
+    return (
+        {
+            episode_id: EpisodeMetadata(
+                upload_date=_normalize_episode_upload_date(payload),
+                season=season,
+                title=title,
+                search_text=_build_episode_search_text(payload),
+            )
+        },
+        {episode_id} if episode_title else set(),
+    )
 
 
 def _has_usable_upload_date(metadata: EpisodeMetadata) -> bool:
@@ -879,9 +885,11 @@ def collect_metadata(
 ) -> dict[str, EpisodeMetadata]:
     result: dict[str, EpisodeMetadata] = {}
     for source in sources:
+        json_metadata: dict[str, EpisodeMetadata] = {}
+        episode_title_ids: set[str] = set()
         if single_entries:
             try:
-                json_metadata = _collect_metadata_from_episode_json(source)
+                json_metadata, episode_title_ids = _collect_metadata_from_episode_json(source)
             except Exception:
                 pass
             else:
@@ -917,21 +925,28 @@ def collect_metadata(
                 parts[2],
                 parts[3],
             )
+            json_entry = json_metadata.get(episode_id) if single_entries else None
+            has_episode_title = episode_id in episode_title_ids
             if len(parts) >= 5 and parts[4] and parts[4] != "NA":
                 try:
-                    json_metadata = _collect_metadata_from_episode_json(parts[4])
+                    json_metadata, episode_title_ids = _collect_metadata_from_episode_json(parts[4])
                 except Exception:
                     json_metadata = {}
+                    episode_title_ids = set()
                 json_entry = json_metadata.get(episode_id)
+                has_episode_title = episode_id in episode_title_ids
                 if json_entry is not None and _has_usable_upload_date(json_entry):
                     result.setdefault(episode_id, json_entry)
                     continue
+            fallback_title = (
+                json_entry.title if json_entry is not None and has_episode_title else title
+            )
             result.setdefault(
                 episode_id,
                 EpisodeMetadata(
                     upload_date=upload_date,
                     season=season,
-                    title=title,
+                    title=fallback_title,
                 ),
             )
     return result
