@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.5.1] - 2026-10-05 - episode title correctness
+
+### Fixed
+
+- Prefer RaiPlaySound's editorial `episode_title` over the series-level
+  `title` when both are present, so generated RSS entries identify the actual
+  episode.
+
 ## [2.5.0] - 2026-06-15 - favourites resilience
 
 ### Added

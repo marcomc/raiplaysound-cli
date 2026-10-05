@@ -202,6 +202,9 @@ Uninstalling:
 - Uses RaiPlaySound episode `date_tracking` metadata for episode dates, so
   filenames and generated feeds follow the editorial episode date rather than
   a later technical publication date when Rai exposes both.
+- Uses RaiPlaySound's `episode_title` for the episode title when available,
+  falling back to `title` for programs whose metadata has no separate episode
+  title.
 - Supports audio formats `mp3`, `m4a`, `aac`, `ogg`, `opus`, `flac`, and `wav`
 - Supports season filtering, episode ID filtering, and episode URL filtering
 - Supports automatic re-download of archive-marked but missing local files
