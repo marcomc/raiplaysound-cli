@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## Unreleased
+## [2.6.0] - 2026-10-24 - daily favourites email improvements
 
 ### Changed
 
