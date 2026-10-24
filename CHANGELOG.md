@@ -2,14 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
-## [2.6.0] - 2026-10-24 - daily favourites email improvements
+## Unreleased
 
 ### Changed
 
-- Reworked daily favourites email reports with a responsive HTML layout,
-  vertically stacked episode cards, and a mobile-friendly plain-text fallback.
-- Escaped report values in HTML and wrapped long program names and filenames
-  so they remain readable on phones and tablets.
+- Reworked daily favourites email reports with compact responsive HTML rows
+  and a mobile-friendly plain-text fallback.
+- Escaped report values in HTML and wrapped long program names and episode
+  titles so they remain readable on phones and tablets.
+- Added `EMAIL_FORMAT` to select compact HTML reports grouped by programme
+  (default), HTML timelines grouped by date, or the compact plain-text-only
+  report. Removed redundant filenames and ASCII table rules from email text.
 
 ## [2.5.1] - 2026-10-05 - episode title correctness
 

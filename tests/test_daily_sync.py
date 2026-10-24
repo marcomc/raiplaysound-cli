@@ -8,6 +8,8 @@ from email.parser import Parser
 from pathlib import Path
 from typing import cast
 
+import pytest
+
 from raiplaysound_cli import daily_sync
 from raiplaysound_cli.runtime import ProcessRunResult
 
@@ -50,15 +52,15 @@ def test_build_email_body_lists_downloads_as_mobile_friendly_records() -> None:
         ],
     )
 
-    assert "New episodes downloaded: 1" in body
+    assert "OK · 1 new episode" in body
     assert "1. Musical Box del 17/05/2026" in body
-    assert "   Program: musicalbox" in body
-    assert "   Date: 2026-05-17" in body
-    assert "   File: Musical Box - 2026-05-17" in body
+    assert "   musicalbox · 2026-05-17" in body
+    assert "Musical Box - 2026-05-17 - Musical Box" not in body
+    assert "-----" not in body
     assert "|" not in body
 
 
-def test_build_email_html_escapes_content_and_uses_stacked_episode_cards() -> None:
+def test_build_email_html_escapes_content_and_uses_compact_episode_rows() -> None:
     body = daily_sync.build_email_html(
         status_text="ok",
         rows=[
@@ -73,12 +75,43 @@ def test_build_email_html_escapes_content_and_uses_stacked_episode_cards() -> No
 
     assert 'name="viewport"' in body
     assert "max-width: 600px" in body
+    assert "max-width:560px" in body
     assert "<New episode>" not in body
     assert "&lt;New episode&gt;" in body
     assert "rock &amp; roll" in body
-    assert "A &amp; B.m4a" in body
+    assert "A &amp; B.m4a" not in body
     assert "overflow-wrap:anywhere" in body
     assert 'role="presentation"' in body
+
+
+def test_build_email_html_groups_episodes_by_program_by_default() -> None:
+    rows = [
+        daily_sync.DownloadRow("musicalbox", "2026-05-17", "Episode one", "one.m4a"),
+        daily_sync.DownloadRow("musicalbox", "2026-05-18", "Episode two", "two.m4a"),
+        daily_sync.DownloadRow("profili", "2026-05-19", "Episode three", "three.m4a"),
+    ]
+
+    body = daily_sync.build_email_html(status_text="ok", rows=rows)
+
+    assert body.index("musicalbox") < body.index("Episode one") < body.index("Episode two")
+    assert body.index("profili") > body.index("Episode two")
+    assert "3 new" in body
+    assert "2 programmes" in body
+    assert "File" not in body
+
+
+def test_build_email_html_timeline_groups_episodes_by_date() -> None:
+    rows = [
+        daily_sync.DownloadRow("musicalbox", "2026-05-17", "Episode one", "one.m4a"),
+        daily_sync.DownloadRow("profili", "2026-05-17", "Episode two", "two.m4a"),
+        daily_sync.DownloadRow("musicalbox", "2026-05-18", "Episode three", "three.m4a"),
+    ]
+
+    body = daily_sync.build_email_html(status_text="ok", rows=rows, layout="timeline")
+
+    assert body.index("2026-05-17") < body.index("Episode one") < body.index("Episode two")
+    assert body.index("2026-05-18") < body.index("Episode three")
+    assert body.index("2026-05-18") < body.index("2026-05-17")
 
 
 def test_build_email_payload_uses_configured_from_address() -> None:
@@ -124,8 +157,58 @@ def test_send_email_summary_dry_run_does_not_require_msmtp(
     )
 
     assert result == 0
-    assert "To: listener@example.test" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert "To: listener@example.test" in output
+    assert "Content-Type: multipart/alternative" in output
     assert "Email dry run enabled" in log_file.read_text(encoding="utf-8")
+
+
+def test_send_email_summary_text_format_sends_plain_text_only(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    monkeypatch.setattr(daily_sync.shutil, "which", lambda _name: None)
+    result = daily_sync.send_email_summary(
+        config={
+            "EMAIL_TO": "listener@example.test",
+            "EMAIL_FROM": "listener+raiplaysound-cli@example.test",
+            "EMAIL_FORMAT": "text",
+        },
+        status_text="ok",
+        rows=[daily_sync.DownloadRow("musicalbox", "2026-05-17", "New episode", "x.m4a")],
+        dry_run=True,
+        log_file=tmp_path / "daily.log",
+    )
+
+    output = capsys.readouterr().out
+    message = Parser(policy=policy.default).parsestr(output)
+    assert result == 0
+    assert message.get_content_type() == "text/plain"
+    assert "New episode" in message.get_content()
+    assert "musicalbox · 2026-05-17" in message.get_content()
+    assert "Content-Type: multipart/alternative" not in output
+
+
+def test_send_email_summary_invalid_format_falls_back_to_grouped_html(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    monkeypatch.setattr(daily_sync.shutil, "which", lambda _name: None)
+    log_file = tmp_path / "daily.log"
+
+    result = daily_sync.send_email_summary(
+        config={
+            "EMAIL_TO": "listener@example.test",
+            "EMAIL_FROM": "listener+raiplaysound-cli@example.test",
+            "EMAIL_FORMAT": "unknown",
+        },
+        status_text="ok",
+        rows=[],
+        dry_run=True,
+        log_file=log_file,
+    )
+
+    assert result == 0
+    assert "Content-Type: multipart/alternative" in capsys.readouterr().out
+    assert "Unsupported EMAIL_FORMAT" in log_file.read_text(encoding="utf-8")
 
 
 def test_send_email_summary_times_out_msmtp(monkeypatch, tmp_path: Path) -> None:
@@ -190,6 +273,74 @@ def test_run_download_passes_config_file_to_cli(monkeypatch, tmp_path: Path) -> 
     ]
     assert timeouts == [42]
     assert "downloaded" in log_file.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("configured_format", "expected_layout"),
+    [
+        (None, "grouped"),
+        ("", "grouped"),
+        ("grouped", "grouped"),
+        (" GROUPED ", "grouped"),
+        (" TiMeLiNe ", "timeline"),
+        (" text ", "text"),
+        ("unsupported", "grouped"),
+    ],
+)
+def test_main_selects_email_format_from_config_without_sending(
+    monkeypatch,
+    tmp_path: Path,
+    capsys,
+    configured_format: str | None,
+    expected_layout: str,
+) -> None:
+    config_file = tmp_path / "daily.conf"
+    target_base = tmp_path / "audio"
+    log_file = tmp_path / "daily.log"
+    lines = [
+        'FAVORITES="musicalbox"',
+        f'TARGET_BASE="{target_base}"',
+        f'DAILY_SYNC_LOG="{log_file}"',
+        'EMAIL_TO="root"',
+        'EMAIL_FROM="listener@example.test"',
+    ]
+    if configured_format is not None:
+        lines.append(f'EMAIL_FORMAT="{configured_format}"')
+    config_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    downloaded = target_base / "musicalbox" / "Musical Box - 2026-05-17 - Caffè & <episodio>.m4a"
+    snapshots: list[tuple[set[Path], str]] = [(set(), ""), ({downloaded}, "")]
+    snapshot_results = iter(snapshots)
+    monkeypatch.setattr(daily_sync, "_run_download", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(
+        daily_sync, "_snapshot_audio_files", lambda *_args, **_kwargs: next(snapshot_results)
+    )
+
+    def reject_subprocess(*_args, **_kwargs) -> None:
+        raise AssertionError("Email dry-run attempted to start an external command")
+
+    monkeypatch.setattr(daily_sync.subprocess, "run", reject_subprocess)
+
+    assert daily_sync.main(["--config", str(config_file), "--dry-run-email"]) == 0
+
+    message = Parser(policy=policy.default).parsestr(capsys.readouterr().out)
+    assert message["To"] == "root"
+    plain_body = message.get_body(preferencelist=("plain",))
+    assert plain_body is not None
+    assert "Caffè & <episodio>" in plain_body.get_content()
+    html_body = message.get_body(preferencelist=("html",))
+    if expected_layout == "text":
+        assert message.get_content_type() == "text/plain"
+        assert html_body is None
+    else:
+        assert message.get_content_type() == "multipart/alternative"
+        assert html_body is not None
+        rendered = html_body.get_content()
+        title_index = rendered.index("Caffè &amp; &lt;episodio&gt;")
+        program_index = rendered.index("musicalbox")
+        assert (program_index < title_index) == (expected_layout == "grouped")
+    assert ("Unsupported EMAIL_FORMAT" in log_file.read_text(encoding="utf-8")) == (
+        configured_format == "unsupported"
+    )
 
 
 def test_main_defaults_to_current_python_module_runtime(monkeypatch, tmp_path: Path) -> None:
@@ -423,5 +574,5 @@ def test_snapshot_audio_files_handles_many_paths_without_queue_deadlock(tmp_path
 def test_build_email_body_reports_no_new_downloads() -> None:
     body = daily_sync.build_email_body(status_text="ok", rows=[])
 
-    assert "New episodes downloaded: 0" in body
+    assert "OK · 0 new episodes" in body
     assert "No new episodes were downloaded." in body
