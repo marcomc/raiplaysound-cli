@@ -88,8 +88,11 @@ make launchagent-install
 This also installs `~/.local/bin/raiplaysound-cli-daily-sync`, then schedules
 it as a user LaunchAgent at 08:00 every day. The companion runs
 `raiplaysound-cli download --favourites`, compares the downloaded audio files
-before and after the run, and sends a plain-text summary email through `msmtp`
-when email settings are configured.
+before and after the run, and sends a compact email summary through `msmtp`
+when email settings are configured. The default HTML report groups episodes by
+programme; users can select a date timeline or plain-text-only format in their
+config. HTML reports include a plain-text fallback and omit redundant filenames
+so episode titles are easier to scan on phones and tablets.
 It refreshes only the daily sync companion and LaunchAgent; it does not rewrite
 the user-facing `~/.local/bin/raiplaysound-cli` command.
 
@@ -215,7 +218,8 @@ Uninstalling:
 - Downloads each program cover image into the program folder and references it
   from generated RSS feeds
 - Provides an optional macOS LaunchAgent companion that runs the configured
-  favourites download once a day and emails a compact `msmtp` summary
+  favourites download once a day and emails a configurable compact `msmtp`
+  summary
 - Keeps a `RaiPlayPodcast` `index.html` landing page in the target root with
   program artwork, descriptions, local episode counts, latest downloaded
   episode dates, RSS links, and Apple Podcasts app links only for programs that
@@ -254,7 +258,20 @@ EMAIL_FROM_NAME="raiplaysound-cli"
 EMAIL_SUBJECT_PREFIX="[raiplaysound-cli]"
 EMAIL_CONFIG="$HOME/.config/msmtp/config"
 MSMTP_BIN="msmtp"
+EMAIL_FORMAT="grouped"
 ```
+
+`EMAIL_FORMAT` selects the daily sync email layout:
+
+| Value | Layout |
+| --- | --- |
+| `grouped` | Compact HTML grouped by programme; this is the default |
+| `timeline` | Compact HTML grouped by episode date |
+| `text` | Plain-text only, with one title line and one programme/date line per episode |
+
+The HTML layouts include the compact text version as a fallback. The `text`
+setting sends no HTML part. Both text and HTML omit the redundant downloaded
+filename and avoid ASCII table rules, so long titles wrap naturally on phones.
 
 Cache-age defaults are intentionally different:
 
@@ -303,6 +320,7 @@ Supported config keys:
 | `EMAIL_SUBJECT_PREFIX` | n/a | daily sync email |
 | `EMAIL_CONFIG` | n/a | daily sync email |
 | `MSMTP_BIN` | n/a | daily sync email |
+| `EMAIL_FORMAT` | n/a | daily sync email (`grouped`, `timeline`, or `text`) |
 | `DAILY_SYNC_LOG` | n/a | daily sync |
 | `DAILY_SYNC_MAX_SECONDS` | n/a | daily sync |
 | `DAILY_SYNC_SCAN_TIMEOUT_SECONDS` | n/a | daily sync |

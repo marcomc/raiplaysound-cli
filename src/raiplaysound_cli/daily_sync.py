@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import html
 import json
 import multiprocessing
 import re
@@ -11,7 +12,9 @@ import subprocess
 import sys
 import tempfile
 import time
-from email.utils import formatdate
+from email.message import EmailMessage
+from email.policy import SMTP
+from email.utils import formataddr, formatdate
 from math import ceil
 from pathlib import Path
 from typing import Sequence
@@ -161,35 +164,151 @@ def build_download_rows(
     return rows
 
 
-def _plain_table(rows: Sequence[DownloadRow]) -> str:
-    headers = ("Program", "Date", "Title", "File")
-    data = [(row.program, row.episode_date, row.title, row.file_name) for row in rows]
-    widths = [
-        max(len(headers[index]), *(len(item[index]) for item in data))
-        for index in range(len(headers))
-    ]
-    lines = [
-        "  ".join(headers[index].ljust(widths[index]) for index in range(len(headers))),
-        "  ".join("-" * widths[index] for index in range(len(headers))),
-    ]
-    for item in data:
-        lines.append("  ".join(item[index].ljust(widths[index]) for index in range(len(headers))))
-    return "\n".join(lines)
-
-
 def build_email_body(*, status_text: str, rows: Sequence[DownloadRow]) -> str:
+    episode_label = "episode" if len(rows) == 1 else "episodes"
     lines = [
-        "RaiPlaySound CLI daily favourites sync",
-        "",
-        f"Status: {status_text}",
-        f"New episodes downloaded: {len(rows)}",
+        "RaiPlaySound CLI · Daily sync",
+        f"{status_text.upper()} · {len(rows)} new {episode_label}",
         "",
     ]
     if rows:
-        lines.extend([_plain_table(rows), ""])
+        for index, row in enumerate(rows, start=1):
+            lines.extend(
+                [
+                    f"{index}. {row.title}",
+                    f"   {row.program} · {row.episode_date}",
+                    "",
+                ]
+            )
     else:
         lines.extend(["No new episodes were downloaded.", ""])
     return "\n".join(lines)
+
+
+def _group_email_rows(rows: Sequence[DownloadRow], *, key: str) -> dict[str, list[DownloadRow]]:
+    groups: dict[str, list[DownloadRow]] = {}
+    for row in rows:
+        value = row.program if key == "program" else row.episode_date
+        groups.setdefault(value, []).append(row)
+    return groups
+
+
+def build_email_html(
+    *, status_text: str, rows: Sequence[DownloadRow], layout: str = "grouped"
+) -> str:
+    status_label = html.escape(status_text.upper())
+    status_color = {
+        "ok": "#18794e",
+        "preview": "#175cd3",
+    }.get(status_text.lower(), "#b42318")
+    if rows:
+        if layout == "timeline":
+            groups = _group_email_rows(rows, key="date")
+            sections = []
+            for episode_date in sorted(groups, reverse=True):
+                dated_rows = groups[episode_date]
+                episode_rows = "".join(
+                    """<tr><td style="padding:4px 0 7px;border-bottom:1px solid #eaecf0">
+                      <div style="font-size:14px;line-height:1.3;font-weight:700;
+                        color:#182230;overflow-wrap:anywhere">{title}</div>
+                      <div style="padding-top:2px;font-size:11px;line-height:1.3;
+                        color:#667085;overflow-wrap:anywhere">{program}</div>
+                    </td></tr>""".format(
+                        title=html.escape(row.title),
+                        program=html.escape(row.program),
+                    )
+                    for row in dated_rows
+                )
+                sections.append(
+                    """<tr><td style="padding:8px 0 2px;border-bottom:1px solid #eaecf0">
+                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                        <tr><td width="72" valign="top" style="padding:5px 8px 0 0;
+                          font-size:11px;line-height:1.3;font-weight:700;color:#175cd3;
+                          white-space:nowrap">{date}</td>
+                          <td valign="top"><table role="presentation" width="100%"
+                            cellpadding="0" cellspacing="0">{episode_rows}</table></td>
+                        </tr>
+                      </table>
+                    </td></tr>""".format(date=html.escape(episode_date), episode_rows=episode_rows)
+                )
+        else:
+            groups = _group_email_rows(rows, key="program")
+            sections = []
+            for program, program_rows in groups.items():
+                episode_rows = "".join(
+                    """<tr><td style="padding:4px 0 7px;border-bottom:1px solid #eaecf0">
+                      <div style="font-size:14px;line-height:1.3;font-weight:700;
+                        color:#182230;overflow-wrap:anywhere">{title}</div>
+                      <div style="padding-top:2px;font-size:11px;line-height:1.3;
+                        color:#667085">{date}</div>
+                    </td></tr>""".format(
+                        title=html.escape(row.title),
+                        date=html.escape(row.episode_date),
+                    )
+                    for row in program_rows
+                )
+                sections.append(
+                    """<tr><td style="padding:8px 0 0">
+                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                        <tr><td style="padding:0 0 3px;font-size:11px;line-height:1.3;
+                          font-weight:700;letter-spacing:.3px;text-transform:uppercase;
+                          color:#175cd3;overflow-wrap:anywhere;word-break:break-word">{program}</td>
+                          <td align="right" style="padding:0 0 3px;font-size:10px;
+                            color:#667085">{count}</td></tr>
+                        {episode_rows}
+                      </table>
+                    </td></tr>""".format(
+                        program=html.escape(program),
+                        count=len(program_rows),
+                        episode_rows=episode_rows,
+                    )
+                )
+        report_content = "".join(sections)
+    else:
+        report_content = """<tr><td style="padding:14px 0;font-size:14px;line-height:1.4;
+          color:#475467">No new episodes were downloaded.</td></tr>"""
+    programme_count = len({row.program for row in rows})
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
+  <title>RaiPlaySound daily sync</title>
+  <style>
+    @media only screen and (max-width: 600px) {{
+      .email-gutter {{ padding: 12px 10px !important; }}
+    }}
+  </style>
+</head>
+<body style="margin:0;padding:0;background:#f2f4f7;font-family:Arial,Helvetica,sans-serif;
+  color:#182230;-webkit-text-size-adjust:100%">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+    style="background:#f2f4f7"><tr><td class="email-gutter" align="center"
+    style="padding:18px 12px">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+      style="max-width:560px"><tr><td class="email-card" style="background:#ffffff;
+      border:1px solid #e4e7ec;border-radius:12px;overflow:hidden">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr><td style="padding:12px 16px;background:#142b4a;color:#ffffff">
+          <div style="font-size:15px;line-height:1.3;font-weight:700">RaiPlaySound CLI
+            <span style="font-size:13px;font-weight:400;color:#c3d4e8"> · Daily sync</span>
+          </div>
+        </td></tr>
+        <tr><td style="padding:9px 16px 7px;font-size:12px;line-height:1.3;color:#475467;
+          border-bottom:1px solid #eaecf0"><strong
+          style="color:{status_color}">{status_label}</strong>
+          &nbsp;·&nbsp; <strong style="color:#182230">{len(rows)} new</strong>
+          &nbsp;·&nbsp; {programme_count} programmes
+        </td></tr>
+        <tr><td style="padding:0 16px 8px"><table role="presentation" width="100%"
+          cellpadding="0" cellspacing="0">{report_content}</table></td></tr>
+      </table>
+    </td></tr></table>
+  </td></tr></table>
+</body>
+</html>"""
 
 
 def _extract_from_address(msmtp_config: Path) -> str:
@@ -209,18 +328,18 @@ def build_email_payload(
     email_from_name: str,
     subject: str,
     body: str,
+    html_body: str | None = None,
     message_date: str | None = None,
 ) -> str:
-    date_header = message_date or formatdate(localtime=True)
-    return (
-        f"From: {email_from_name} <{email_from}>\n"
-        f"To: {email_to}\n"
-        f"Subject: {subject}\n"
-        f"Date: {date_header}\n"
-        "Content-Type: text/plain; charset=UTF-8\n"
-        "\n"
-        f"{body}"
-    )
+    message = EmailMessage(policy=SMTP)
+    message["From"] = formataddr((email_from_name, email_from))
+    message["To"] = email_to
+    message["Subject"] = subject
+    message["Date"] = message_date or formatdate(localtime=True)
+    message.set_content(body)
+    if html_body is not None:
+        message.add_alternative(html_body, subtype="html")
+    return message.as_string()
 
 
 def _append_log(log_file: Path, message: str) -> None:
@@ -273,13 +392,23 @@ def send_email_summary(
     email_from_name = config.get("EMAIL_FROM_NAME", "raiplaysound-cli").strip()
     subject_prefix = config.get("EMAIL_SUBJECT_PREFIX", "[raiplaysound-cli]").strip()
     subject = f"{subject_prefix} daily favourites sync {status_text} on {socket.gethostname()}"
+    email_format = config.get("EMAIL_FORMAT", "grouped").strip().lower() or "grouped"
+    if email_format not in {"grouped", "timeline", "text"}:
+        _append_log(log_file, "Unsupported EMAIL_FORMAT; using grouped HTML report.")
+        email_format = "grouped"
     body = build_email_body(status_text=status_text, rows=rows)
+    html_body = (
+        None
+        if email_format == "text"
+        else build_email_html(status_text=status_text, rows=rows, layout=email_format)
+    )
     payload = build_email_payload(
         email_to=email_to,
         email_from=email_from,
         email_from_name=email_from_name,
         subject=subject,
         body=body,
+        html_body=html_body,
     )
     if dry_run:
         sys.stdout.write(payload)

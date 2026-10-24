@@ -144,6 +144,10 @@ CHECK_JOBS=8
 # EMAIL_SUBJECT_PREFIX="[raiplaysound-cli]"
 # EMAIL_CONFIG="$HOME/.config/msmtp/config"
 # MSMTP_BIN="msmtp"
+# Email report format: grouped (default), timeline, or text.
+# Grouped HTML organizes episodes by programme; timeline HTML organizes by date.
+# Text sends only the compact plain-text report without an HTML alternative.
+# EMAIL_FORMAT="grouped"
 # Optional override for the daily sync log file.
 # DAILY_SYNC_LOG="$HOME/Library/Logs/raiplaysound-cli-daily-sync.log"
 # DAILY_SYNC_MAX_SECONDS=9000
