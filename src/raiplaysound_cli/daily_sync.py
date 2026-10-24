@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import html
 import json
 import multiprocessing
 import re
@@ -11,7 +12,9 @@ import subprocess
 import sys
 import tempfile
 import time
-from email.utils import formatdate
+from email.message import EmailMessage
+from email.policy import SMTP
+from email.utils import formataddr, formatdate
 from math import ceil
 from pathlib import Path
 from typing import Sequence
@@ -161,35 +164,117 @@ def build_download_rows(
     return rows
 
 
-def _plain_table(rows: Sequence[DownloadRow]) -> str:
-    headers = ("Program", "Date", "Title", "File")
-    data = [(row.program, row.episode_date, row.title, row.file_name) for row in rows]
-    widths = [
-        max(len(headers[index]), *(len(item[index]) for item in data))
-        for index in range(len(headers))
-    ]
-    lines = [
-        "  ".join(headers[index].ljust(widths[index]) for index in range(len(headers))),
-        "  ".join("-" * widths[index] for index in range(len(headers))),
-    ]
-    for item in data:
-        lines.append("  ".join(item[index].ljust(widths[index]) for index in range(len(headers))))
-    return "\n".join(lines)
-
-
 def build_email_body(*, status_text: str, rows: Sequence[DownloadRow]) -> str:
     lines = [
         "RaiPlaySound CLI daily favourites sync",
         "",
-        f"Status: {status_text}",
+        f"Status: {status_text.upper()}",
         f"New episodes downloaded: {len(rows)}",
         "",
     ]
     if rows:
-        lines.extend([_plain_table(rows), ""])
+        lines.append("New episodes")
+        for index, row in enumerate(rows, start=1):
+            lines.extend(
+                [
+                    f"{index}. {row.title}",
+                    f"   Program: {row.program}",
+                    f"   Date: {row.episode_date}",
+                    f"   File: {row.file_name}",
+                    "",
+                ]
+            )
     else:
         lines.extend(["No new episodes were downloaded.", ""])
     return "\n".join(lines)
+
+
+def build_email_html(*, status_text: str, rows: Sequence[DownloadRow]) -> str:
+    status_label = html.escape(status_text.upper())
+    status_color = "#18794e" if status_text.lower() == "ok" else "#b42318"
+    if rows:
+        episode_cards = "".join(
+            """<tr><td style="padding:0 0 12px">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+                style="border:1px solid #e4e7ec;border-radius:12px;background:#ffffff">
+                <tr><td style="padding:16px 18px 6px;font-size:17px;line-height:1.4;
+                  font-weight:700;color:#182230;overflow-wrap:anywhere">{title}</td></tr>
+                <tr><td style="padding:0 18px 16px;font-size:14px;line-height:1.6;
+                  color:#475467;overflow-wrap:anywhere">
+                  <strong style="color:#344054">Program</strong> &nbsp;{program}<br>
+                  <strong style="color:#344054">Date</strong> &nbsp;{date}<br>
+                  <strong style="color:#344054">File</strong> &nbsp;{file_name}
+                </td></tr>
+              </table>
+            </td></tr>""".format(
+                title=html.escape(row.title),
+                program=html.escape(row.program),
+                date=html.escape(row.episode_date),
+                file_name=html.escape(row.file_name),
+            )
+            for row in rows
+        )
+        report_content = f"""<tr><td style="padding:24px 24px 8px;font-size:18px;
+          line-height:1.4;font-weight:700;color:#182230">New episodes</td></tr>
+          <tr><td style="padding:8px 24px 20px"><table role="presentation" width="100%"
+          cellpadding="0" cellspacing="0">{episode_cards}</table></td></tr>"""
+    else:
+        report_content = """<tr><td style="padding:24px;font-size:15px;line-height:1.6;
+          color:#475467">No new episodes were downloaded.</td></tr>"""
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
+  <title>RaiPlaySound daily sync</title>
+  <style>
+    @media only screen and (max-width: 600px) {{
+      .email-gutter {{ padding: 16px 10px !important; }}
+      .email-card {{ border-radius: 12px !important; }}
+      .email-heading {{ font-size: 21px !important; }}
+    }}
+  </style>
+</head>
+<body style="margin:0;padding:0;background:#f2f4f7;font-family:Arial,Helvetica,sans-serif;
+  color:#182230;-webkit-text-size-adjust:100%">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+    style="background:#f2f4f7"><tr><td class="email-gutter" align="center"
+    style="padding:32px 16px">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+      style="max-width:620px"><tr><td class="email-card" style="background:#ffffff;
+      border:1px solid #e4e7ec;border-radius:18px;overflow:hidden">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr><td style="padding:24px 24px 20px;background:#142b4a;color:#ffffff">
+          <div style="font-size:12px;line-height:1.4;letter-spacing:1px;text-transform:uppercase;
+            color:#b9cbe2">RaiPlaySound CLI</div>
+          <div class="email-heading" style="padding-top:7px;font-size:25px;line-height:1.25;
+            font-weight:700">Daily favourites sync</div>
+        </td></tr>
+        <tr><td style="padding:22px 24px 8px">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+            style="background:#f8fafc;border:1px solid #eaecf0;border-radius:12px">
+            <tr><td style="padding:16px 18px">
+              <div style="font-size:12px;line-height:1.4;color:#667085">STATUS</div>
+              <div style="padding-top:4px;font-size:17px;line-height:1.4;font-weight:700;
+                color:{status_color}">{status_label}</div>
+            </td><td align="right" style="padding:16px 18px">
+              <div style="font-size:12px;line-height:1.4;color:#667085">NEW EPISODES</div>
+              <div style="padding-top:2px;font-size:25px;line-height:1.2;font-weight:700;
+                color:#142b4a">{len(rows)}</div>
+            </td></tr>
+          </table>
+        </td></tr>
+        {report_content}
+        <tr><td style="padding:14px 24px 20px;border-top:1px solid #eaecf0;
+          font-size:12px;line-height:1.5;color:#667085">Automated report from your daily
+          favourites download.</td></tr>
+      </table>
+    </td></tr></table>
+  </td></tr></table>
+</body>
+</html>"""
 
 
 def _extract_from_address(msmtp_config: Path) -> str:
@@ -209,18 +294,17 @@ def build_email_payload(
     email_from_name: str,
     subject: str,
     body: str,
+    html_body: str,
     message_date: str | None = None,
 ) -> str:
-    date_header = message_date or formatdate(localtime=True)
-    return (
-        f"From: {email_from_name} <{email_from}>\n"
-        f"To: {email_to}\n"
-        f"Subject: {subject}\n"
-        f"Date: {date_header}\n"
-        "Content-Type: text/plain; charset=UTF-8\n"
-        "\n"
-        f"{body}"
-    )
+    message = EmailMessage(policy=SMTP)
+    message["From"] = formataddr((email_from_name, email_from))
+    message["To"] = email_to
+    message["Subject"] = subject
+    message["Date"] = message_date or formatdate(localtime=True)
+    message.set_content(body)
+    message.add_alternative(html_body, subtype="html")
+    return message.as_string()
 
 
 def _append_log(log_file: Path, message: str) -> None:
@@ -274,12 +358,14 @@ def send_email_summary(
     subject_prefix = config.get("EMAIL_SUBJECT_PREFIX", "[raiplaysound-cli]").strip()
     subject = f"{subject_prefix} daily favourites sync {status_text} on {socket.gethostname()}"
     body = build_email_body(status_text=status_text, rows=rows)
+    html_body = build_email_html(status_text=status_text, rows=rows)
     payload = build_email_payload(
         email_to=email_to,
         email_from=email_from,
         email_from_name=email_from_name,
         subject=subject,
         body=body,
+        html_body=html_body,
     )
     if dry_run:
         sys.stdout.write(payload)

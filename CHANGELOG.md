@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+### Changed
+
+- Reworked daily favourites email reports with a responsive HTML layout,
+  vertically stacked episode cards, and a mobile-friendly plain-text fallback.
+- Escaped report values in HTML and wrapped long program names and filenames
+  so they remain readable on phones and tablets.
+
 ## [2.5.1] - 2026-10-05 - episode title correctness
 
 ### Fixed

@@ -3,6 +3,8 @@ from __future__ import annotations
 import subprocess
 import sys
 from collections.abc import Callable
+from email import policy
+from email.parser import Parser
 from pathlib import Path
 from typing import cast
 
@@ -35,7 +37,7 @@ def test_build_report_groups_new_downloads_with_metadata(tmp_path: Path) -> None
     ]
 
 
-def test_build_email_body_includes_borderless_table_for_downloads() -> None:
+def test_build_email_body_lists_downloads_as_mobile_friendly_records() -> None:
     body = daily_sync.build_email_body(
         status_text="ok",
         rows=[
@@ -49,9 +51,34 @@ def test_build_email_body_includes_borderless_table_for_downloads() -> None:
     )
 
     assert "New episodes downloaded: 1" in body
-    assert "Program     Date        Title" in body
-    assert "musicalbox  2026-05-17  Musical Box del 17/05/2026" in body
+    assert "1. Musical Box del 17/05/2026" in body
+    assert "   Program: musicalbox" in body
+    assert "   Date: 2026-05-17" in body
+    assert "   File: Musical Box - 2026-05-17" in body
     assert "|" not in body
+
+
+def test_build_email_html_escapes_content_and_uses_stacked_episode_cards() -> None:
+    body = daily_sync.build_email_html(
+        status_text="ok",
+        rows=[
+            daily_sync.DownloadRow(
+                program="rock & roll",
+                episode_date="2026-05-17",
+                title="<New episode>",
+                file_name="A & B.m4a",
+            )
+        ],
+    )
+
+    assert 'name="viewport"' in body
+    assert "max-width: 600px" in body
+    assert "<New episode>" not in body
+    assert "&lt;New episode&gt;" in body
+    assert "rock &amp; roll" in body
+    assert "A &amp; B.m4a" in body
+    assert "overflow-wrap:anywhere" in body
+    assert 'role="presentation"' in body
 
 
 def test_build_email_payload_uses_configured_from_address() -> None:
@@ -61,12 +88,22 @@ def test_build_email_payload_uses_configured_from_address() -> None:
         email_from_name="RaiPlaySound CLI",
         subject="[raiplaysound-cli] daily favourites sync ok on host",
         body="summary",
+        html_body="<p>summary</p>",
         message_date="Sun, 17 May 2026 08:00:00 +0200",
     )
 
-    assert "From: RaiPlaySound CLI <listener+raiplaysound-cli@example.test>" in payload
+    message = Parser(policy=policy.default).parsestr(payload)
+
+    assert message["From"] == "RaiPlaySound CLI <listener+raiplaysound-cli@example.test>"
     assert "To: listener@example.test" in payload
     assert "Subject: [raiplaysound-cli] daily favourites sync ok on host" in payload
+    assert message.get_content_type() == "multipart/alternative"
+    plain_body = message.get_body(preferencelist=("plain",))
+    html_body = message.get_body(preferencelist=("html",))
+    assert plain_body is not None
+    assert html_body is not None
+    assert plain_body.get_content().replace("\r\n", "\n") == "summary\n"
+    assert "<p>summary</p>" in html_body.get_content()
 
 
 def test_send_email_summary_dry_run_does_not_require_msmtp(

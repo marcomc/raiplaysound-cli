@@ -88,8 +88,10 @@ make launchagent-install
 This also installs `~/.local/bin/raiplaysound-cli-daily-sync`, then schedules
 it as a user LaunchAgent at 08:00 every day. The companion runs
 `raiplaysound-cli download --favourites`, compares the downloaded audio files
-before and after the run, and sends a plain-text summary email through `msmtp`
-when email settings are configured.
+before and after the run, and sends a responsive HTML summary email through
+`msmtp` when email settings are configured. The message includes a plain-text
+fallback and vertically stacked episode cards, so long program names and
+filenames wrap cleanly on phones and tablets.
 It refreshes only the daily sync companion and LaunchAgent; it does not rewrite
 the user-facing `~/.local/bin/raiplaysound-cli` command.
 
@@ -215,7 +217,7 @@ Uninstalling:
 - Downloads each program cover image into the program folder and references it
   from generated RSS feeds
 - Provides an optional macOS LaunchAgent companion that runs the configured
-  favourites download once a day and emails a compact `msmtp` summary
+  favourites download once a day and emails a responsive `msmtp` summary
 - Keeps a `RaiPlayPodcast` `index.html` landing page in the target root with
   program artwork, descriptions, local episode counts, latest downloaded
   episode dates, RSS links, and Apple Podcasts app links only for programs that
